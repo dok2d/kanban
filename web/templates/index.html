@@ -854,6 +854,7 @@ async function renderTaskPage(taskId) {
 
 // --- Interactive TODO ---
 async function toggleTodoItem(taskId, index, checked) {
+  const commentDraft = document.getElementById('m-comment')?.value || '';
   const t = await api(`/api/tasks/${taskId}`);
   const items = parseTodoItems(t.todo);
   if (index >= 0 && index < items.length) {
@@ -865,9 +866,12 @@ async function toggleTodoItem(taskId, index, checked) {
     priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
   });
   await loadBoard();
+  const ta = document.getElementById('m-comment');
+  if (ta && commentDraft) ta.value = commentDraft;
 }
 
 async function removeTodoItem(taskId, index) {
+  const commentDraft = document.getElementById('m-comment')?.value || '';
   const t = await api(`/api/tasks/${taskId}`);
   const items = parseTodoItems(t.todo);
   items.splice(index, 1);
@@ -877,12 +881,15 @@ async function removeTodoItem(taskId, index) {
     priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
   });
   await loadBoard();
+  const ta = document.getElementById('m-comment');
+  if (ta && commentDraft) ta.value = commentDraft;
 }
 
 async function addTodoItem(taskId) {
   const input = document.getElementById('todo-new-input');
   const label = input.value.trim();
   if (!label) return;
+  const commentDraft = document.getElementById('m-comment')?.value || '';
   const t = await api(`/api/tasks/${taskId}`);
   const items = parseTodoItems(t.todo);
   items.push({ done: false, label });
@@ -892,6 +899,8 @@ async function addTodoItem(taskId) {
     priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
   });
   await loadBoard();
+  const ta = document.getElementById('m-comment');
+  if (ta && commentDraft) ta.value = commentDraft;
 }
 
 async function addCommentFromPage(taskId) {
