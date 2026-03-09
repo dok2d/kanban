@@ -41,6 +41,27 @@ type Task struct {
 type Comment struct {
 	ID        int64     `json:"id"`
 	TaskID    int64     `json:"task_id"`
+	ParentID  *int64    `json:"parent_id"`
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Replies   []Comment `json:"replies,omitempty"`
+}
+
+// Attachment stored in the files table
+type Attachment struct {
+	ID        int64  `json:"id"`
+	Filename  string `json:"filename"`
+	Mime      string `json:"mime"`
+	Size      int    `json:"size"`
+	URL       string `json:"url"`
+}
+
+// ExportData is the full board export structure
+type ExportData struct {
+	Columns  []Column  `json:"columns"`
+	Epics    []Epic    `json:"epics"`
+	Tags     []Tag     `json:"tags"`
+	Tasks    []Task    `json:"tasks"`
+	Comments []Comment `json:"comments"`
 }

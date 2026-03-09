@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"kanban/internal/db"
+	"kanban/internal/model"
 	"log"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,6 +21,30 @@ var allowedImageMIME = map[string]bool{
 	"image/gif":     true,
 	"image/webp":    true,
 	"image/svg+xml": false, // SVG can contain scripts
+}
+
+// allowed MIME types for file attachments
+var allowedFileMIME = map[string]bool{
+	"application/pdf":  true,
+	"text/plain":       true,
+	"text/csv":         true,
+	"application/json": true,
+	"application/xml":  true,
+	"application/zip":  true,
+	"application/gzip": true,
+	"image/png":        true,
+	"image/jpeg":       true,
+	"image/gif":        true,
+	"image/webp":       true,
+	// blocked: text/html, application/javascript, etc.
+}
+
+// blocked file extensions
+var blockedExtensions = map[string]bool{
+	".exe": true, ".bat": true, ".cmd": true, ".com": true,
+	".msi": true, ".scr": true, ".pif": true, ".vbs": true,
+	".js": true, ".html": true, ".htm": true, ".svg": true,
+	".sh": true, ".ps1": true,
 }
 
 type Handler struct {
@@ -46,11 +72,10 @@ func (h *Handler) logf(format string, args ...any) {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.logf("%s %s", r.Method, r.URL.Path)
-	// security headers
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data:")
 	h.mux.ServeHTTP(w, r)
 }
 
@@ -69,14 +94,17 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/comments/", h.handleComment)
 	h.mux.HandleFunc("/api/images", h.handleImageUpload)
 	h.mux.HandleFunc("/api/images/", h.handleImageServe)
+	h.mux.HandleFunc("/api/files", h.handleFileUpload)
+	h.mux.HandleFunc("/api/files/", h.handleFileServe)
 	h.mux.HandleFunc("/api/search", h.handleSearch)
+	h.mux.HandleFunc("/api/export", h.handleExport)
+	h.mux.HandleFunc("/api/import", h.handleImport)
 	h.mux.HandleFunc("/api/board", h.handleBoard)
 	h.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	h.mux.HandleFunc("/", h.handleIndex)
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	// SPA: serve index.html for /, /task/*, /epic/* routes
 	if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") {
 		http.ServeFile(w, r, "web/templates/index.html")
 		return
@@ -204,11 +232,9 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	// limit request body to 8MB (base64 overhead for 5MB image)
 	r.Body = http.MaxBytesReader(w, r.Body, 8*1024*1024)
-
 	var req struct {
-		Data string `json:"data"` // base64
+		Data string `json:"data"`
 		Mime string `json:"mime"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -219,7 +245,6 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "data required", 400)
 		return
 	}
-	// validate MIME type — whitelist only safe image types
 	if req.Mime == "" {
 		req.Mime = "image/png"
 	}
@@ -232,8 +257,7 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid base64", 400)
 		return
 	}
-	const maxSize = 5 * 1024 * 1024 // 5MB
-	if len(raw) > maxSize {
+	if len(raw) > 5*1024*1024 {
 		http.Error(w, "image too large (max 5MB)", 413)
 		return
 	}
@@ -262,6 +286,80 @@ func (h *Handler) handleImageServe(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.Write(data)
+}
+
+// --- Files ---
+func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 15*1024*1024)
+	var req struct {
+		Data     string `json:"data"`
+		Filename string `json:"filename"`
+		Mime     string `json:"mime"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request or body too large", 400)
+		return
+	}
+	if req.Data == "" || req.Filename == "" {
+		http.Error(w, "data and filename required", 400)
+		return
+	}
+	// Security: check extension
+	ext := strings.ToLower(filepath.Ext(req.Filename))
+	if blockedExtensions[ext] {
+		http.Error(w, "file type not allowed", 400)
+		return
+	}
+	// Security: check MIME
+	if req.Mime == "" {
+		req.Mime = "application/octet-stream"
+	}
+	if !allowedFileMIME[req.Mime] {
+		http.Error(w, "file MIME type not allowed", 400)
+		return
+	}
+	raw, err := base64.StdEncoding.DecodeString(req.Data)
+	if err != nil {
+		http.Error(w, "invalid base64", 400)
+		return
+	}
+	if len(raw) > 10*1024*1024 {
+		http.Error(w, "file too large (max 10MB)", 413)
+		return
+	}
+	// Sanitize filename
+	safeName := filepath.Base(req.Filename)
+	id, err := h.store.SaveFile(safeName, raw, req.Mime)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	jsonResp(w, map[string]any{"id": id, "url": "/api/files/" + strconv.FormatInt(id, 10), "filename": safeName})
+}
+
+func (h *Handler) handleFileServe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	id := extractID(r.URL.Path, "/api/files/")
+	if id == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
+	data, mime, filename, err := h.store.GetFile(id)
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 	w.Write(data)
 }
@@ -531,8 +629,9 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		TaskID int64  `json:"task_id"`
-		Text   string `json:"text"`
+		TaskID   int64  `json:"task_id"`
+		Text     string `json:"text"`
+		ParentID *int64 `json:"parent_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", 400)
@@ -542,7 +641,7 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "task_id and text required", 400)
 		return
 	}
-	id, err := h.store.AddComment(req.TaskID, req.Text)
+	id, err := h.store.AddComment(req.TaskID, req.Text, req.ParentID)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -556,15 +655,29 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", 400)
 		return
 	}
-	if r.Method == http.MethodDelete {
+	switch r.Method {
+	case http.MethodPut:
+		var req struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Text == "" {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if err := h.store.UpdateComment(id, req.Text); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		jsonResp(w, map[string]string{"status": "ok"})
+	case http.MethodDelete:
 		if err := h.store.DeleteComment(id); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
-		return
+	default:
+		http.Error(w, "method not allowed", 405)
 	}
-	http.Error(w, "method not allowed", 405)
 }
 
 // --- Search ---
@@ -578,14 +691,12 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		jsonResp(w, map[string]any{"task_ids": []int64{}})
 		return
 	}
-	// Limit query length to prevent abuse
 	if len(q) > 200 {
 		http.Error(w, "query too long", 400)
 		return
 	}
 	isRegex := r.URL.Query().Get("regex") == "1"
 
-	// DB search uses LIKE (plain text)
 	ids, err := h.store.SearchTasks(q)
 	if err != nil {
 		h.logf("search error: %v", err)
@@ -593,7 +704,6 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If regex mode, validate the pattern and filter client-side
 	if isRegex {
 		_, err := regexp.Compile(q)
 		if err != nil {
@@ -603,6 +713,42 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResp(w, map[string]any{"task_ids": ids})
+}
+
+// --- Export / Import ---
+func (h *Handler) handleExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	data, err := h.store.ExportAll()
+	if err != nil {
+		h.logf("export error: %v", err)
+		http.Error(w, "export error", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=kanban-export.json")
+	json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024) // 50MB max import
+	var data model.ExportData
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		http.Error(w, "bad request: "+err.Error(), 400)
+		return
+	}
+	if err := h.store.ImportAll(&data); err != nil {
+		h.logf("import error: %v", err)
+		http.Error(w, "import error: "+err.Error(), 500)
+		return
+	}
+	jsonResp(w, map[string]string{"status": "ok"})
 }
 
 // helpers

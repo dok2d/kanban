@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
@@ -41,6 +43,34 @@
   --accent:#22c55e;--accent2:#4ade80;
   --red:#ef4444;--orange:#f59e0b;--green:#22c55e;--blue:#60a5fa;
   --shadow:0 2px 8px rgba(0,0,0,.35);
+}
+[data-theme="nord"]{
+  --bg:#2e3440;--bg2:#3b4252;--bg3:#434c5e;--bg4:#4c566a;
+  --fg:#eceff4;--fg2:#d8dee9;--fg3:#8892a6;
+  --accent:#88c0d0;--accent2:#81a1c1;
+  --red:#bf616a;--orange:#d08770;--green:#a3be8c;--blue:#5e81ac;
+  --shadow:0 2px 8px rgba(0,0,0,.3);
+}
+[data-theme="dracula"]{
+  --bg:#282a36;--bg2:#21222c;--bg3:#313545;--bg4:#44475a;
+  --fg:#f8f8f2;--fg2:#bfc1d4;--fg3:#6272a4;
+  --accent:#bd93f9;--accent2:#ff79c6;
+  --red:#ff5555;--orange:#ffb86c;--green:#50fa7b;--blue:#8be9fd;
+  --shadow:0 2px 8px rgba(0,0,0,.35);
+}
+[data-theme="solarized"]{
+  --bg:#fdf6e3;--bg2:#eee8d5;--bg3:#e8e1ca;--bg4:#d6cdb5;
+  --fg:#586e75;--fg2:#657b83;--fg3:#93a1a1;
+  --accent:#268bd2;--accent2:#2aa198;
+  --red:#dc322f;--orange:#cb4b16;--green:#859900;--blue:#268bd2;
+  --shadow:0 2px 8px rgba(0,0,0,.08);
+}
+[data-theme="spacedust"]{
+  --bg:#0a0e14;--bg2:#131920;--bg3:#1a222c;--bg4:#253040;
+  --fg:#dfd5c1;--fg2:#b0a890;--fg3:#6e6b5e;
+  --accent:#e7a84f;--accent2:#e35b00;
+  --red:#e24c49;--orange:#e7a84f;--green:#5cab7d;--blue:#6e98a4;
+  --shadow:0 2px 8px rgba(0,0,0,.4);
 }
 
 html{font-size:var(--font-size)}
@@ -201,7 +231,7 @@ a{color:var(--accent2);text-decoration:none}
 .sidebar-section{margin-bottom:24px}
 .entity-list{display:flex;flex-direction:column;gap:6px}
 .entity-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg3);border-radius:var(--radius)}
-.entity-item .dot{width:12px;height:12px;min-width:12px;min-height:12px;border-radius:50%;margin-right:8px;flex-shrink:0}
+.entity-item .dot{width:12px;height:12px;max-width:12px;min-width:12px;min-height:12px;border-radius:50%;margin-right:8px;flex-shrink:0}
 .entity-item span{flex:1;font-size:.85rem}
 .entity-add{display:flex;gap:6px;margin-top:8px}
 .entity-add input{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none}
@@ -247,6 +277,28 @@ a{color:var(--accent2);text-decoration:none}
 .comment-text .md-content{padding:0;background:none;min-height:auto}
 .comment-time{font-size:.72rem;color:var(--fg3);margin-top:4px;display:flex;justify-content:space-between;align-items:center}
 
+/* nested comments */
+.comment-replies{margin-left:20px;border-left:2px solid var(--bg4);padding-left:12px;display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.comment-actions{display:flex;gap:6px;align-items:center}
+.comment-actions button{background:transparent;border:none;color:var(--fg3);cursor:pointer;font-size:.72rem;padding:2px 6px;border-radius:3px;font-family:inherit}
+.comment-actions button:hover{color:var(--accent2);background:var(--bg4)}
+.reply-form{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+.reply-form textarea{background:var(--bg);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:.8rem;outline:none;resize:vertical;min-height:50px}
+.reply-form textarea:focus{border-color:var(--accent)}
+.comment-edited{font-size:.68rem;color:var(--fg3);font-style:italic}
+
+/* spoiler / details */
+.md-content details{background:var(--bg4);border-radius:var(--radius);padding:8px 12px;margin:6px 0}
+.md-content details summary{cursor:pointer;font-weight:600;color:var(--fg);user-select:none}
+.md-content details summary:hover{color:var(--accent2)}
+
+/* export/import section */
+.export-import-btns{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
+
+/* timezone select */
+.tz-select{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none;width:100%;margin-top:4px}
+.tz-select:focus{border-color:var(--accent)}
+
 .hidden{display:none!important}
 </style>
 </head>
@@ -273,6 +325,10 @@ a{color:var(--accent2);text-decoration:none}
       <button class="theme-btn" data-theme="light" onclick="setTheme('light')">Светлая</button>
       <button class="theme-btn" data-theme="ocean" onclick="setTheme('ocean')">Океан</button>
       <button class="theme-btn" data-theme="forest" onclick="setTheme('forest')">Лес</button>
+      <button class="theme-btn" data-theme="nord" onclick="setTheme('nord')">Nord</button>
+      <button class="theme-btn" data-theme="dracula" onclick="setTheme('dracula')">Dracula</button>
+      <button class="theme-btn" data-theme="solarized" onclick="setTheme('solarized')">Solarized</button>
+      <button class="theme-btn" data-theme="spacedust" onclick="setTheme('spacedust')">Spacedust</button>
     </div>
   </div>
   <div class="sidebar-section">
@@ -307,6 +363,18 @@ a{color:var(--accent2);text-decoration:none}
       <input type="color" id="tag-color" value="#64748b">
       <input type="text" id="tag-name" placeholder="Новый тег..." onkeydown="if(event.key==='Enter')addTag()">
       <button class="btn btn-primary btn-sm" onclick="addTag()">+</button>
+    </div>
+  </div>
+  <div class="sidebar-section">
+    <h3>Часовой пояс</h3>
+    <select class="tz-select" id="tz-select" onchange="setTimezone(this.value)"></select>
+  </div>
+  <div class="sidebar-section">
+    <h3>Экспорт / Импорт</h3>
+    <div class="export-import-btns">
+      <button class="btn btn-ghost btn-sm" onclick="exportBoard()">&#128229; Экспорт JSON</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-file').click()">&#128228; Импорт JSON</button>
+      <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBoard(this)">
     </div>
   </div>
 </div>
@@ -368,7 +436,12 @@ initMarked();
 function renderMd(text) {
   if (!text) return '';
   if (typeof marked === 'undefined') return esc(text);
-  try { return marked.parse(text); } catch { return esc(text); }
+  try {
+    let html = marked.parse(text);
+    // External links open in new tab
+    html = html.replace(/<a\s+href="(https?:\/\/[^"]+)"/g, '<a href="$1" target="_blank" rel="noopener"');
+    return html;
+  } catch { return esc(text); }
 }
 
 function countTodos(text) {
@@ -490,6 +563,8 @@ function insertMdToolbar(textareaId) {
     <button type="button" onclick="mdInsert('${textareaId}','[','](url)')" title="Ссылка">&#128279;</button>
     <button type="button" onclick="mdInsert('${textareaId}','\\n\`\`\`\\n','\\n\`\`\`\\n')" title="Код">&lt;/&gt;</button>
     <button type="button" onclick="mdInsert('${textareaId}','> ','')" title="Цитата">&#10077;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','\\n<details><summary>Спойлер</summary>\\n','\\n</details>\\n')" title="Спойлер">&#9660;S</button>
+    <button type="button" onclick="triggerFileAttach('${textareaId}')" title="Вложить файл">&#128206;</button>
   </div>`;
 }
 
@@ -537,9 +612,9 @@ window.addEventListener('popstate', route);
 
 function renderCurrentView() {
   if (currentView === 'task' && currentTaskId) {
-    renderTaskPage(currentTaskId);
+    renderTaskPage(currentTaskId).then(() => highlightCode());
   } else if (currentView === 'epic' && currentEpicId) {
-    renderEpicPage(currentEpicId);
+    renderEpicPage(currentEpicId).then(() => highlightCode());
   } else {
     renderBoard();
   }
@@ -623,11 +698,7 @@ async function renderTaskPage(taskId) {
     ? `<div class="task-info-item"><label>Проект</label><div class="value"><a class="project-link" href="${esc(t.project_url)}" target="_blank" rel="noopener">&#128279; ${esc(t.project_url)}</a></div></div>`
     : '';
 
-  const comments = (t.comments||[]).map(c => `
-    <div class="comment">
-      <div class="comment-text"><div class="md-content">${renderMd(c.text)}</div></div>
-      <div class="comment-time"><span>${fmtDate(c.created_at)}</span><button class="btn-icon" onclick="deleteCommentFromPage(${c.id},${t.id})">&#10005;</button></div>
-    </div>`).join('');
+  const comments = renderCommentsTree(t.comments||[], t.id);
 
   // Build interactive todo list
   const todoItems = parseTodoItems(t.todo);
@@ -659,7 +730,6 @@ async function renderTaskPage(taskId) {
       <div style="display:flex;gap:6px">
         <button class="btn btn-ghost btn-sm" onclick="navigateTo('/')">&#8592; Доска</button>
         <button class="btn btn-ghost btn-sm" onclick="openEditTask(${t.id})">Редактировать</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteTaskFromPage(${t.id})">Удалить</button>
       </div>
     </div>
 
@@ -686,7 +756,7 @@ async function renderTaskPage(taskId) {
 
       <div class="task-page-section">
         <h3>Комментарии (${(t.comments||[]).length})</h3>
-        <div class="comments-list" style="max-height:none">${comments || '<span style="color:var(--fg3);font-size:.85rem">Нет комментариев</span>'}</div>
+        <div class="comments-list" style="max-height:none">${comments}</div>
         <div class="comment-form" style="margin-top:12px">
           ${insertMdToolbar('m-comment')}
           <textarea id="m-comment" placeholder="Написать комментарий (markdown)... Ctrl+Enter для отправки" rows="3"></textarea>
@@ -767,6 +837,14 @@ async function deleteCommentFromPage(commentId, taskId) {
 async function deleteTaskFromPage(id) {
   if (!confirm('Удалить задачу?')) return;
   await api(`/api/tasks/${id}`, 'DELETE');
+  navigateTo('/');
+  await loadBoard();
+}
+
+async function deleteTaskFromModal(id) {
+  if (!confirm('Удалить задачу?')) return;
+  await api(`/api/tasks/${id}`, 'DELETE');
+  closeModal();
   navigateTo('/');
   await loadBoard();
 }
@@ -1124,9 +1202,12 @@ async function openEditTask(taskId) {
       <div class="field"><label>Эпик</label><select id="m-epic"><option value="">—</option>${epicOpts}</select></div>
       <div class="field"><label>Теги</label><div class="checkbox-group" id="m-tags">${tagChips}</div></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
-      <button class="btn btn-primary" onclick="submitUpdateTask(${t.id})">Сохранить</button>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-danger btn-sm" onclick="deleteTaskFromModal(${t.id})">Удалить задачу</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+        <button class="btn btn-primary" onclick="submitUpdateTask(${t.id})">Сохранить</button>
+      </div>
     </div>`);
 }
 
@@ -1226,10 +1307,227 @@ function escAttr(s) { return esc(s); }
 function fmtDate(s) {
   if (!s) return '';
   const d = new Date(s);
-  return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
+  const tz = getTimezone();
+  try {
+    return d.toLocaleDateString('ru-RU', {timeZone: tz}) + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit', timeZone: tz});
+  } catch {
+    return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
+  }
+}
+
+// --- Nested comments rendering ---
+function renderCommentsTree(comments, taskId) {
+  if (!comments || comments.length === 0) return '<span style="color:var(--fg3);font-size:.85rem">Нет комментариев</span>';
+  return comments.map(c => renderSingleComment(c, taskId)).join('');
+}
+
+function renderSingleComment(c, taskId) {
+  const edited = c.updated_at && c.created_at && c.updated_at !== c.created_at
+    && new Date(c.updated_at).getTime() > new Date(c.created_at).getTime() + 1000;
+  const editedLabel = edited ? '<span class="comment-edited">(ред.)</span>' : '';
+  const repliesHtml = (c.replies && c.replies.length > 0)
+    ? `<div class="comment-replies">${c.replies.map(r => renderSingleComment(r, taskId)).join('')}</div>`
+    : '';
+  return `<div class="comment" data-comment-id="${c.id}">
+    <div class="comment-text"><div class="md-content">${renderMd(c.text)}</div></div>
+    <div class="comment-time">
+      <span>${fmtDate(c.created_at)} ${editedLabel}</span>
+      <div class="comment-actions">
+        <button onclick="startReply(${c.id},${taskId})">Ответить</button>
+        <button onclick="startEditComment(${c.id},${taskId})">Ред.</button>
+        <button onclick="deleteCommentFromPage(${c.id},${taskId})">&#10005;</button>
+      </div>
+    </div>
+    <div id="reply-form-${c.id}"></div>
+    ${repliesHtml}
+  </div>`;
+}
+
+function startReply(commentId, taskId) {
+  const container = document.getElementById('reply-form-' + commentId);
+  if (!container) return;
+  if (container.innerHTML.trim()) { container.innerHTML = ''; return; }
+  container.innerHTML = `<div class="reply-form">
+    <textarea id="reply-text-${commentId}" placeholder="Ответ..." rows="2"></textarea>
+    <div style="display:flex;gap:6px;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('reply-form-${commentId}').innerHTML=''">Отмена</button>
+      <button class="btn btn-primary btn-sm" onclick="submitReply(${commentId},${taskId})">Отправить</button>
+    </div>
+  </div>`;
+  const ta = document.getElementById('reply-text-' + commentId);
+  if (ta) {
+    ta.focus();
+    setupPaste(ta);
+    ta.addEventListener('keydown', function(e) {
+      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); submitReply(commentId, taskId); }
+    });
+  }
+}
+
+async function submitReply(parentId, taskId) {
+  const ta = document.getElementById('reply-text-' + parentId);
+  const text = ta?.value.trim();
+  if (!text) return;
+  await api('/api/comments', 'POST', { task_id: taskId, text, parent_id: parentId });
+  await loadBoard();
+}
+
+function startEditComment(commentId, taskId) {
+  const commentEl = document.querySelector(`[data-comment-id="${commentId}"]`);
+  if (!commentEl) return;
+  const mdContent = commentEl.querySelector('.comment-text .md-content');
+  // Get current text from the md-content innerHTML won't work; need to fetch from API
+  fetchAndEditComment(commentId, taskId);
+}
+
+async function fetchAndEditComment(commentId, taskId) {
+  // Fetch the task to get comment text
+  const t = await api(`/api/tasks/${taskId}`);
+  const comment = findCommentById(t.comments || [], commentId);
+  if (!comment) return;
+
+  const commentEl = document.querySelector(`[data-comment-id="${commentId}"]`);
+  if (!commentEl) return;
+  const textDiv = commentEl.querySelector('.comment-text');
+  const originalHtml = textDiv.innerHTML;
+
+  textDiv.innerHTML = `<textarea id="edit-comment-${commentId}" style="width:100%;min-height:60px;background:var(--bg);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:.82rem;outline:none;resize:vertical">${esc(comment.text)}</textarea>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost btn-sm" onclick="this.closest('.comment-text').innerHTML='${escAttr(originalHtml.replace(/'/g,"\\'").replace(/\n/g,""))}';loadBoard()">Отмена</button>
+      <button class="btn btn-primary btn-sm" onclick="submitEditComment(${commentId},${taskId})">Сохранить</button>
+    </div>`;
+  const ta = document.getElementById('edit-comment-' + commentId);
+  if (ta) {
+    ta.focus();
+    ta.addEventListener('keydown', function(e) {
+      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); submitEditComment(commentId, taskId); }
+    });
+  }
+}
+
+function findCommentById(comments, id) {
+  for (const c of comments) {
+    if (c.id === id) return c;
+    if (c.replies) {
+      const found = findCommentById(c.replies, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+async function submitEditComment(commentId, taskId) {
+  const ta = document.getElementById('edit-comment-' + commentId);
+  const text = ta?.value.trim();
+  if (!text) return;
+  await api(`/api/comments/${commentId}`, 'PUT', { text });
+  await loadBoard();
+}
+
+// --- File attachment ---
+function triggerFileAttach(textareaId) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { alert('Файл слишком большой (макс 10МБ)'); return; }
+    const blockedExts = ['.exe','.bat','.cmd','.com','.msi','.scr','.pif','.vbs','.js','.html','.htm','.svg','.sh','.ps1'];
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    if (blockedExts.includes(ext)) { alert('Этот тип файла не разрешён'); return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result.split(',')[1];
+      try {
+        const res = await api('/api/files', 'POST', { data: base64, filename: file.name, mime: file.type });
+        const ta = document.getElementById(textareaId);
+        if (ta) {
+          const pos = ta.selectionStart;
+          const before = ta.value.substring(0, pos);
+          const after = ta.value.substring(ta.selectionEnd);
+          const link = file.type.startsWith('image/')
+            ? `![${file.name}](${res.url})`
+            : `[${res.filename}](${res.url})`;
+          ta.value = before + link + after;
+          ta.focus();
+        }
+      } catch (e) { alert('Ошибка загрузки: ' + e.message); }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+// --- Timezone ---
+function getTimezone() {
+  return localStorage.getItem('kanban-timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+function setTimezone(tz) {
+  localStorage.setItem('kanban-timezone', tz);
+  if (currentView === 'task' && currentTaskId) renderTaskPage(currentTaskId);
+}
+function initTimezoneSelector() {
+  const sel = document.getElementById('tz-select');
+  if (!sel) return;
+  const common = [
+    'UTC','Europe/Moscow','Europe/London','Europe/Berlin','Europe/Paris',
+    'America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
+    'Asia/Tokyo','Asia/Shanghai','Asia/Kolkata','Asia/Dubai',
+    'Australia/Sydney','Pacific/Auckland'
+  ];
+  // Try to include browser's timezone
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const allTz = [...new Set([browserTz, ...common])].sort();
+  const currentTz = getTimezone();
+  sel.innerHTML = allTz.map(tz => `<option value="${tz}" ${tz===currentTz?'selected':''}>${tz}</option>`).join('');
+}
+
+// --- Export / Import ---
+async function exportBoard() {
+  try {
+    const resp = await fetch('/api/export');
+    if (!resp.ok) throw new Error(await resp.text());
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'kanban-export.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) { alert('Ошибка экспорта: ' + e.message); }
+}
+
+async function importBoard(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm('Импорт заменит ВСЕ данные. Продолжить?')) { input.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const data = JSON.parse(reader.result);
+      await api('/api/import', 'POST', data);
+      input.value = '';
+      await loadBoard();
+      alert('Импорт выполнен успешно');
+    } catch (e) { alert('Ошибка импорта: ' + e.message); }
+  };
+  reader.readAsText(file);
+}
+
+// --- Syntax highlighting after render ---
+function highlightCode() {
+  if (typeof hljs !== 'undefined') {
+    document.querySelectorAll('.md-content pre code').forEach(block => {
+      if (!block.dataset.highlighted) {
+        hljs.highlightElement(block);
+        block.dataset.highlighted = 'true';
+      }
+    });
+  }
 }
 
 // --- Init ---
+initTimezoneSelector();
 loadBoard().then(() => route());
 </script>
 </body>

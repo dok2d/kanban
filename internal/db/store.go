@@ -83,6 +83,14 @@ func (s *Store) migrate() error {
 			mime TEXT NOT NULL DEFAULT 'image/png',
 			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
+		`CREATE TABLE IF NOT EXISTS files (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			filename TEXT NOT NULL,
+			data BLOB NOT NULL,
+			mime TEXT NOT NULL,
+			size INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
 		// indexes for FK lookups
 		`CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_comments_task_id ON comments(task_id)`,
@@ -103,6 +111,8 @@ func (s *Store) migrate() error {
 		"ALTER TABLE tasks ADD COLUMN todo TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE tasks ADD COLUMN project_url TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE epics ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id)",
+		"ALTER TABLE comments ADD COLUMN updated_at DATETIME NOT NULL DEFAULT (datetime('now'))",
 	}
 	for _, q := range alters {
 		s.db.Exec(q) // ignore "duplicate column" errors
@@ -190,7 +200,6 @@ func (s *Store) ReorderColumns(ids []int64) error {
 	}
 	defer tx.Rollback()
 
-	// verify all IDs exist and count matches
 	var cnt int
 	if err := tx.QueryRow("SELECT COUNT(*) FROM columns").Scan(&cnt); err != nil {
 		return err
@@ -272,7 +281,6 @@ func (s *Store) DeleteEpic(id int64) error {
 	return tx.Commit()
 }
 
-// EpicTasks returns tasks belonging to an epic with their column info.
 func (s *Store) EpicTasks(epicID int64) ([]model.Task, error) {
 	rows, err := s.db.Query(`
 		SELECT t.id, t.title, t.description, t.todo, t.project_url,
@@ -397,7 +405,7 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 			t.EpicID = &eid.Int64
 			t.Epic = &model.Epic{ID: eid.Int64, Name: epicName.String, Color: epicColor.String}
 		}
-		t.Tags = []model.Tag{} // default empty, filled below in batch
+		t.Tags = []model.Tag{}
 		tasks = append(tasks, t)
 		taskIDs = append(taskIDs, t.ID)
 	}
@@ -405,12 +413,10 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 		return nil, err
 	}
 
-	// batch-load tags for all tasks (avoid N+1)
 	if len(taskIDs) > 0 {
 		tagMap, err := s.batchTaskTags(taskIDs)
 		if err != nil {
 			s.logf("batchTaskTags error: %v", err)
-			// non-fatal: tasks still usable without tags
 		} else {
 			for i := range tasks {
 				if tags, ok := tagMap[tasks[i].ID]; ok {
@@ -443,7 +449,7 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 		}
 	}
 	t.Tags = s.taskTags(t.ID)
-	t.Comments = s.taskComments(t.ID)
+	t.Comments = s.taskCommentsTree(t.ID)
 	return &t, nil
 }
 
@@ -512,8 +518,8 @@ func (s *Store) DeleteTask(id int64) error {
 
 // --- Comments ---
 
-func (s *Store) AddComment(taskID int64, text string) (int64, error) {
-	r, err := s.db.Exec("INSERT INTO comments(task_id,text) VALUES(?,?)", taskID, text)
+func (s *Store) AddComment(taskID int64, text string, parentID *int64) (int64, error) {
+	r, err := s.db.Exec("INSERT INTO comments(task_id,text,parent_id) VALUES(?,?,?)", taskID, text, parentID)
 	if err != nil {
 		return 0, err
 	}
@@ -521,8 +527,18 @@ func (s *Store) AddComment(taskID int64, text string) (int64, error) {
 	return r.LastInsertId()
 }
 
+func (s *Store) UpdateComment(id int64, text string) error {
+	_, err := s.db.Exec("UPDATE comments SET text=?,updated_at=datetime('now') WHERE id=?", text, id)
+	return err
+}
+
 func (s *Store) DeleteComment(id int64) error {
-	_, err := s.db.Exec("DELETE FROM comments WHERE id=?", id)
+	// Delete child comments first, then the comment itself
+	_, err := s.db.Exec("DELETE FROM comments WHERE parent_id=?", id)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("DELETE FROM comments WHERE id=?", id)
 	return err
 }
 
@@ -546,12 +562,10 @@ func (s *Store) taskTags(taskID int64) []model.Tag {
 	return tags
 }
 
-// batchTaskTags loads tags for multiple tasks in a single query.
 func (s *Store) batchTaskTags(taskIDs []int64) (map[int64][]model.Tag, error) {
 	if len(taskIDs) == 0 {
 		return nil, nil
 	}
-	// Build placeholder list: (?,?,?)
 	placeholders := make([]byte, 0, len(taskIDs)*2)
 	args := make([]any, len(taskIDs))
 	for i, id := range taskIDs {
@@ -583,6 +597,55 @@ func (s *Store) batchTaskTags(taskIDs []int64) (map[int64][]model.Tag, error) {
 	return result, rows.Err()
 }
 
+// taskCommentsTree returns comments as a tree (top-level + nested replies).
+func (s *Store) taskCommentsTree(taskID int64) []model.Comment {
+	rows, err := s.db.Query("SELECT id,task_id,parent_id,text,created_at,updated_at FROM comments WHERE task_id=? ORDER BY created_at", taskID)
+	if err != nil {
+		s.logf("taskCommentsTree(%d) error: %v", taskID, err)
+		return []model.Comment{}
+	}
+	defer rows.Close()
+	all := make([]model.Comment, 0)
+	for rows.Next() {
+		var c model.Comment
+		var pid sql.NullInt64
+		var ca, ua string
+		if err := rows.Scan(&c.ID, &c.TaskID, &pid, &c.Text, &ca, &ua); err != nil {
+			s.logf("taskCommentsTree scan error: %v", err)
+			continue
+		}
+		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
+		c.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+		if pid.Valid {
+			c.ParentID = &pid.Int64
+		}
+		c.Replies = []model.Comment{}
+		all = append(all, c)
+	}
+	// Build tree
+	byID := make(map[int64]*model.Comment)
+	for i := range all {
+		byID[all[i].ID] = &all[i]
+	}
+	roots := make([]model.Comment, 0)
+	for i := range all {
+		if all[i].ParentID != nil {
+			if parent, ok := byID[*all[i].ParentID]; ok {
+				parent.Replies = append(parent.Replies, all[i])
+				continue
+			}
+		}
+		roots = append(roots, all[i])
+	}
+	// Update replies in roots from byID
+	for i := range roots {
+		if p, ok := byID[roots[i].ID]; ok {
+			roots[i].Replies = p.Replies
+		}
+	}
+	return roots
+}
+
 // --- Images ---
 
 func (s *Store) SaveImage(data []byte, mime string) (int64, error) {
@@ -600,8 +663,24 @@ func (s *Store) GetImage(id int64) ([]byte, string, error) {
 	return data, mime, err
 }
 
+// --- Files ---
+
+func (s *Store) SaveFile(filename string, data []byte, mime string) (int64, error) {
+	r, err := s.db.Exec("INSERT INTO files(filename,data,mime,size) VALUES(?,?,?,?)", filename, data, mime, len(data))
+	if err != nil {
+		return 0, err
+	}
+	return r.LastInsertId()
+}
+
+func (s *Store) GetFile(id int64) ([]byte, string, string, error) {
+	var data []byte
+	var mime, filename string
+	err := s.db.QueryRow("SELECT data,mime,filename FROM files WHERE id=?", id).Scan(&data, &mime, &filename)
+	return data, mime, filename, err
+}
+
 // SearchTasks searches across tasks (title, description, todo), comments, epics, tags.
-// Uses SQLite LIKE for plain text, no regex on DB side to avoid injection.
 func (s *Store) SearchTasks(query string) ([]int64, error) {
 	like := "%" + query + "%"
 	rows, err := s.db.Query(`
@@ -629,23 +708,122 @@ func (s *Store) SearchTasks(query string) ([]int64, error) {
 	return ids, rows.Err()
 }
 
-func (s *Store) taskComments(taskID int64) []model.Comment {
-	rows, err := s.db.Query("SELECT id,task_id,text,created_at FROM comments WHERE task_id=? ORDER BY created_at", taskID)
+// --- Export / Import ---
+
+func (s *Store) ExportAll() (*model.ExportData, error) {
+	cols, err := s.ListColumns()
 	if err != nil {
-		s.logf("taskComments(%d) error: %v", taskID, err)
+		return nil, err
+	}
+	epics, err := s.ListEpics()
+	if err != nil {
+		return nil, err
+	}
+	tags, err := s.ListTags()
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := s.ListTasks()
+	if err != nil {
+		return nil, err
+	}
+	// Load full task data (comments, tags) for each task
+	for i := range tasks {
+		full, err := s.GetTask(tasks[i].ID)
+		if err == nil {
+			tasks[i] = *full
+		}
+	}
+	// Flatten all comments
+	var allComments []model.Comment
+	for _, t := range tasks {
+		allComments = append(allComments, s.flatComments(t.ID)...)
+	}
+	return &model.ExportData{
+		Columns:  cols,
+		Epics:    epics,
+		Tags:     tags,
+		Tasks:    tasks,
+		Comments: allComments,
+	}, nil
+}
+
+func (s *Store) flatComments(taskID int64) []model.Comment {
+	rows, err := s.db.Query("SELECT id,task_id,parent_id,text,created_at,updated_at FROM comments WHERE task_id=? ORDER BY created_at", taskID)
+	if err != nil {
 		return []model.Comment{}
 	}
 	defer rows.Close()
 	comments := make([]model.Comment, 0)
 	for rows.Next() {
 		var c model.Comment
-		var ca string
-		if err := rows.Scan(&c.ID, &c.TaskID, &c.Text, &ca); err != nil {
-			s.logf("taskComments scan error: %v", err)
+		var pid sql.NullInt64
+		var ca, ua string
+		if err := rows.Scan(&c.ID, &c.TaskID, &pid, &c.Text, &ca, &ua); err != nil {
 			continue
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
+		c.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+		if pid.Valid {
+			c.ParentID = &pid.Int64
+		}
 		comments = append(comments, c)
 	}
 	return comments
+}
+
+func (s *Store) ImportAll(data *model.ExportData) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Clear existing data
+	for _, tbl := range []string{"comments", "task_tags", "tasks", "tags", "epics", "columns"} {
+		if _, err := tx.Exec("DELETE FROM " + tbl); err != nil {
+			return fmt.Errorf("clear %s: %w", tbl, err)
+		}
+	}
+
+	// Import columns
+	for _, c := range data.Columns {
+		if _, err := tx.Exec("INSERT INTO columns(id,name,position) VALUES(?,?,?)", c.ID, c.Name, c.Position); err != nil {
+			return fmt.Errorf("import column: %w", err)
+		}
+	}
+	// Import epics
+	for _, e := range data.Epics {
+		if _, err := tx.Exec("INSERT INTO epics(id,name,color,description) VALUES(?,?,?,?)", e.ID, e.Name, e.Color, e.Description); err != nil {
+			return fmt.Errorf("import epic: %w", err)
+		}
+	}
+	// Import tags
+	for _, t := range data.Tags {
+		if _, err := tx.Exec("INSERT INTO tags(id,name,color) VALUES(?,?,?)", t.ID, t.Name, t.Color); err != nil {
+			return fmt.Errorf("import tag: %w", err)
+		}
+	}
+	// Import tasks
+	for _, t := range data.Tasks {
+		if _, err := tx.Exec(`INSERT INTO tasks(id,title,description,todo,project_url,column_id,epic_id,position,priority,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+			t.ID, t.Title, t.Description, t.Todo, t.ProjectURL, t.ColumnID, t.EpicID, t.Position, t.Priority,
+			t.CreatedAt.Format("2006-01-02 15:04:05"), t.UpdatedAt.Format("2006-01-02 15:04:05")); err != nil {
+			return fmt.Errorf("import task: %w", err)
+		}
+		for _, tag := range t.Tags {
+			tx.Exec("INSERT OR IGNORE INTO task_tags(task_id,tag_id) VALUES(?,?)", t.ID, tag.ID)
+		}
+	}
+	// Import comments
+	for _, c := range data.Comments {
+		if _, err := tx.Exec("INSERT INTO comments(id,task_id,parent_id,text,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+			c.ID, c.TaskID, c.ParentID, c.Text,
+			c.CreatedAt.Format("2006-01-02 15:04:05"), c.UpdatedAt.Format("2006-01-02 15:04:05")); err != nil {
+			return fmt.Errorf("import comment: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
