@@ -512,14 +512,15 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 		jsonResp(w, tasks)
 	case http.MethodPost:
 		var req struct {
-			Title       string  `json:"title"`
-			Description string  `json:"description"`
-			Todo        string  `json:"todo"`
-			ProjectURL  string  `json:"project_url"`
-			ColumnID    int64   `json:"column_id"`
-			EpicID      *int64  `json:"epic_id"`
-			Priority    int     `json:"priority"`
-			TagIDs      []int64 `json:"tag_ids"`
+			Title        string  `json:"title"`
+			Description  string  `json:"description"`
+			Todo         string  `json:"todo"`
+			ProjectURL   string  `json:"project_url"`
+			ColumnID     int64   `json:"column_id"`
+			EpicID       *int64  `json:"epic_id"`
+			Priority     int     `json:"priority"`
+			TagIDs       []int64 `json:"tag_ids"`
+			DependsOnIDs []int64 `json:"depends_on_ids"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", 400)
@@ -534,6 +535,9 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			h.logf("create task: %v", err)
 			http.Error(w, err.Error(), 500)
 			return
+		}
+		if len(req.DependsOnIDs) > 0 {
+			h.store.SetTaskDependencies(id, req.DependsOnIDs)
 		}
 		task, err := h.store.GetTask(id)
 		if err != nil {
@@ -562,14 +566,15 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 		jsonResp(w, task)
 	case http.MethodPut:
 		var req struct {
-			Title       string  `json:"title"`
-			Description string  `json:"description"`
-			Todo        string  `json:"todo"`
-			ProjectURL  string  `json:"project_url"`
-			ColumnID    int64   `json:"column_id"`
-			EpicID      *int64  `json:"epic_id"`
-			Priority    int     `json:"priority"`
-			TagIDs      []int64 `json:"tag_ids"`
+			Title        string  `json:"title"`
+			Description  string  `json:"description"`
+			Todo         string  `json:"todo"`
+			ProjectURL   string  `json:"project_url"`
+			ColumnID     int64   `json:"column_id"`
+			EpicID       *int64  `json:"epic_id"`
+			Priority     int     `json:"priority"`
+			TagIDs       []int64 `json:"tag_ids"`
+			DependsOnIDs []int64 `json:"depends_on_ids"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", 400)
@@ -580,6 +585,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+		h.store.SetTaskDependencies(id, req.DependsOnIDs)
 		task, err := h.store.GetTask(id)
 		if err != nil {
 			http.Error(w, "updated but failed to fetch", 500)

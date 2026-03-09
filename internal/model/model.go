@@ -21,6 +21,12 @@ type Tag struct {
 	Color string `json:"color"`
 }
 
+type TaskDep struct {
+	ID       int64  `json:"id"`
+	Title    string `json:"title"`
+	ColumnID int64  `json:"column_id"`
+}
+
 type Task struct {
 	ID          int64     `json:"id"`
 	Title       string    `json:"title"`
@@ -36,6 +42,8 @@ type Task struct {
 	Tags        []Tag     `json:"tags"`
 	Epic        *Epic     `json:"epic,omitempty"`
 	Comments    []Comment `json:"comments,omitempty"`
+	DependsOn   []TaskDep `json:"depends_on,omitempty"`
+	Dependents  []TaskDep `json:"dependents,omitempty"`
 }
 
 type Comment struct {

@@ -91,6 +91,11 @@ func (s *Store) migrate() error {
 			size INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
+		`CREATE TABLE IF NOT EXISTS task_dependencies (
+			task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			PRIMARY KEY (task_id, depends_on_id)
+		)`,
 		// indexes for FK lookups
 		`CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_comments_task_id ON comments(task_id)`,
@@ -112,7 +117,7 @@ func (s *Store) migrate() error {
 		"ALTER TABLE tasks ADD COLUMN project_url TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE epics ADD COLUMN description TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id)",
-		"ALTER TABLE comments ADD COLUMN updated_at DATETIME NOT NULL DEFAULT (datetime('now'))",
+		"ALTER TABLE comments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
 	}
 	for _, q := range alters {
 		s.db.Exec(q) // ignore "duplicate column" errors
@@ -450,6 +455,8 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 	}
 	t.Tags = s.taskTags(t.ID)
 	t.Comments = s.taskCommentsTree(t.ID)
+	t.DependsOn = s.TaskDependencies(t.ID)
+	t.Dependents = s.TaskDependents(t.ID)
 	return &t, nil
 }
 
@@ -599,7 +606,7 @@ func (s *Store) batchTaskTags(taskIDs []int64) (map[int64][]model.Tag, error) {
 
 // taskCommentsTree returns comments as a tree (top-level + nested replies).
 func (s *Store) taskCommentsTree(taskID int64) []model.Comment {
-	rows, err := s.db.Query("SELECT id,task_id,parent_id,text,created_at,updated_at FROM comments WHERE task_id=? ORDER BY created_at", taskID)
+	rows, err := s.db.Query("SELECT id,task_id,COALESCE(parent_id,0),text,created_at,COALESCE(updated_at,created_at) FROM comments WHERE task_id=? ORDER BY created_at", taskID)
 	if err != nil {
 		s.logf("taskCommentsTree(%d) error: %v", taskID, err)
 		return []model.Comment{}
@@ -608,7 +615,7 @@ func (s *Store) taskCommentsTree(taskID int64) []model.Comment {
 	all := make([]model.Comment, 0)
 	for rows.Next() {
 		var c model.Comment
-		var pid sql.NullInt64
+		var pid int64
 		var ca, ua string
 		if err := rows.Scan(&c.ID, &c.TaskID, &pid, &c.Text, &ca, &ua); err != nil {
 			s.logf("taskCommentsTree scan error: %v", err)
@@ -616,8 +623,8 @@ func (s *Store) taskCommentsTree(taskID int64) []model.Comment {
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
 		c.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
-		if pid.Valid {
-			c.ParentID = &pid.Int64
+		if pid != 0 {
+			c.ParentID = &pid
 		}
 		c.Replies = []model.Comment{}
 		all = append(all, c)
@@ -749,7 +756,7 @@ func (s *Store) ExportAll() (*model.ExportData, error) {
 }
 
 func (s *Store) flatComments(taskID int64) []model.Comment {
-	rows, err := s.db.Query("SELECT id,task_id,parent_id,text,created_at,updated_at FROM comments WHERE task_id=? ORDER BY created_at", taskID)
+	rows, err := s.db.Query("SELECT id,task_id,COALESCE(parent_id,0),text,created_at,COALESCE(updated_at,created_at) FROM comments WHERE task_id=? ORDER BY created_at", taskID)
 	if err != nil {
 		return []model.Comment{}
 	}
@@ -757,19 +764,77 @@ func (s *Store) flatComments(taskID int64) []model.Comment {
 	comments := make([]model.Comment, 0)
 	for rows.Next() {
 		var c model.Comment
-		var pid sql.NullInt64
+		var pid int64
 		var ca, ua string
 		if err := rows.Scan(&c.ID, &c.TaskID, &pid, &c.Text, &ca, &ua); err != nil {
 			continue
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
 		c.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
-		if pid.Valid {
-			c.ParentID = &pid.Int64
+		if pid != 0 {
+			c.ParentID = &pid
 		}
 		comments = append(comments, c)
 	}
 	return comments
+}
+
+// --- Task Dependencies ---
+
+func (s *Store) SetTaskDependencies(taskID int64, dependsOnIDs []int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("DELETE FROM task_dependencies WHERE task_id=?", taskID); err != nil {
+		return err
+	}
+	for _, depID := range dependsOnIDs {
+		if depID == taskID {
+			continue // no self-dependency
+		}
+		if _, err := tx.Exec("INSERT OR IGNORE INTO task_dependencies(task_id,depends_on_id) VALUES(?,?)", taskID, depID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) TaskDependencies(taskID int64) []model.TaskDep {
+	rows, err := s.db.Query(`SELECT t.id, t.title, t.column_id FROM tasks t
+		JOIN task_dependencies td ON td.depends_on_id = t.id WHERE td.task_id=?`, taskID)
+	if err != nil {
+		return []model.TaskDep{}
+	}
+	defer rows.Close()
+	deps := make([]model.TaskDep, 0)
+	for rows.Next() {
+		var d model.TaskDep
+		if err := rows.Scan(&d.ID, &d.Title, &d.ColumnID); err != nil {
+			continue
+		}
+		deps = append(deps, d)
+	}
+	return deps
+}
+
+func (s *Store) TaskDependents(taskID int64) []model.TaskDep {
+	rows, err := s.db.Query(`SELECT t.id, t.title, t.column_id FROM tasks t
+		JOIN task_dependencies td ON td.task_id = t.id WHERE td.depends_on_id=?`, taskID)
+	if err != nil {
+		return []model.TaskDep{}
+	}
+	defer rows.Close()
+	deps := make([]model.TaskDep, 0)
+	for rows.Next() {
+		var d model.TaskDep
+		if err := rows.Scan(&d.ID, &d.Title, &d.ColumnID); err != nil {
+			continue
+		}
+		deps = append(deps, d)
+	}
+	return deps
 }
 
 func (s *Store) ImportAll(data *model.ExportData) error {

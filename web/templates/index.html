@@ -430,6 +430,14 @@ function contrastColor(hex) {
 function initMarked() {
   if (typeof marked === 'undefined') return;
   marked.setOptions({ breaks: true, gfm: true });
+  // Custom renderer for spoiler via :::spoiler syntax
+  const renderer = new marked.Renderer();
+  const origParagraph = renderer.paragraph.bind(renderer);
+  renderer.paragraph = function(text) {
+    // Handle :::spoiler Title / ::: blocks converted to <details>
+    return origParagraph(text);
+  };
+  marked.use({ renderer });
 }
 initMarked();
 
@@ -437,7 +445,17 @@ function renderMd(text) {
   if (!text) return '';
   if (typeof marked === 'undefined') return esc(text);
   try {
-    let html = marked.parse(text);
+    // Pre-process: extract <details> blocks, render their inner content as markdown
+    let processed = text.replace(/<details><summary>(.*?)<\/summary>\n?([\s\S]*?)\n?<\/details>/g,
+      function(_, summary, body) {
+        const innerHtml = marked.parse(body.trim());
+        return `<details><summary>${summary}</summary>\n${innerHtml}</details>`;
+      });
+    let html = marked.parse(processed);
+    // Fix double-wrapped details that marked may wrap in <p>
+    html = html.replace(/<p>\s*<details>/g, '<details>').replace(/<\/details>\s*<\/p>/g, '</details>');
+    // Auto-prefix bare domain links that marked created without protocol
+    html = html.replace(/<a\s+href="(?!https?:\/\/|\/|#|mailto:)([^"]+\.[^"]+)"/g, '<a href="https://$1"');
     // External links open in new tab
     html = html.replace(/<a\s+href="(https?:\/\/[^"]+)"/g, '<a href="$1" target="_blank" rel="noopener"');
     return html;
@@ -741,6 +759,25 @@ async function renderTaskPage(taskId) {
       ${projectLinkHtml}
     </div>
 
+    ${(t.depends_on && t.depends_on.length) ? `<div class="task-page-sidebar-info">
+      <div class="task-info-item" style="width:100%"><label>Зависит от</label><div class="value" style="display:flex;flex-direction:column;gap:4px">
+        ${t.depends_on.map(d => {
+          const dc = state.columns.find(c => c.id === d.column_id);
+          return `<a href="/task/${d.id}" onclick="event.preventDefault();navigateTo('/task/${d.id}')" style="display:flex;align-items:center;gap:8px">
+            <span class="card-id">#${d.id}</span> ${esc(d.title)} <span class="epic-task-status" style="font-size:.7rem">${esc(dc?.name||'')}</span></a>`;
+        }).join('')}
+      </div></div>
+    </div>` : ''}
+    ${(t.dependents && t.dependents.length) ? `<div class="task-page-sidebar-info">
+      <div class="task-info-item" style="width:100%"><label>Блокирует</label><div class="value" style="display:flex;flex-direction:column;gap:4px">
+        ${t.dependents.map(d => {
+          const dc = state.columns.find(c => c.id === d.column_id);
+          return `<a href="/task/${d.id}" onclick="event.preventDefault();navigateTo('/task/${d.id}')" style="display:flex;align-items:center;gap:8px">
+            <span class="card-id">#${d.id}</span> ${esc(d.title)} <span class="epic-task-status" style="font-size:.7rem">${esc(dc?.name||'')}</span></a>`;
+        }).join('')}
+      </div></div>
+    </div>` : ''}
+
     <div class="task-dates">
       <span>Создана: ${fmtDate(t.created_at)}</span>
       <span>Обновлена: ${fmtDate(t.updated_at)}</span>
@@ -871,7 +908,28 @@ async function renderEpicPage(epicId) {
   const prioLabels = ['—','Низкий','Средний','Высокий','Критический'];
   const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
 
-  const taskRows = tasks.map(t => {
+  // Sort: get last column (done column) and current sort
+  const lastCol = state.columns.length ? state.columns[state.columns.length - 1] : null;
+  const epicSort = localStorage.getItem('kanban-epic-sort') || 'status';
+
+  // Separate active and completed tasks
+  const activeTasks = tasks.filter(t => !lastCol || t.column_id !== lastCol.id);
+  const completedTasks = tasks.filter(t => lastCol && t.column_id === lastCol.id);
+
+  // Sort active tasks
+  function sortEpicTasks(arr) {
+    return [...arr].sort((a, b) => {
+      if (epicSort === 'date') return new Date(b.created_at) - new Date(a.created_at);
+      // by status = by column position
+      const posA = state.columns.findIndex(c => c.id === a.column_id);
+      const posB = state.columns.findIndex(c => c.id === b.column_id);
+      return posA - posB;
+    });
+  }
+  const sortedActive = sortEpicTasks(activeTasks);
+  const sortedCompleted = sortEpicTasks(completedTasks);
+
+  function epicTaskRow(t) {
     const colName = colMap[t.column_id] || '?';
     const prioLabel = t.priority > 0 ? prioLabels[t.priority] : '';
     const prioColor = t.priority > 0 ? prioColors[t.priority] : '';
@@ -885,7 +943,10 @@ async function renderEpicPage(epicId) {
       ${tags}
       ${prioLabel ? `<span class="epic-task-prio" style="color:${prioColor}">${prioLabel}</span>` : ''}
     </div>`;
-  }).join('');
+  }
+
+  const activeRows = sortedActive.map(epicTaskRow).join('');
+  const completedRows = sortedCompleted.map(epicTaskRow).join('');
 
   app.innerHTML = `<div class="epic-page">
     <div class="epic-page-header">
@@ -894,6 +955,7 @@ async function renderEpicPage(epicId) {
       </h2>
       <div style="display:flex;gap:6px">
         <button class="btn btn-ghost btn-sm" onclick="navigateTo('/')">&#8592; Доска</button>
+        <button class="btn btn-primary btn-sm" onclick="openCreateTask(null,${epic.id})">+ Задача</button>
         <button class="btn btn-ghost btn-sm" onclick="openEditEpic(${epic.id})">Редактировать</button>
       </div>
     </div>
@@ -911,10 +973,20 @@ async function renderEpicPage(epicId) {
     </div>` : ''}
 
     <div class="task-page-section">
-      <h3>Задачи (${tasks.length})</h3>
-      <div class="epic-task-list">
-        ${taskRows || '<span style="color:var(--fg3);font-size:.85rem">Нет задач в этом эпике</span>'}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3>Задачи (${tasks.length})</h3>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm ${epicSort==='status'?'btn-primary':'btn-ghost'}" onclick="setEpicSort('status',${epic.id})">По статусу</button>
+          <button class="btn btn-sm ${epicSort==='date'?'btn-primary':'btn-ghost'}" onclick="setEpicSort('date',${epic.id})">По дате</button>
+        </div>
       </div>
+      <div class="epic-task-list">
+        ${activeRows || '<span style="color:var(--fg3);font-size:.85rem">Нет активных задач</span>'}
+      </div>
+      ${completedRows ? `<div style="margin-top:16px">
+        <h3 style="font-size:.85rem;color:var(--fg3);margin-bottom:8px">Выполненные (${sortedCompleted.length})</h3>
+        <div class="epic-task-list" style="opacity:.7">${completedRows}</div>
+      </div>` : ''}
     </div>
   </div>`;
 }
@@ -935,9 +1007,12 @@ async function openEditEpic(epicId) {
         <textarea id="m-epic-desc" rows="5">${esc(epic.description)}</textarea>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
-      <button class="btn btn-primary" onclick="submitUpdateEpic(${epic.id})">Сохранить</button>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-danger btn-sm" onclick="deleteEpicFromModal(${epic.id})">Удалить эпик</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+        <button class="btn btn-primary" onclick="submitUpdateEpic(${epic.id})">Сохранить</button>
+      </div>
     </div>`);
 }
 
@@ -980,7 +1055,7 @@ function renderSidebar() {
     return `<div class="entity-item" style="flex-wrap:wrap;cursor:pointer" onclick="navigateTo('/epic/${e.id}')">
       <span class="dot" style="background:${esc(e.color)}"></span>
       <span>${esc(e.name)}</span>
-      <button class="btn-icon" onclick="event.stopPropagation();deleteEpic(${e.id})">&#10005;</button>
+      <button class="btn-icon" onclick="event.stopPropagation();openEditEpic(${e.id})" title="Редактировать">&#9998;</button>
       ${p.total > 0 ? `<div class="epic-progress" style="width:100%">
         <div class="epic-progress-text">${p.done}/${p.total} задач (${p.pct}%)</div>
         <div class="epic-progress-bar"><div class="epic-progress-fill" style="width:${p.pct}%;background:${esc(e.color)}"></div></div>
@@ -1111,13 +1186,14 @@ function showModal(html) {
 }
 function closeModal() { document.querySelector('.modal-overlay')?.remove(); }
 
-function openCreateTask(colId) {
-  const epicOpts = state.epics.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+function openCreateTask(colId, preselectedEpicId) {
+  const epicOpts = state.epics.map(e => `<option value="${e.id}" ${preselectedEpicId===e.id?'selected':''}>${esc(e.name)}</option>`).join('');
   const tagChips = state.tags.map(t => {
     const tc = contrastColor(t.color);
     return `<span class="chip" data-id="${t.id}" style="background:${esc(t.color)};color:${tc}" onclick="this.classList.toggle('selected')">${esc(t.name)}</span>`;
   }).join('');
-  const colOpts = state.columns.map(c => `<option value="${c.id}" ${c.id===colId?'selected':''}>${esc(c.name)}</option>`).join('');
+  const defaultCol = colId || (state.columns.length ? state.columns[0].id : 0);
+  const colOpts = state.columns.map(c => `<option value="${c.id}" ${c.id===defaultCol?'selected':''}>${esc(c.name)}</option>`).join('');
   showModal(`
     <div class="modal-header"><h2>Новая задача</h2><button class="btn-icon" onclick="closeModal()">&#10005;</button></div>
     <div class="modal-body">
@@ -1154,7 +1230,7 @@ async function submitCreateTask() {
   await api('/api/tasks', 'POST', {
     title, description: document.getElementById('m-desc').value,
     todo: '',
-    project_url: document.getElementById('m-url').value.trim(),
+    project_url: autoPrefix(document.getElementById('m-url').value.trim()),
     column_id: Number(document.getElementById('m-col').value),
     priority: Number(document.getElementById('m-prio').value),
     epic_id: epicVal ? Number(epicVal) : null, tag_ids: tagIds
@@ -1201,6 +1277,10 @@ async function openEditTask(taskId) {
       </div>
       <div class="field"><label>Эпик</label><select id="m-epic"><option value="">—</option>${epicOpts}</select></div>
       <div class="field"><label>Теги</label><div class="checkbox-group" id="m-tags">${tagChips}</div></div>
+      <div class="field"><label>Зависит от</label><div class="checkbox-group" id="m-deps">${state.tasks.filter(x=>x.id!==t.id).map(x=>{
+        const sel=(t.depends_on||[]).some(d=>d.id===x.id)?'selected':'';
+        return `<span class="chip ${sel}" data-id="${x.id}" style="background:var(--bg4);color:var(--fg)" onclick="this.classList.toggle('selected')">#${x.id} ${esc(x.title)}</span>`;
+      }).join('')}</div></div>
     </div>
     <div class="modal-footer" style="justify-content:space-between">
       <button class="btn btn-danger btn-sm" onclick="deleteTaskFromModal(${t.id})">Удалить задачу</button>
@@ -1213,6 +1293,7 @@ async function openEditTask(taskId) {
 
 async function submitUpdateTask(id) {
   const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
+  const depIds = [...document.querySelectorAll('#m-deps .chip.selected')].map(c => Number(c.dataset.id));
   const epicVal = document.getElementById('m-epic').value;
   // Preserve existing todo (edit only changes desc, not todo)
   const existing = await api(`/api/tasks/${id}`);
@@ -1220,10 +1301,11 @@ async function submitUpdateTask(id) {
     title: document.getElementById('m-title').value.trim(),
     description: document.getElementById('m-desc').value,
     todo: existing.todo || '',
-    project_url: document.getElementById('m-url').value.trim(),
+    project_url: autoPrefix(document.getElementById('m-url').value.trim()),
     column_id: Number(document.getElementById('m-col').value),
     priority: Number(document.getElementById('m-prio').value),
-    epic_id: epicVal ? Number(epicVal) : null, tag_ids: tagIds
+    epic_id: epicVal ? Number(epicVal) : null, tag_ids: tagIds,
+    depends_on_ids: depIds
   });
   closeModal();
   await loadBoard();
@@ -1256,7 +1338,26 @@ async function addEpic() {
   document.getElementById('epic-name').value = '';
   await loadBoard();
 }
-async function deleteEpic(id) { await api(`/api/epics/${id}`, 'DELETE'); await loadBoard(); }
+async function deleteEpic(id) {
+  const epic = state.epics.find(e => e.id === id);
+  const epicTasks = state.tasks.filter(t => t.epic_id === id);
+  if (!confirm(`Удалить эпик "${epic?.name}"? ${epicTasks.length > 0 ? epicTasks.length + ' задач будут отвязаны.' : ''}`)) return;
+  await api(`/api/epics/${id}`, 'DELETE');
+  await loadBoard();
+}
+async function deleteEpicFromModal(id) {
+  const epic = state.epics.find(e => e.id === id);
+  const epicTasks = state.tasks.filter(t => t.epic_id === id);
+  if (!confirm(`Удалить эпик "${epic?.name}"? ${epicTasks.length > 0 ? epicTasks.length + ' задач будут отвязаны.' : ''}`)) return;
+  await api(`/api/epics/${id}`, 'DELETE');
+  closeModal();
+  navigateTo('/');
+  await loadBoard();
+}
+function setEpicSort(sort, epicId) {
+  localStorage.setItem('kanban-epic-sort', sort);
+  renderEpicPage(epicId);
+}
 async function addTag() {
   const name = document.getElementById('tag-name').value.trim();
   if (!name) return;
@@ -1265,7 +1366,12 @@ async function addTag() {
   document.getElementById('tag-name').value = '';
   await loadBoard();
 }
-async function deleteTag(id) { await api(`/api/tags/${id}`, 'DELETE'); await loadBoard(); }
+async function deleteTag(id) {
+  const tag = state.tags.find(t => t.id === id);
+  if (!confirm(`Удалить тег "${tag?.name}"?`)) return;
+  await api(`/api/tags/${id}`, 'DELETE');
+  await loadBoard();
+}
 
 function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
 
@@ -1299,6 +1405,15 @@ document.addEventListener('click', e => {
 });
 
 // --- Helpers ---
+function autoPrefix(url) {
+  if (!url) return url;
+  url = url.trim();
+  if (url && !/^https?:\/\//i.test(url) && /^[a-zA-Z0-9]/.test(url) && url.includes('.')) {
+    return 'https://' + url;
+  }
+  return url;
+}
+
 function esc(s) {
   if (!s) return '';
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
