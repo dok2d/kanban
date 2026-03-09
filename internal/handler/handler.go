@@ -11,6 +11,15 @@ import (
 	"strings"
 )
 
+// allowed MIME types for image uploads
+var allowedImageMIME = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/gif":  true,
+	"image/webp": true,
+	"image/svg+xml": false, // SVG can contain scripts
+}
+
 type Handler struct {
 	store   *db.Store
 	mux     *http.ServeMux
@@ -77,10 +86,30 @@ func (h *Handler) handleBoard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	cols, _ := h.store.ListColumns()
-	tasks, _ := h.store.ListTasks()
-	epics, _ := h.store.ListEpics()
-	tags, _ := h.store.ListTags()
+	cols, err := h.store.ListColumns()
+	if err != nil {
+		h.logf("handleBoard ListColumns error: %v", err)
+		http.Error(w, "internal error", 500)
+		return
+	}
+	tasks, err := h.store.ListTasks()
+	if err != nil {
+		h.logf("handleBoard ListTasks error: %v", err)
+		http.Error(w, "internal error", 500)
+		return
+	}
+	epics, err := h.store.ListEpics()
+	if err != nil {
+		h.logf("handleBoard ListEpics error: %v", err)
+		http.Error(w, "internal error", 500)
+		return
+	}
+	tags, err := h.store.ListTags()
+	if err != nil {
+		h.logf("handleBoard ListTags error: %v", err)
+		http.Error(w, "internal error", 500)
+		return
+	}
 	jsonResp(w, map[string]any{"columns": cols, "tasks": tasks, "epics": epics, "tags": tags})
 }
 
@@ -88,7 +117,11 @@ func (h *Handler) handleBoard(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleColumns(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		cols, _ := h.store.ListColumns()
+		cols, err := h.store.ListColumns()
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
 		jsonResp(w, cols)
 	case http.MethodPost:
 		var req struct{ Name string }
@@ -116,11 +149,21 @@ func (h *Handler) handleColumn(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPut:
 		var req struct{ Name string }
-		json.NewDecoder(r.Body).Decode(&req)
-		h.store.UpdateColumn(id, req.Name)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if err := h.store.UpdateColumn(id, req.Name); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
-		h.store.DeleteColumn(id)
+		if err := h.store.DeleteColumn(id); err != nil {
+			h.logf("DeleteColumn(%d) failed: %v", id, err)
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -135,7 +178,10 @@ func (h *Handler) handleColumnsReorder(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IDs []int64 `json:"ids"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
 	h.logf("ReorderColumns: ids=%v", req.IDs)
 	if len(req.IDs) == 0 {
 		http.Error(w, "ids required", 400)
@@ -155,17 +201,28 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
+	// limit request body to 8MB (base64 overhead for 5MB image)
+	r.Body = http.MaxBytesReader(w, r.Body, 8*1024*1024)
+
 	var req struct {
 		Data string `json:"data"` // base64
 		Mime string `json:"mime"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request or body too large", 400)
+		return
+	}
 	if req.Data == "" {
 		http.Error(w, "data required", 400)
 		return
 	}
+	// validate MIME type — whitelist only safe image types
 	if req.Mime == "" {
 		req.Mime = "image/png"
+	}
+	if !allowedImageMIME[req.Mime] {
+		http.Error(w, "unsupported image type", 400)
+		return
 	}
 	raw, err := base64.StdEncoding.DecodeString(req.Data)
 	if err != nil {
@@ -210,14 +267,21 @@ func (h *Handler) handleImageServe(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleEpics(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		epics, _ := h.store.ListEpics()
+		epics, err := h.store.ListEpics()
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
 		jsonResp(w, epics)
 	case http.MethodPost:
 		var req struct {
 			Name  string
 			Color string
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
 		if req.Name == "" {
 			http.Error(w, "name required", 400)
 			return
@@ -225,7 +289,11 @@ func (h *Handler) handleEpics(w http.ResponseWriter, r *http.Request) {
 		if req.Color == "" {
 			req.Color = "#6366f1"
 		}
-		id, _ := h.store.CreateEpic(req.Name, req.Color)
+		id, err := h.store.CreateEpic(req.Name, req.Color)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		jsonResp(w, map[string]int64{"id": id})
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -234,17 +302,30 @@ func (h *Handler) handleEpics(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleEpic(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, "/api/epics/")
+	if id == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
 	switch r.Method {
 	case http.MethodPut:
 		var req struct {
 			Name  string
 			Color string
 		}
-		json.NewDecoder(r.Body).Decode(&req)
-		h.store.UpdateEpic(id, req.Name, req.Color)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if err := h.store.UpdateEpic(id, req.Name, req.Color); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
-		h.store.DeleteEpic(id)
+		if err := h.store.DeleteEpic(id); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -255,14 +336,21 @@ func (h *Handler) handleEpic(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleTags(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		tags, _ := h.store.ListTags()
+		tags, err := h.store.ListTags()
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
 		jsonResp(w, tags)
 	case http.MethodPost:
 		var req struct {
 			Name  string
 			Color string
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
 		if req.Name == "" {
 			http.Error(w, "name required", 400)
 			return
@@ -283,8 +371,15 @@ func (h *Handler) handleTags(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleTag(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, "/api/tags/")
+	if id == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
 	if r.Method == http.MethodDelete {
-		h.store.DeleteTag(id)
+		if err := h.store.DeleteTag(id); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 		return
 	}
@@ -295,7 +390,11 @@ func (h *Handler) handleTag(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		tasks, _ := h.store.ListTasks()
+		tasks, err := h.store.ListTasks()
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
 		jsonResp(w, tasks)
 	case http.MethodPost:
 		var req struct {
@@ -306,18 +405,25 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			Priority    int     `json:"priority"`
 			TagIDs      []int64 `json:"tag_ids"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
 		if req.Title == "" || req.ColumnID == 0 {
 			http.Error(w, "title and column_id required", 400)
 			return
 		}
 		id, err := h.store.CreateTask(req.Title, req.Description, req.ColumnID, req.EpicID, req.Priority, req.TagIDs)
 		if err != nil {
-			log.Printf("create task: %v", err)
+			h.logf("create task: %v", err)
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		task, _ := h.store.GetTask(id)
+		task, err := h.store.GetTask(id)
+		if err != nil {
+			http.Error(w, "created but failed to fetch", 500)
+			return
+		}
 		jsonResp(w, task)
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -347,12 +453,26 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			Priority    int     `json:"priority"`
 			TagIDs      []int64 `json:"tag_ids"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
-		h.store.UpdateTask(id, req.Title, req.Description, req.ColumnID, req.EpicID, req.Priority, req.TagIDs)
-		task, _ := h.store.GetTask(id)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if err := h.store.UpdateTask(id, req.Title, req.Description, req.ColumnID, req.EpicID, req.Priority, req.TagIDs); err != nil {
+			h.logf("UpdateTask(%d) error: %v", id, err)
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		task, err := h.store.GetTask(id)
+		if err != nil {
+			http.Error(w, "updated but failed to fetch", 500)
+			return
+		}
 		jsonResp(w, task)
 	case http.MethodDelete:
-		h.store.DeleteTask(id)
+		if err := h.store.DeleteTask(id); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -369,8 +489,18 @@ func (h *Handler) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 		ColumnID int64 `json:"column_id"`
 		Position int   `json:"position"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
-	h.store.MoveTask(req.TaskID, req.ColumnID, req.Position)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if req.TaskID == 0 || req.ColumnID == 0 {
+		http.Error(w, "task_id and column_id required", 400)
+		return
+	}
+	if err := h.store.MoveTask(req.TaskID, req.ColumnID, req.Position); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 	jsonResp(w, map[string]string{"status": "ok"})
 }
 
@@ -384,19 +514,33 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 		TaskID int64  `json:"task_id"`
 		Text   string `json:"text"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
 	if req.TaskID == 0 || req.Text == "" {
 		http.Error(w, "task_id and text required", 400)
 		return
 	}
-	id, _ := h.store.AddComment(req.TaskID, req.Text)
+	id, err := h.store.AddComment(req.TaskID, req.Text)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 	jsonResp(w, map[string]int64{"id": id})
 }
 
 func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, "/api/comments/")
+	if id == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
 	if r.Method == http.MethodDelete {
-		h.store.DeleteComment(id)
+		if err := h.store.DeleteComment(id); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 		return
 	}

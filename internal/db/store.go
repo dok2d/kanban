@@ -83,18 +83,30 @@ func (s *Store) migrate() error {
 			mime TEXT NOT NULL DEFAULT 'image/png',
 			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
+		// indexes for FK lookups
+		`CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_comments_task_id ON comments(task_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
-			return fmt.Errorf("exec %q: %w", q[:40], err)
+			label := q
+			if len(label) > 60 {
+				label = label[:60]
+			}
+			return fmt.Errorf("exec %q: %w", label, err)
 		}
 	}
 	// seed default columns if empty
 	var cnt int
-	s.db.QueryRow("SELECT COUNT(*) FROM columns").Scan(&cnt)
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM columns").Scan(&cnt); err != nil {
+		return fmt.Errorf("count columns: %w", err)
+	}
 	if cnt == 0 {
 		for i, name := range []string{"Backlog", "To Do", "In Progress", "Review", "Done"} {
-			s.db.Exec("INSERT INTO columns(name,position) VALUES(?,?)", name, i)
+			if _, err := s.db.Exec("INSERT INTO columns(name,position) VALUES(?,?)", name, i); err != nil {
+				return fmt.Errorf("seed column %q: %w", name, err)
+			}
 		}
 	}
 	return nil
@@ -109,26 +121,34 @@ func (s *Store) ListColumns() ([]model.Column, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var cols []model.Column
+	cols := make([]model.Column, 0)
 	for rows.Next() {
 		var c model.Column
-		rows.Scan(&c.ID, &c.Name, &c.Position)
+		if err := rows.Scan(&c.ID, &c.Name, &c.Position); err != nil {
+			s.logf("ListColumns scan error: %v", err)
+			return nil, fmt.Errorf("scan column: %w", err)
+		}
 		cols = append(cols, c)
+	}
+	if err := rows.Err(); err != nil {
+		s.logf("ListColumns rows error: %v", err)
+		return nil, err
 	}
 	s.logf("ListColumns: returned %d columns", len(cols))
 	return cols, nil
 }
 
 func (s *Store) CreateColumn(name string) (int64, error) {
-	var maxPos int
-	s.db.QueryRow("SELECT COALESCE(MAX(position),0) FROM columns").Scan(&maxPos)
-	r, err := s.db.Exec("INSERT INTO columns(name,position) VALUES(?,?)", name, maxPos+1)
+	r, err := s.db.Exec(
+		"INSERT INTO columns(name,position) VALUES(?, (SELECT COALESCE(MAX(position),0)+1 FROM columns))",
+		name,
+	)
 	if err != nil {
 		s.logf("CreateColumn(%q) error: %v", name, err)
 		return 0, err
 	}
 	id, _ := r.LastInsertId()
-	s.logf("CreateColumn(%q) -> id=%d pos=%d", name, id, maxPos+1)
+	s.logf("CreateColumn(%q) -> id=%d", name, id)
 	return id, nil
 }
 
@@ -140,11 +160,16 @@ func (s *Store) UpdateColumn(id int64, name string) error {
 
 func (s *Store) DeleteColumn(id int64) error {
 	s.logf("DeleteColumn(id=%d)", id)
-	_, err := s.db.Exec("DELETE FROM columns WHERE id=?", id)
+	res, err := s.db.Exec("DELETE FROM columns WHERE id=?", id)
 	if err != nil {
 		s.logf("DeleteColumn(id=%d) error: %v", id, err)
+		return err
 	}
-	return err
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("column %d not found", id)
+	}
+	return nil
 }
 
 func (s *Store) ReorderColumns(ids []int64) error {
@@ -153,9 +178,24 @@ func (s *Store) ReorderColumns(ids []int64) error {
 		return err
 	}
 	defer tx.Rollback()
+
+	// verify all IDs exist and count matches
+	var cnt int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM columns").Scan(&cnt); err != nil {
+		return err
+	}
+	if cnt != len(ids) {
+		return fmt.Errorf("expected %d column IDs, got %d", cnt, len(ids))
+	}
+
 	for i, id := range ids {
-		if _, err := tx.Exec("UPDATE columns SET position=? WHERE id=?", i, id); err != nil {
+		res, err := tx.Exec("UPDATE columns SET position=? WHERE id=?", i, id)
+		if err != nil {
 			return err
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			return fmt.Errorf("column %d not found", id)
 		}
 	}
 	return tx.Commit()
@@ -169,11 +209,16 @@ func (s *Store) ListEpics() ([]model.Epic, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var epics []model.Epic
+	epics := make([]model.Epic, 0)
 	for rows.Next() {
 		var e model.Epic
-		rows.Scan(&e.ID, &e.Name, &e.Color)
+		if err := rows.Scan(&e.ID, &e.Name, &e.Color); err != nil {
+			return nil, fmt.Errorf("scan epic: %w", err)
+		}
 		epics = append(epics, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return epics, nil
 }
@@ -192,9 +237,18 @@ func (s *Store) UpdateEpic(id int64, name, color string) error {
 }
 
 func (s *Store) DeleteEpic(id int64) error {
-	s.db.Exec("UPDATE tasks SET epic_id=NULL WHERE epic_id=?", id)
-	_, err := s.db.Exec("DELETE FROM epics WHERE id=?", id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("UPDATE tasks SET epic_id=NULL WHERE epic_id=?", id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM epics WHERE id=?", id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // --- Tags ---
@@ -205,11 +259,16 @@ func (s *Store) ListTags() ([]model.Tag, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var tags []model.Tag
+	tags := make([]model.Tag, 0)
 	for rows.Next() {
 		var t model.Tag
-		rows.Scan(&t.ID, &t.Name, &t.Color)
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
+			return nil, fmt.Errorf("scan tag: %w", err)
+		}
 		tags = append(tags, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return tags, nil
 }
@@ -223,9 +282,18 @@ func (s *Store) CreateTag(name, color string) (int64, error) {
 }
 
 func (s *Store) DeleteTag(id int64) error {
-	s.db.Exec("DELETE FROM task_tags WHERE tag_id=?", id)
-	_, err := s.db.Exec("DELETE FROM tags WHERE id=?", id)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("DELETE FROM task_tags WHERE tag_id=?", id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM tags WHERE id=?", id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // --- Tasks ---
@@ -242,24 +310,48 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var tasks []model.Task
+
+	tasks := make([]model.Task, 0)
+	var taskIDs []int64
 	for rows.Next() {
 		var t model.Task
-		var epicID, epicName, epicColor sql.NullString
 		var eid sql.NullInt64
+		var epicName, epicColor sql.NullString
 		var ca, ua string
-		rows.Scan(&t.ID, &t.Title, &t.Description, &t.ColumnID, &eid,
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ColumnID, &eid,
 			&t.Position, &t.Priority, &ca, &ua,
-			&epicID, &epicName, &epicColor)
+			&eid, &epicName, &epicColor); err != nil {
+			return nil, fmt.Errorf("scan task: %w", err)
+		}
 		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
 		t.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
 		if eid.Valid {
 			t.EpicID = &eid.Int64
 			t.Epic = &model.Epic{ID: eid.Int64, Name: epicName.String, Color: epicColor.String}
 		}
-		t.Tags = s.taskTags(t.ID)
+		t.Tags = []model.Tag{} // default empty, filled below in batch
 		tasks = append(tasks, t)
+		taskIDs = append(taskIDs, t.ID)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// batch-load tags for all tasks (avoid N+1)
+	if len(taskIDs) > 0 {
+		tagMap, err := s.batchTaskTags(taskIDs)
+		if err != nil {
+			s.logf("batchTaskTags error: %v", err)
+			// non-fatal: tasks still usable without tags
+		} else {
+			for i := range tasks {
+				if tags, ok := tagMap[tasks[i].ID]; ok {
+					tasks[i].Tags = tags
+				}
+			}
+		}
+	}
+
 	return tasks, nil
 }
 
@@ -278,8 +370,9 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 	if eid.Valid {
 		t.EpicID = &eid.Int64
 		var e model.Epic
-		s.db.QueryRow("SELECT id,name,color FROM epics WHERE id=?", eid.Int64).Scan(&e.ID, &e.Name, &e.Color)
-		t.Epic = &e
+		if err := s.db.QueryRow("SELECT id,name,color FROM epics WHERE id=?", eid.Int64).Scan(&e.ID, &e.Name, &e.Color); err == nil {
+			t.Epic = &e
+		}
 	}
 	t.Tags = s.taskTags(t.ID)
 	t.Comments = s.taskComments(t.ID)
@@ -288,9 +381,15 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 
 func (s *Store) CreateTask(title, desc string, colID int64, epicID *int64, priority int, tagIDs []int64) (int64, error) {
 	s.logf("CreateTask(%q, col=%d, prio=%d, tags=%v)", title, colID, priority, tagIDs)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
 	var maxPos int
-	s.db.QueryRow("SELECT COALESCE(MAX(position),0) FROM tasks WHERE column_id=?", colID).Scan(&maxPos)
-	r, err := s.db.Exec(`INSERT INTO tasks(title,description,column_id,epic_id,position,priority)
+	tx.QueryRow("SELECT COALESCE(MAX(position),0) FROM tasks WHERE column_id=?", colID).Scan(&maxPos)
+	r, err := tx.Exec(`INSERT INTO tasks(title,description,column_id,epic_id,position,priority)
 		VALUES(?,?,?,?,?,?)`, title, desc, colID, epicID, maxPos+1, priority)
 	if err != nil {
 		s.logf("CreateTask error: %v", err)
@@ -298,23 +397,38 @@ func (s *Store) CreateTask(title, desc string, colID int64, epicID *int64, prior
 	}
 	id, _ := r.LastInsertId()
 	for _, tid := range tagIDs {
-		s.db.Exec("INSERT OR IGNORE INTO task_tags(task_id,tag_id) VALUES(?,?)", id, tid)
+		if _, err := tx.Exec("INSERT OR IGNORE INTO task_tags(task_id,tag_id) VALUES(?,?)", id, tid); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
 	}
 	s.logf("CreateTask -> id=%d", id)
 	return id, nil
 }
 
 func (s *Store) UpdateTask(id int64, title, desc string, colID int64, epicID *int64, priority int, tagIDs []int64) error {
-	_, err := s.db.Exec(`UPDATE tasks SET title=?,description=?,column_id=?,epic_id=?,priority=?,
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`UPDATE tasks SET title=?,description=?,column_id=?,epic_id=?,priority=?,
 		updated_at=datetime('now') WHERE id=?`, title, desc, colID, epicID, priority, id)
 	if err != nil {
 		return err
 	}
-	s.db.Exec("DELETE FROM task_tags WHERE task_id=?", id)
-	for _, tid := range tagIDs {
-		s.db.Exec("INSERT OR IGNORE INTO task_tags(task_id,tag_id) VALUES(?,?)", id, tid)
+	if _, err := tx.Exec("DELETE FROM task_tags WHERE task_id=?", id); err != nil {
+		return err
 	}
-	return nil
+	for _, tid := range tagIDs {
+		if _, err := tx.Exec("INSERT OR IGNORE INTO task_tags(task_id,tag_id) VALUES(?,?)", id, tid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) MoveTask(id, colID int64, position int) error {
@@ -345,22 +459,60 @@ func (s *Store) DeleteComment(id int64) error {
 }
 
 func (s *Store) taskTags(taskID int64) []model.Tag {
-	rows, _ := s.db.Query(`SELECT t.id,t.name,t.color FROM tags t
+	rows, err := s.db.Query(`SELECT t.id,t.name,t.color FROM tags t
 		JOIN task_tags tt ON tt.tag_id=t.id WHERE tt.task_id=?`, taskID)
-	if rows == nil {
+	if err != nil {
+		s.logf("taskTags(%d) error: %v", taskID, err)
 		return []model.Tag{}
 	}
 	defer rows.Close()
-	var tags []model.Tag
+	tags := make([]model.Tag, 0)
 	for rows.Next() {
 		var t model.Tag
-		rows.Scan(&t.ID, &t.Name, &t.Color)
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
+			s.logf("taskTags scan error: %v", err)
+			continue
+		}
 		tags = append(tags, t)
 	}
-	if tags == nil {
-		return []model.Tag{}
-	}
 	return tags
+}
+
+// batchTaskTags loads tags for multiple tasks in a single query.
+func (s *Store) batchTaskTags(taskIDs []int64) (map[int64][]model.Tag, error) {
+	if len(taskIDs) == 0 {
+		return nil, nil
+	}
+	// Build placeholder list: (?,?,?)
+	placeholders := make([]byte, 0, len(taskIDs)*2)
+	args := make([]any, len(taskIDs))
+	for i, id := range taskIDs {
+		if i > 0 {
+			placeholders = append(placeholders, ',')
+		}
+		placeholders = append(placeholders, '?')
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`SELECT tt.task_id, t.id, t.name, t.color FROM tags t
+		JOIN task_tags tt ON tt.tag_id=t.id WHERE tt.task_id IN (%s)`, string(placeholders))
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64][]model.Tag)
+	for rows.Next() {
+		var taskID int64
+		var t model.Tag
+		if err := rows.Scan(&taskID, &t.ID, &t.Name, &t.Color); err != nil {
+			return nil, fmt.Errorf("scan batch tag: %w", err)
+		}
+		result[taskID] = append(result[taskID], t)
+	}
+	return result, rows.Err()
 }
 
 // --- Images ---
@@ -381,21 +533,22 @@ func (s *Store) GetImage(id int64) ([]byte, string, error) {
 }
 
 func (s *Store) taskComments(taskID int64) []model.Comment {
-	rows, _ := s.db.Query("SELECT id,task_id,text,created_at FROM comments WHERE task_id=? ORDER BY created_at", taskID)
-	if rows == nil {
+	rows, err := s.db.Query("SELECT id,task_id,text,created_at FROM comments WHERE task_id=? ORDER BY created_at", taskID)
+	if err != nil {
+		s.logf("taskComments(%d) error: %v", taskID, err)
 		return []model.Comment{}
 	}
 	defer rows.Close()
-	var comments []model.Comment
+	comments := make([]model.Comment, 0)
 	for rows.Next() {
 		var c model.Comment
 		var ca string
-		rows.Scan(&c.ID, &c.TaskID, &c.Text, &ca)
+		if err := rows.Scan(&c.ID, &c.TaskID, &c.Text, &ca); err != nil {
+			s.logf("taskComments scan error: %v", err)
+			continue
+		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
 		comments = append(comments, c)
-	}
-	if comments == nil {
-		return []model.Comment{}
 	}
 	return comments
 }
