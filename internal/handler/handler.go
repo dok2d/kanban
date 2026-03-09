@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"kanban/internal/db"
 	"log"
 	"net/http"
@@ -10,8 +12,9 @@ import (
 )
 
 type Handler struct {
-	store *db.Store
-	mux   *http.ServeMux
+	store   *db.Store
+	mux     *http.ServeMux
+	verbose bool
 }
 
 func New(store *db.Store) *Handler {
@@ -20,16 +23,29 @@ func New(store *db.Store) *Handler {
 	return h
 }
 
+func (h *Handler) SetVerbose(v bool) {
+	h.verbose = v
+	h.store.SetVerbose(v)
+}
+
+func (h *Handler) logf(format string, args ...any) {
+	if h.verbose {
+		log.Printf("[handler] "+format, args...)
+	}
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.logf("%s %s", r.Method, r.URL.Path)
 	// security headers
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:")
 	h.mux.ServeHTTP(w, r)
 }
 
 func (h *Handler) routes() {
+	h.mux.HandleFunc("/api/columns/reorder", h.handleColumnsReorder)
 	h.mux.HandleFunc("/api/columns", h.handleColumns)
 	h.mux.HandleFunc("/api/columns/", h.handleColumn)
 	h.mux.HandleFunc("/api/epics", h.handleEpics)
@@ -41,6 +57,8 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/tasks/move", h.handleMoveTask)
 	h.mux.HandleFunc("/api/comments", h.handleComments)
 	h.mux.HandleFunc("/api/comments/", h.handleComment)
+	h.mux.HandleFunc("/api/images", h.handleImageUpload)
+	h.mux.HandleFunc("/api/images/", h.handleImageServe)
 	h.mux.HandleFunc("/api/board", h.handleBoard)
 	h.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	h.mux.HandleFunc("/", h.handleIndex)
@@ -107,6 +125,85 @@ func (h *Handler) handleColumn(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", 405)
 	}
+}
+
+func (h *Handler) handleColumnsReorder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		IDs []int64 `json:"ids"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	h.logf("ReorderColumns: ids=%v", req.IDs)
+	if len(req.IDs) == 0 {
+		http.Error(w, "ids required", 400)
+		return
+	}
+	if err := h.store.ReorderColumns(req.IDs); err != nil {
+		h.logf("ReorderColumns error: %v", err)
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+// --- Images ---
+func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Data string `json:"data"` // base64
+		Mime string `json:"mime"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Data == "" {
+		http.Error(w, "data required", 400)
+		return
+	}
+	if req.Mime == "" {
+		req.Mime = "image/png"
+	}
+	raw, err := base64.StdEncoding.DecodeString(req.Data)
+	if err != nil {
+		http.Error(w, "invalid base64", 400)
+		return
+	}
+	const maxSize = 5 * 1024 * 1024 // 5MB
+	if len(raw) > maxSize {
+		http.Error(w, "image too large (max 5MB)", 413)
+		return
+	}
+	id, err := h.store.SaveImage(raw, req.Mime)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	jsonResp(w, map[string]any{"id": id, "url": "/api/images/" + strconv.FormatInt(id, 10)})
+}
+
+func (h *Handler) handleImageServe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	id := extractID(r.URL.Path, "/api/images/")
+	if id == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
+	data, mime, err := h.store.GetImage(id)
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.Write(data)
 }
 
 // --- Epics ---

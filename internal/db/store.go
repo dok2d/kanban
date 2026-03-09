@@ -4,13 +4,23 @@ import (
 	"database/sql"
 	"fmt"
 	"kanban/internal/model"
+	"log"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type Store struct {
-	db *sql.DB
+	db      *sql.DB
+	verbose bool
+}
+
+func (s *Store) SetVerbose(v bool) { s.verbose = v }
+
+func (s *Store) logf(format string, args ...any) {
+	if s.verbose {
+		log.Printf("[store] "+format, args...)
+	}
 }
 
 func New(path string) (*Store, error) {
@@ -67,6 +77,12 @@ func (s *Store) migrate() error {
 			text TEXT NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
+		`CREATE TABLE IF NOT EXISTS images (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			data BLOB NOT NULL,
+			mime TEXT NOT NULL DEFAULT 'image/png',
+			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -89,6 +105,7 @@ func (s *Store) migrate() error {
 func (s *Store) ListColumns() ([]model.Column, error) {
 	rows, err := s.db.Query("SELECT id,name,position FROM columns ORDER BY position")
 	if err != nil {
+		s.logf("ListColumns error: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -98,6 +115,7 @@ func (s *Store) ListColumns() ([]model.Column, error) {
 		rows.Scan(&c.ID, &c.Name, &c.Position)
 		cols = append(cols, c)
 	}
+	s.logf("ListColumns: returned %d columns", len(cols))
 	return cols, nil
 }
 
@@ -106,19 +124,41 @@ func (s *Store) CreateColumn(name string) (int64, error) {
 	s.db.QueryRow("SELECT COALESCE(MAX(position),0) FROM columns").Scan(&maxPos)
 	r, err := s.db.Exec("INSERT INTO columns(name,position) VALUES(?,?)", name, maxPos+1)
 	if err != nil {
+		s.logf("CreateColumn(%q) error: %v", name, err)
 		return 0, err
 	}
-	return r.LastInsertId()
+	id, _ := r.LastInsertId()
+	s.logf("CreateColumn(%q) -> id=%d pos=%d", name, id, maxPos+1)
+	return id, nil
 }
 
 func (s *Store) UpdateColumn(id int64, name string) error {
+	s.logf("UpdateColumn(id=%d, name=%q)", id, name)
 	_, err := s.db.Exec("UPDATE columns SET name=? WHERE id=?", name, id)
 	return err
 }
 
 func (s *Store) DeleteColumn(id int64) error {
+	s.logf("DeleteColumn(id=%d)", id)
 	_, err := s.db.Exec("DELETE FROM columns WHERE id=?", id)
+	if err != nil {
+		s.logf("DeleteColumn(id=%d) error: %v", id, err)
+	}
 	return err
+}
+
+func (s *Store) ReorderColumns(ids []int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i, id := range ids {
+		if _, err := tx.Exec("UPDATE columns SET position=? WHERE id=?", i, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // --- Epics ---
@@ -247,17 +287,20 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 }
 
 func (s *Store) CreateTask(title, desc string, colID int64, epicID *int64, priority int, tagIDs []int64) (int64, error) {
+	s.logf("CreateTask(%q, col=%d, prio=%d, tags=%v)", title, colID, priority, tagIDs)
 	var maxPos int
 	s.db.QueryRow("SELECT COALESCE(MAX(position),0) FROM tasks WHERE column_id=?", colID).Scan(&maxPos)
 	r, err := s.db.Exec(`INSERT INTO tasks(title,description,column_id,epic_id,position,priority)
 		VALUES(?,?,?,?,?,?)`, title, desc, colID, epicID, maxPos+1, priority)
 	if err != nil {
+		s.logf("CreateTask error: %v", err)
 		return 0, err
 	}
 	id, _ := r.LastInsertId()
 	for _, tid := range tagIDs {
 		s.db.Exec("INSERT OR IGNORE INTO task_tags(task_id,tag_id) VALUES(?,?)", id, tid)
 	}
+	s.logf("CreateTask -> id=%d", id)
 	return id, nil
 }
 
@@ -318,6 +361,23 @@ func (s *Store) taskTags(taskID int64) []model.Tag {
 		return []model.Tag{}
 	}
 	return tags
+}
+
+// --- Images ---
+
+func (s *Store) SaveImage(data []byte, mime string) (int64, error) {
+	r, err := s.db.Exec("INSERT INTO images(data,mime) VALUES(?,?)", data, mime)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastInsertId()
+}
+
+func (s *Store) GetImage(id int64) ([]byte, string, error) {
+	var data []byte
+	var mime string
+	err := s.db.QueryRow("SELECT data,mime FROM images WHERE id=?", id).Scan(&data, &mime)
+	return data, mime, err
 }
 
 func (s *Store) taskComments(taskID int64) []model.Comment {

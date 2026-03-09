@@ -6,6 +6,7 @@
 <title>Kanban</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -64,6 +65,7 @@ a{color:var(--accent2);text-decoration:none}
 .priority-3{background:var(--orange)}
 .priority-4{background:var(--red)}
 .card-comments{font-size:.75rem;color:var(--fg3);display:flex;align-items:center;gap:3px}
+.card-todo{font-size:.72rem;color:var(--fg3);display:flex;align-items:center;gap:3px}
 .drop-zone{min-height:40px;border:2px dashed var(--bg4);border-radius:var(--radius);margin:4px 0;transition:all .15s}
 .drop-zone.over{border-color:var(--accent);background:rgba(124,111,247,.08)}
 .add-task-btn{width:100%;padding:8px;background:transparent;border:1px dashed var(--bg4);border-radius:var(--radius);color:var(--fg3);cursor:pointer;font-family:inherit;font-size:.82rem;transition:all .15s;margin-top:4px}
@@ -82,7 +84,7 @@ a{color:var(--accent2);text-decoration:none}
 .field label{font-size:.8rem;color:var(--fg2);font-weight:600}
 .field input,.field textarea,.field select{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:8px 10px;color:var(--fg);font-family:inherit;font-size:.88rem;outline:none;transition:border .15s}
 .field input:focus,.field textarea:focus,.field select:focus{border-color:var(--accent)}
-.field textarea{resize:vertical;min-height:80px}
+.field textarea{resize:vertical;min-height:80px;font-family:'JetBrains Mono',monospace;font-size:.82rem}
 .field select{cursor:pointer}
 .field-row{display:flex;gap:12px}
 .field-row .field{flex:1}
@@ -91,18 +93,44 @@ a{color:var(--accent2);text-decoration:none}
 .chip.selected{opacity:1;border-color:#fff3}
 .chip:hover{opacity:.9}
 
+/* markdown rendered content */
+.md-content{font-size:.9rem;line-height:1.6;color:var(--fg2);padding:10px 14px;background:var(--bg3);border-radius:var(--radius);min-height:40px;overflow-wrap:break-word}
+.md-content:empty::before{content:'Нет описания';color:var(--fg3)}
+.md-content h1,.md-content h2,.md-content h3{color:var(--fg);margin:8px 0 4px;font-size:1rem}
+.md-content h1{font-size:1.15rem}
+.md-content h2{font-size:1.05rem}
+.md-content p{margin:4px 0}
+.md-content ul,.md-content ol{margin:4px 0 4px 20px}
+.md-content li{margin:2px 0}
+.md-content code{background:var(--bg4);padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:.82rem}
+.md-content pre{background:var(--bg4);padding:10px;border-radius:var(--radius);overflow-x:auto;margin:6px 0}
+.md-content pre code{background:none;padding:0}
+.md-content img{max-width:100%;border-radius:var(--radius);margin:6px 0}
+.md-content blockquote{border-left:3px solid var(--accent);padding-left:12px;color:var(--fg3);margin:6px 0}
+.md-content input[type="checkbox"]{margin-right:6px;accent-color:var(--accent);cursor:pointer}
+.md-content a{color:var(--accent2)}
+
 /* task detail */
 .detail-desc{font-size:.9rem;line-height:1.6;color:var(--fg2);padding:10px 14px;background:var(--bg3);border-radius:var(--radius);white-space:pre-wrap;min-height:40px}
 .detail-desc:empty::before{content:'Нет описания';color:var(--fg3)}
 .comments-list{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto}
 .comment{background:var(--bg3);border-radius:var(--radius);padding:10px 12px}
 .comment-text{font-size:.88rem;line-height:1.5}
+.comment-text .md-content{padding:0;background:none;min-height:auto}
 .comment-time{font-size:.72rem;color:var(--fg3);margin-top:4px;display:flex;justify-content:space-between;align-items:center}
-.comment-form{display:flex;gap:8px}
-.comment-form input{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:8px 10px;color:var(--fg);font-family:inherit;font-size:.85rem;outline:none}
-.comment-form input:focus{border-color:var(--accent)}
+.comment-form{display:flex;flex-direction:column;gap:8px}
+.comment-form textarea{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:8px 10px;color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:.82rem;outline:none;resize:vertical;min-height:60px}
+.comment-form textarea:focus{border-color:var(--accent)}
+.comment-form-actions{display:flex;justify-content:space-between;align-items:center}
+.paste-hint{font-size:.72rem;color:var(--fg3)}
 
-/* sidebar panel for epics/tags management */
+/* desc editor toolbar */
+.desc-toolbar{display:flex;gap:4px;align-items:center;margin-bottom:4px}
+.desc-toolbar button{background:var(--bg4);border:none;color:var(--fg2);padding:3px 8px;border-radius:3px;cursor:pointer;font-size:.75rem;font-family:inherit}
+.desc-toolbar button:hover{background:var(--accent);color:#fff}
+.desc-toolbar button.active{background:var(--accent);color:#fff}
+
+/* sidebar panel for epics/tags/columns management */
 .sidebar{position:fixed;right:0;top:52px;width:340px;height:calc(100vh - 52px);background:var(--bg2);border-left:1px solid var(--bg4);z-index:150;transform:translateX(100%);transition:transform .25s;padding:20px;overflow-y:auto}
 .sidebar.open{transform:translateX(0)}
 .sidebar h3{font-size:.95rem;margin-bottom:12px}
@@ -114,6 +142,13 @@ a{color:var(--accent2);text-decoration:none}
 .entity-add{display:flex;gap:6px;margin-top:8px}
 .entity-add input{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none}
 .entity-add input[type="color"]{width:36px;padding:2px;cursor:pointer}
+
+/* column reorder controls */
+.col-order-item{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg3);border-radius:var(--radius)}
+.col-order-item span{flex:1;font-size:.85rem}
+.col-order-btns{display:flex;gap:2px}
+.col-order-btns button{background:transparent;border:none;color:var(--fg3);cursor:pointer;padding:2px 6px;border-radius:3px;font-size:.85rem}
+.col-order-btns button:hover{background:var(--bg4);color:var(--fg)}
 
 /* filter bar */
 .filter-bar{display:flex;align-items:center;gap:8px;padding:0 24px 0;flex-wrap:wrap}
@@ -133,13 +168,17 @@ a{color:var(--accent2);text-decoration:none}
   <h1>⬡ kanban</h1>
   <div class="header-actions">
     <input class="search" id="search" placeholder="Поиск задач..." autocomplete="off">
-    <button class="btn btn-ghost btn-sm" onclick="toggleSidebar()">⚙ Эпики / Теги</button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleSidebar()">⚙ Настройки</button>
   </div>
 </div>
 
 <div class="board" id="board"></div>
 
 <div class="sidebar" id="sidebar">
+  <div class="sidebar-section">
+    <h3>Порядок колонок</h3>
+    <div class="entity-list" id="col-order-list"></div>
+  </div>
   <div class="sidebar-section">
     <h3>Эпики</h3>
     <div class="entity-list" id="epic-list"></div>
@@ -168,6 +207,33 @@ let searchQuery = '';
 let filterEpic = null;
 let filterTag = null;
 
+// --- Markdown setup ---
+function initMarked() {
+  if (typeof marked === 'undefined') return;
+  marked.setOptions({
+    breaks: true,
+    gfm: true
+  });
+}
+initMarked();
+
+function renderMd(text) {
+  if (!text) return '';
+  if (typeof marked === 'undefined') return esc(text);
+  try {
+    return marked.parse(text);
+  } catch { return esc(text); }
+}
+
+// Count TODO items in text
+function countTodos(text) {
+  if (!text) return null;
+  const all = (text.match(/- \[[ x]\]/gi) || []);
+  if (all.length === 0) return null;
+  const done = (text.match(/- \[x\]/gi) || []).length;
+  return { done, total: all.length };
+}
+
 // --- API helpers ---
 async function api(path, method = 'GET', body = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -184,6 +250,45 @@ async function loadBoard() {
   if (!state.epics) state.epics = [];
   if (!state.tags) state.tags = [];
   render();
+}
+
+// --- Image paste ---
+async function uploadImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result.split(',')[1];
+      try {
+        const res = await api('/api/images', 'POST', { data: base64, mime: file.type });
+        resolve(res.url);
+      } catch (e) { reject(e); }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function setupPaste(textarea) {
+  textarea.addEventListener('paste', async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        const pos = textarea.selectionStart;
+        const before = textarea.value.substring(0, pos);
+        const after = textarea.value.substring(textarea.selectionEnd);
+        textarea.value = before + '![Загрузка...]()' + after;
+        try {
+          const url = await uploadImage(file);
+          textarea.value = before + `![image](${url})` + after;
+        } catch {
+          textarea.value = before + '![Ошибка загрузки]()' + after;
+        }
+        break;
+      }
+    }
+  });
 }
 
 // --- Render ---
@@ -226,20 +331,35 @@ function renderCard(t) {
   const epic = t.epic ? `<span class="card-epic" style="background:${esc(t.epic.color)}">${esc(t.epic.name)}</span>` : '';
   const tags = (t.tags || []).map(tg => `<span class="card-tag" style="background:${esc(tg.color)}">${esc(tg.name)}</span>`).join('');
   const comments = t.comments && t.comments.length ? `<span class="card-comments">💬 ${t.comments.length}</span>` : '';
+  const todos = countTodos(t.description);
+  const todoHtml = todos ? `<span class="card-todo">☑ ${todos.done}/${todos.total}</span>` : '';
   return `<div class="card" draggable="true" ondragstart="onDragStart(event,${t.id})" ondragend="onDragEnd(event)" onclick="openTaskDetail(${t.id})">
     ${prioClass}
     <div class="card-title">${esc(t.title)}</div>
-    <div class="card-meta">${epic}${tags}${comments}</div>
+    <div class="card-meta">${epic}${tags}${todoHtml}${comments}</div>
   </div>`;
 }
 
 function renderSidebar() {
+  // Column order
+  document.getElementById('col-order-list').innerHTML = state.columns.map((c, i) =>
+    `<div class="col-order-item" data-id="${c.id}">
+      <span>${esc(c.name)}</span>
+      <div class="col-order-btns">
+        <button onclick="event.stopPropagation();moveColumnUp(${i})" ${i===0?'disabled':''}  title="Вверх">▲</button>
+        <button onclick="event.stopPropagation();moveColumnDown(${i})" ${i===state.columns.length-1?'disabled':''} title="Вниз">▼</button>
+      </div>
+    </div>`).join('');
+
+  // Epics
   document.getElementById('epic-list').innerHTML = state.epics.map(e =>
     `<div class="entity-item">
       <span class="dot" style="background:${esc(e.color)}"></span>
       <span>${esc(e.name)}</span>
       <button class="btn-icon" onclick="event.stopPropagation();deleteEpic(${e.id})">✕</button>
     </div>`).join('');
+
+  // Tags
   document.getElementById('tag-list').innerHTML = state.tags.map(t =>
     `<div class="entity-item">
       <span class="dot" style="background:${esc(t.color)}"></span>
@@ -255,6 +375,23 @@ function filterTasks(tasks) {
     if (filterTag && !(t.tags || []).some(tg => tg.id === filterTag)) return false;
     return true;
   });
+}
+
+// --- Column reorder ---
+async function moveColumnUp(index) {
+  if (index <= 0) return;
+  const ids = state.columns.map(c => c.id);
+  [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+  await api('/api/columns/reorder', 'POST', { ids });
+  await loadBoard();
+}
+
+async function moveColumnDown(index) {
+  if (index >= state.columns.length - 1) return;
+  const ids = state.columns.map(c => c.id);
+  [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
+  await api('/api/columns/reorder', 'POST', { ids });
+  await loadBoard();
 }
 
 // --- Drag & Drop ---
@@ -290,6 +427,8 @@ function showModal(html) {
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
   overlay.innerHTML = `<div class="modal">${html}</div>`;
   document.body.appendChild(overlay);
+  // Setup paste on all textareas in modal
+  overlay.querySelectorAll('textarea').forEach(setupPaste);
   const first = overlay.querySelector('input,textarea,select');
   if (first) first.focus();
   return overlay;
@@ -307,7 +446,10 @@ function openCreateTask(colId) {
     <div class="modal-header"><h2>Новая задача</h2><button class="btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="field"><label>Название</label><input id="m-title"></div>
-      <div class="field"><label>Описание</label><textarea id="m-desc"></textarea></div>
+      <div class="field">
+        <label>Описание <span class="paste-hint">(поддерживает markdown, вставку картинок из буфера)</span></label>
+        <textarea id="m-desc" placeholder="Markdown: **жирный**, - [ ] TODO, ![alt](url)"></textarea>
+      </div>
       <div class="field-row">
         <div class="field"><label>Колонка</label><select id="m-col">${colOpts}</select></div>
         <div class="field"><label>Приоритет</label>
@@ -351,9 +493,11 @@ async function openTaskDetail(taskId) {
   }).join('');
   const comments = (t.comments||[]).map(c => `
     <div class="comment">
-      <div class="comment-text">${esc(c.text)}</div>
+      <div class="comment-text"><div class="md-content">${renderMd(c.text)}</div></div>
       <div class="comment-time"><span>${fmtDate(c.created_at)}</span><button class="btn-icon" onclick="deleteComment(${c.id},${t.id})">✕</button></div>
     </div>`).join('');
+
+  const descRendered = renderMd(t.description);
 
   showModal(`
     <div class="modal-header"><h2>Задача #${t.id}</h2>
@@ -364,7 +508,15 @@ async function openTaskDetail(taskId) {
     </div>
     <div class="modal-body">
       <div class="field"><label>Название</label><input id="m-title" value="${escAttr(t.title)}"></div>
-      <div class="field"><label>Описание</label><textarea id="m-desc">${esc(t.description)}</textarea></div>
+      <div class="field">
+        <label>Описание <span class="paste-hint">(markdown, вставка картинок из буфера)</span></label>
+        <div class="desc-toolbar">
+          <button onclick="toggleDescEdit()" id="desc-toggle-btn">Редактировать</button>
+          <button onclick="insertTodo()" title="Вставить TODO">☑ TODO</button>
+        </div>
+        <div id="desc-preview" class="md-content" onclick="handleTodoClick(event, ${t.id})">${descRendered}</div>
+        <textarea id="m-desc" class="hidden">${esc(t.description)}</textarea>
+      </div>
       <div class="field-row">
         <div class="field"><label>Колонка</label><select id="m-col">${colOpts}</select></div>
         <div class="field"><label>Приоритет</label>
@@ -383,8 +535,11 @@ async function openTaskDetail(taskId) {
       <div class="field"><label>Комментарии</label></div>
       <div class="comments-list">${comments || '<span style="color:var(--fg3);font-size:.85rem">Нет комментариев</span>'}</div>
       <div class="comment-form">
-        <input id="m-comment" placeholder="Написать комментарий...">
-        <button class="btn btn-primary btn-sm" onclick="addComment(${t.id})">Отправить</button>
+        <textarea id="m-comment" placeholder="Написать комментарий (markdown)..." rows="2"></textarea>
+        <div class="comment-form-actions">
+          <span class="paste-hint">Ctrl+V для вставки картинки</span>
+          <button class="btn btn-primary btn-sm" onclick="addComment(${t.id})">Отправить</button>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -394,12 +549,87 @@ async function openTaskDetail(taskId) {
   `);
 }
 
+// Toggle description between preview and edit mode
+function toggleDescEdit() {
+  const preview = document.getElementById('desc-preview');
+  const textarea = document.getElementById('m-desc');
+  const btn = document.getElementById('desc-toggle-btn');
+  if (textarea.classList.contains('hidden')) {
+    textarea.classList.remove('hidden');
+    preview.classList.add('hidden');
+    btn.textContent = 'Предпросмотр';
+    btn.classList.add('active');
+    textarea.focus();
+  } else {
+    textarea.classList.add('hidden');
+    preview.classList.remove('hidden');
+    preview.innerHTML = renderMd(textarea.value);
+    btn.textContent = 'Редактировать';
+    btn.classList.remove('active');
+  }
+}
+
+// Insert TODO template at cursor
+function insertTodo() {
+  const textarea = document.getElementById('m-desc');
+  const preview = document.getElementById('desc-preview');
+  // Switch to edit mode if in preview
+  if (textarea.classList.contains('hidden')) {
+    textarea.classList.remove('hidden');
+    preview.classList.add('hidden');
+    document.getElementById('desc-toggle-btn').textContent = 'Предпросмотр';
+    document.getElementById('desc-toggle-btn').classList.add('active');
+  }
+  const pos = textarea.selectionStart;
+  const before = textarea.value.substring(0, pos);
+  const after = textarea.value.substring(textarea.selectionEnd);
+  const needNewline = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
+  textarea.value = before + needNewline + '- [ ] ' + after;
+  textarea.focus();
+  textarea.selectionStart = textarea.selectionEnd = pos + needNewline.length + 6;
+}
+
+// Handle clicking TODO checkboxes in preview to toggle them
+async function handleTodoClick(event, taskId) {
+  const checkbox = event.target;
+  if (checkbox.tagName !== 'INPUT' || checkbox.type !== 'checkbox') return;
+  event.stopPropagation();
+  const textarea = document.getElementById('m-desc');
+  const text = textarea.value;
+  // Find all checkbox occurrences
+  const checkboxes = document.getElementById('desc-preview').querySelectorAll('input[type="checkbox"]');
+  const idx = [...checkboxes].indexOf(checkbox);
+  if (idx === -1) return;
+  // Toggle in markdown source
+  let count = 0;
+  const newText = text.replace(/- \[( |x)\]/gi, (match, mark) => {
+    if (count++ === idx) {
+      return mark === ' ' ? '- [x]' : '- [ ]';
+    }
+    return match;
+  });
+  textarea.value = newText;
+  // Save immediately
+  const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
+  const epicVal = document.getElementById('m-epic').value;
+  await api(`/api/tasks/${taskId}`, 'PUT', {
+    title: document.getElementById('m-title').value.trim(),
+    description: newText,
+    column_id: Number(document.getElementById('m-col').value),
+    priority: Number(document.getElementById('m-prio').value),
+    epic_id: epicVal ? Number(epicVal) : null,
+    tag_ids: tagIds
+  });
+  await loadBoard();
+}
+
 async function submitUpdateTask(id) {
+  const textarea = document.getElementById('m-desc');
   const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
   const epicVal = document.getElementById('m-epic').value;
   await api(`/api/tasks/${id}`, 'PUT', {
     title: document.getElementById('m-title').value.trim(),
-    description: document.getElementById('m-desc').value,
+    description: textarea.value,
     column_id: Number(document.getElementById('m-col').value),
     priority: Number(document.getElementById('m-prio').value),
     epic_id: epicVal ? Number(epicVal) : null,
