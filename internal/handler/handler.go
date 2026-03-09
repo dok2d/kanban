@@ -7,6 +7,7 @@ import (
 	"kanban/internal/db"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -68,6 +69,7 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/comments/", h.handleComment)
 	h.mux.HandleFunc("/api/images", h.handleImageUpload)
 	h.mux.HandleFunc("/api/images/", h.handleImageServe)
+	h.mux.HandleFunc("/api/search", h.handleSearch)
 	h.mux.HandleFunc("/api/board", h.handleBoard)
 	h.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	h.mux.HandleFunc("/", h.handleIndex)
@@ -563,6 +565,44 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, "method not allowed", 405)
+}
+
+// --- Search ---
+func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		jsonResp(w, map[string]any{"task_ids": []int64{}})
+		return
+	}
+	// Limit query length to prevent abuse
+	if len(q) > 200 {
+		http.Error(w, "query too long", 400)
+		return
+	}
+	isRegex := r.URL.Query().Get("regex") == "1"
+
+	// DB search uses LIKE (plain text)
+	ids, err := h.store.SearchTasks(q)
+	if err != nil {
+		h.logf("search error: %v", err)
+		http.Error(w, "search error", 500)
+		return
+	}
+
+	// If regex mode, validate the pattern and filter client-side
+	if isRegex {
+		_, err := regexp.Compile(q)
+		if err != nil {
+			http.Error(w, "invalid regex: "+err.Error(), 400)
+			return
+		}
+	}
+
+	jsonResp(w, map[string]any{"task_ids": ids})
 }
 
 // helpers

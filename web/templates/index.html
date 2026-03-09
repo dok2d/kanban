@@ -19,6 +19,7 @@
   --radius:6px;--radius-lg:10px;
   --shadow:0 2px 8px rgba(0,0,0,.3);
   --col-w:300px;
+  --font-size:14px;
 }
 [data-theme="light"]{
   --bg:#f5f5f7;--bg2:#ffffff;--bg3:#eef0f4;--bg4:#d8dbe5;
@@ -42,15 +43,18 @@
   --shadow:0 2px 8px rgba(0,0,0,.35);
 }
 
-html{font-size:14px}
-body{font-family:'Source Sans 3',sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;overflow-x:auto}
+html{font-size:var(--font-size)}
+body{font-family:'Source Sans 3',sans-serif;background:var(--bg);color:var(--fg);min-height:100vh}
 a{color:var(--accent2);text-decoration:none}
 
-/* header — fixed on horizontal scroll */
-.header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--bg4);position:sticky;top:0;left:0;z-index:100;min-width:100vw}
+/* header — fixed position, never scrolls */
+.header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--bg4);position:fixed;top:0;left:0;right:0;z-index:100;height:52px}
 .header h1{font-family:'JetBrains Mono',monospace;font-size:1.1rem;color:var(--accent2);letter-spacing:-.02em}
 .header h1 a{color:inherit;text-decoration:none}
-.header-actions{display:flex;gap:8px}
+.header-actions{display:flex;gap:8px;align-items:center}
+
+/* spacer so content isn't behind fixed header */
+.header-spacer{height:52px}
 
 /* buttons */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:none;border-radius:var(--radius);cursor:pointer;font-size:.85rem;font-family:inherit;font-weight:600;transition:all .15s}
@@ -65,7 +69,7 @@ a{color:var(--accent2);text-decoration:none}
 .btn-icon:hover{color:var(--fg);background:var(--bg4)}
 
 /* board */
-.board{display:flex;gap:16px;padding:20px 24px;min-height:calc(100vh - 52px);align-items:flex-start}
+.board{display:flex;gap:16px;padding:20px 24px;min-height:calc(100vh - 52px);align-items:flex-start;overflow-x:auto}
 .column{background:var(--bg2);border-radius:var(--radius-lg);width:var(--col-w);min-width:var(--col-w);flex-shrink:0;display:flex;flex-direction:column;max-height:calc(100vh - 90px)}
 .col-header{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 10px;border-bottom:1px solid var(--bg3)}
 .col-title{font-weight:700;font-size:.9rem;display:flex;align-items:center;gap:8px}
@@ -104,6 +108,10 @@ a{color:var(--accent2);text-decoration:none}
 .modal-body{padding:20px;display:flex;flex-direction:column;gap:14px}
 .modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--bg3)}
 
+/* image lightbox */
+.lightbox-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:300;display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:20px}
+.lightbox-overlay img{max-width:calc(100vw - 40px);max-height:calc(100vh - 40px);object-fit:contain;border-radius:var(--radius-lg);box-shadow:0 4px 30px rgba(0,0,0,.6)}
+
 /* form elements */
 .field{display:flex;flex-direction:column;gap:4px}
 .field label{font-size:.8rem;color:var(--fg2);font-weight:600}
@@ -118,6 +126,12 @@ a{color:var(--accent2);text-decoration:none}
 .chip.selected{opacity:1;border-color:#fff3}
 .chip:hover{opacity:.9}
 
+/* markdown toolbar */
+.md-toolbar{display:flex;gap:2px;padding:4px;background:var(--bg4);border-radius:var(--radius) var(--radius) 0 0;flex-wrap:wrap}
+.md-toolbar button{background:transparent;border:none;color:var(--fg2);padding:3px 8px;border-radius:3px;cursor:pointer;font-size:.78rem;font-family:'JetBrains Mono',monospace;font-weight:600;transition:all .1s}
+.md-toolbar button:hover{background:var(--accent);color:#fff}
+.md-toolbar+textarea{border-radius:0 0 var(--radius) var(--radius)!important}
+
 /* markdown rendered content */
 .md-content{font-size:.9rem;line-height:1.6;color:var(--fg2);padding:10px 14px;background:var(--bg3);border-radius:var(--radius);min-height:40px;overflow-wrap:break-word}
 .md-content:empty::before{content:'Нет описания';color:var(--fg3)}
@@ -130,7 +144,7 @@ a{color:var(--accent2);text-decoration:none}
 .md-content code{background:var(--bg4);padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:.82rem}
 .md-content pre{background:var(--bg4);padding:10px;border-radius:var(--radius);overflow-x:auto;margin:6px 0}
 .md-content pre code{background:none;padding:0}
-.md-content img{max-width:100%;border-radius:var(--radius);margin:6px 0}
+.md-content img{max-width:100%;border-radius:var(--radius);margin:6px 0;cursor:zoom-in}
 .md-content blockquote{border-left:3px solid var(--accent);padding-left:12px;color:var(--fg3);margin:6px 0}
 .md-content input[type="checkbox"]{margin-right:6px;accent-color:var(--accent);cursor:pointer}
 .md-content a{color:var(--accent2)}
@@ -149,6 +163,19 @@ a{color:var(--accent2);text-decoration:none}
 .task-page-section h3{font-size:.9rem;margin-bottom:10px;color:var(--fg2)}
 .task-dates{font-size:.72rem;color:var(--fg3);display:flex;gap:16px}
 
+/* interactive todo list */
+.todo-list{display:flex;flex-direction:column;gap:4px}
+.todo-item{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg3);border-radius:var(--radius);transition:all .15s}
+.todo-item:hover{background:var(--bg4)}
+.todo-item input[type="checkbox"]{accent-color:var(--accent);cursor:pointer;width:16px;height:16px;flex-shrink:0}
+.todo-item .todo-text{flex:1;font-size:.88rem}
+.todo-item.done .todo-text{text-decoration:line-through;color:var(--fg3)}
+.todo-item .btn-icon{opacity:0;transition:opacity .15s}
+.todo-item:hover .btn-icon{opacity:1}
+.todo-add{display:flex;gap:6px;margin-top:6px}
+.todo-add input{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 10px;color:var(--fg);font-family:inherit;font-size:.85rem;outline:none}
+.todo-add input:focus{border-color:var(--accent)}
+
 /* epic page */
 .epic-page{max-width:900px;margin:0 auto;padding:30px 24px}
 .epic-page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px}
@@ -160,10 +187,12 @@ a{color:var(--accent2);text-decoration:none}
 .epic-task-title{flex:1;font-size:.9rem;font-weight:600}
 .epic-task-prio{font-size:.75rem;font-weight:600}
 
-/* filter bar */
-.filter-bar{display:flex;align-items:center;gap:8px;padding:0 24px 0;flex-wrap:wrap}
-.filter-bar .search{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 10px;color:var(--fg);font-family:inherit;font-size:.85rem;outline:none;width:220px}
-.filter-bar .search:focus{border-color:var(--accent)}
+/* search */
+.search-input{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 10px;color:var(--fg);font-family:inherit;font-size:.85rem;outline:none;width:240px;transition:border .15s}
+.search-input:focus{border-color:var(--accent);width:300px}
+.search-results{position:fixed;top:52px;left:0;right:0;z-index:99;background:var(--bg2);border-bottom:1px solid var(--bg4);padding:12px 24px;max-height:60vh;overflow-y:auto;box-shadow:var(--shadow)}
+.search-result-item{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg3);border-radius:var(--radius);cursor:pointer;margin-bottom:4px;transition:all .15s}
+.search-result-item:hover{background:var(--bg4)}
 
 /* sidebar panel */
 .sidebar{position:fixed;right:0;top:52px;width:360px;height:calc(100vh - 52px);background:var(--bg2);border-left:1px solid var(--bg4);z-index:150;transform:translateX(100%);transition:transform .25s;padding:20px;overflow-y:auto}
@@ -172,11 +201,11 @@ a{color:var(--accent2);text-decoration:none}
 .sidebar-section{margin-bottom:24px}
 .entity-list{display:flex;flex-direction:column;gap:6px}
 .entity-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg3);border-radius:var(--radius)}
-.entity-item .dot{width:12px;height:12px;border-radius:50%;margin-right:8px;flex-shrink:0}
+.entity-item .dot{width:12px;height:12px;min-width:12px;min-height:12px;border-radius:50%;margin-right:8px;flex-shrink:0}
 .entity-item span{flex:1;font-size:.85rem}
 .entity-add{display:flex;gap:6px;margin-top:8px}
 .entity-add input{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none}
-.entity-add input[type="color"]{width:36px;padding:2px;cursor:pointer}
+.entity-add input[type="color"]{width:36px;padding:2px;cursor:pointer;flex:none}
 
 /* column reorder controls */
 .col-order-item{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg3);border-radius:var(--radius)}
@@ -197,8 +226,26 @@ a{color:var(--accent2);text-decoration:none}
 .theme-btn:hover{border-color:var(--accent)}
 .theme-btn.active{border-color:var(--accent);background:var(--accent);color:#fff}
 
+/* font size control */
+.font-size-ctrl{display:flex;align-items:center;gap:8px;margin-top:4px}
+.font-size-ctrl button{width:32px;height:32px;border-radius:var(--radius);border:1px solid var(--bg4);background:var(--bg3);color:var(--fg);font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.font-size-ctrl button:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.font-size-ctrl span{font-size:.85rem;color:var(--fg2);min-width:40px;text-align:center}
+
 /* project link display */
 .project-link{display:inline-flex;align-items:center;gap:4px;font-size:.82rem;color:var(--accent2);padding:4px 10px;background:var(--bg3);border-radius:var(--radius);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* comment form */
+.comment-form{display:flex;flex-direction:column;gap:8px}
+.comment-form textarea{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:8px 10px;color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:.82rem;outline:none;resize:vertical;min-height:60px}
+.comment-form textarea:focus{border-color:var(--accent)}
+.comment-form-actions{display:flex;justify-content:space-between;align-items:center}
+.paste-hint{font-size:.72rem;color:var(--fg3)}
+.comments-list{display:flex;flex-direction:column;gap:8px}
+.comment{background:var(--bg3);border-radius:var(--radius);padding:10px 12px}
+.comment-text{font-size:.88rem;line-height:1.5}
+.comment-text .md-content{padding:0;background:none;min-height:auto}
+.comment-time{font-size:.72rem;color:var(--fg3);margin-top:4px;display:flex;justify-content:space-between;align-items:center}
 
 .hidden{display:none!important}
 </style>
@@ -208,10 +255,13 @@ a{color:var(--accent2);text-decoration:none}
 <div class="header">
   <h1><a href="/" onclick="navigateTo('/');return false;">&#x2B21; kanban</a></h1>
   <div class="header-actions">
-    <input class="search" id="search" placeholder="Поиск задач..." autocomplete="off">
+    <input class="search-input" id="search" placeholder="Поиск (plaintext / regex)..." autocomplete="off">
     <button class="btn btn-ghost btn-sm" onclick="toggleSidebar()">&#9881; Настройки</button>
   </div>
 </div>
+<div class="header-spacer"></div>
+
+<div id="search-results" class="search-results hidden"></div>
 
 <div id="app"></div>
 
@@ -226,10 +276,18 @@ a{color:var(--accent2);text-decoration:none}
     </div>
   </div>
   <div class="sidebar-section">
+    <h3>Размер шрифта</h3>
+    <div class="font-size-ctrl">
+      <button onclick="changeFontSize(-1)">-</button>
+      <span id="font-size-label">14px</span>
+      <button onclick="changeFontSize(1)">+</button>
+    </div>
+  </div>
+  <div class="sidebar-section">
     <h3>Колонки</h3>
     <div class="entity-list" id="col-order-list"></div>
     <div class="entity-add" style="margin-top:8px">
-      <input type="text" id="new-col-name" placeholder="Новая колонка...">
+      <input type="text" id="new-col-name" placeholder="Новая колонка..." onkeydown="if(event.key==='Enter')addColumn()">
       <button class="btn btn-primary btn-sm" onclick="addColumn()">+</button>
     </div>
   </div>
@@ -238,7 +296,7 @@ a{color:var(--accent2);text-decoration:none}
     <div class="entity-list" id="epic-list"></div>
     <div class="entity-add">
       <input type="color" id="epic-color" value="#6366f1">
-      <input type="text" id="epic-name" placeholder="Новый эпик...">
+      <input type="text" id="epic-name" placeholder="Новый эпик..." onkeydown="if(event.key==='Enter')addEpic()">
       <button class="btn btn-primary btn-sm" onclick="addEpic()">+</button>
     </div>
   </div>
@@ -247,7 +305,7 @@ a{color:var(--accent2);text-decoration:none}
     <div class="entity-list" id="tag-list"></div>
     <div class="entity-add">
       <input type="color" id="tag-color" value="#64748b">
-      <input type="text" id="tag-name" placeholder="Новый тег...">
+      <input type="text" id="tag-name" placeholder="Новый тег..." onkeydown="if(event.key==='Enter')addTag()">
       <button class="btn btn-primary btn-sm" onclick="addTag()">+</button>
     </div>
   </div>
@@ -258,11 +316,11 @@ a{color:var(--accent2);text-decoration:none}
 let state = { columns: [], tasks: [], epics: [], tags: [] };
 let draggedTaskId = null;
 let searchQuery = '';
-let filterEpic = null;
-let filterTag = null;
-let currentView = 'board'; // 'board', 'task', 'epic'
+let searchMatchIds = null; // null = no search active, Set = matched task IDs
+let currentView = 'board';
 let currentTaskId = null;
 let currentEpicId = null;
+let searchTimeout = null;
 
 // --- Theme ---
 function setTheme(name) {
@@ -273,9 +331,22 @@ function setTheme(name) {
   });
 }
 (function initTheme() {
-  const saved = localStorage.getItem('kanban-theme') || 'dark';
-  setTheme(saved);
+  setTheme(localStorage.getItem('kanban-theme') || 'dark');
 })();
+
+// --- Font size ---
+function getFontSize() {
+  return parseInt(localStorage.getItem('kanban-font-size') || '14');
+}
+function setFontSize(px) {
+  px = Math.max(10, Math.min(22, px));
+  localStorage.setItem('kanban-font-size', px);
+  document.documentElement.style.setProperty('--font-size', px + 'px');
+  const label = document.getElementById('font-size-label');
+  if (label) label.textContent = px + 'px';
+}
+function changeFontSize(delta) { setFontSize(getFontSize() + delta); }
+(function initFontSize() { setFontSize(getFontSize()); })();
 
 // --- Contrast color util ---
 function contrastColor(hex) {
@@ -306,6 +377,19 @@ function countTodos(text) {
   if (all.length === 0) return null;
   const done = (text.match(/- \[x\]/gi) || []).length;
   return { done, total: all.length };
+}
+
+function parseTodoItems(text) {
+  if (!text) return [];
+  return text.split('\n').filter(l => /^- \[[ x]\]/i.test(l.trim())).map(l => {
+    const done = /^- \[x\]/i.test(l.trim());
+    const label = l.trim().replace(/^- \[[ x]\]\s*/i, '');
+    return { done, label };
+  });
+}
+
+function todoItemsToText(items) {
+  return items.map(i => `- [${i.done ? 'x' : ' '}] ${i.label}`).join('\n');
 }
 
 // --- Epic progress ---
@@ -374,6 +458,55 @@ function setupPaste(textarea) {
   });
 }
 
+// --- Image lightbox ---
+function openLightbox(src) {
+  const overlay = document.createElement('div');
+  overlay.className = 'lightbox-overlay';
+  overlay.onclick = () => overlay.remove();
+  overlay.innerHTML = `<img src="${src}" alt="">`;
+  document.body.appendChild(overlay);
+  document.addEventListener('keydown', function handler(e) {
+    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', handler); }
+  });
+}
+
+// Delegate image clicks in md-content
+document.addEventListener('click', function(e) {
+  if (e.target.tagName === 'IMG' && e.target.closest('.md-content')) {
+    e.preventDefault();
+    openLightbox(e.target.src);
+  }
+});
+
+// --- Markdown toolbar ---
+function insertMdToolbar(textareaId) {
+  return `<div class="md-toolbar">
+    <button type="button" onclick="mdInsert('${textareaId}','**','**')" title="Жирный"><b>B</b></button>
+    <button type="button" onclick="mdInsert('${textareaId}','*','*')" title="Курсив"><i>I</i></button>
+    <button type="button" onclick="mdInsert('${textareaId}','~~','~~')" title="Зачёркнутый"><s>S</s></button>
+    <button type="button" onclick="mdInsert('${textareaId}','## ','')" title="Заголовок">H</button>
+    <button type="button" onclick="mdInsert('${textareaId}','\\n- ','')" title="Список">&#8226;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','\\n- [ ] ','')" title="TODO">&#9745;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','[','](url)')" title="Ссылка">&#128279;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','\\n\`\`\`\\n','\\n\`\`\`\\n')" title="Код">&lt;/&gt;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','> ','')" title="Цитата">&#10077;</button>
+  </div>`;
+}
+
+function mdInsert(id, before, after) {
+  const ta = document.getElementById(id);
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const sel = ta.value.substring(start, end);
+  const b = before.replace(/\\n/g, '\n');
+  const a = after.replace(/\\n/g, '\n');
+  ta.value = ta.value.substring(0, start) + b + sel + a + ta.value.substring(end);
+  ta.focus();
+  ta.selectionStart = start + b.length;
+  ta.selectionEnd = start + b.length + sel.length;
+}
+
 // --- Router ---
 function navigateTo(path) {
   history.pushState(null, '', path);
@@ -424,7 +557,6 @@ function renderBoard() {
     html += `<div class="column">
       <div class="col-header">
         <span class="col-title">${esc(col.name)} <span class="col-count">${colTasks.length}</span></span>
-        <button class="btn-icon" onclick="deleteColumn(${col.id})" title="Удалить колонку">&#10005;</button>
       </div>
       <div class="col-body" data-col="${col.id}"
         ondragover="onDragOver(event)" ondrop="onDrop(event, ${col.id})" ondragleave="onDragLeave(event)">
@@ -434,7 +566,6 @@ function renderBoard() {
   }
   html += '</div>';
   app.innerHTML = html;
-  document.getElementById('search').style.display = '';
 }
 
 function renderCard(t) {
@@ -460,7 +591,6 @@ function renderCard(t) {
 // --- Render Task Page ---
 async function renderTaskPage(taskId) {
   const app = document.getElementById('app');
-  document.getElementById('search').style.display = 'none';
 
   let t;
   try {
@@ -488,11 +618,6 @@ async function renderTaskPage(taskId) {
 
   const descRendered = renderMd(t.description);
 
-  // TODO section (separate from description)
-  const todoRendered = renderMd(t.todo);
-  const todos = countTodos(t.todo);
-  const todoBar = todos ? `<div style="font-size:.8rem;color:var(--fg2);margin-top:8px">TODO: ${todos.done}/${todos.total}</div>` : '';
-
   // Project link
   const projectLinkHtml = t.project_url
     ? `<div class="task-info-item"><label>Проект</label><div class="value"><a class="project-link" href="${esc(t.project_url)}" target="_blank" rel="noopener">&#128279; ${esc(t.project_url)}</a></div></div>`
@@ -503,6 +628,30 @@ async function renderTaskPage(taskId) {
       <div class="comment-text"><div class="md-content">${renderMd(c.text)}</div></div>
       <div class="comment-time"><span>${fmtDate(c.created_at)}</span><button class="btn-icon" onclick="deleteCommentFromPage(${c.id},${t.id})">&#10005;</button></div>
     </div>`).join('');
+
+  // Build interactive todo list
+  const todoItems = parseTodoItems(t.todo);
+  const todoListHtml = todoItems.length > 0 ? `<div class="task-page-section">
+    <h3>TODO (${todoItems.filter(i=>i.done).length}/${todoItems.length})</h3>
+    <div class="todo-list" id="todo-list">
+      ${todoItems.map((item, idx) => `<div class="todo-item${item.done?' done':''}">
+        <input type="checkbox" ${item.done?'checked':''} onchange="toggleTodoItem(${t.id},${idx},this.checked)">
+        <span class="todo-text">${esc(item.label)}</span>
+        <button class="btn-icon" onclick="removeTodoItem(${t.id},${idx})">&#10005;</button>
+      </div>`).join('')}
+    </div>
+    <div class="todo-add">
+      <input type="text" id="todo-new-input" placeholder="Добавить пункт..." onkeydown="if(event.key==='Enter')addTodoItem(${t.id})">
+      <button class="btn btn-primary btn-sm" onclick="addTodoItem(${t.id})">+</button>
+    </div>
+  </div>` : `<div class="task-page-section">
+    <h3>TODO</h3>
+    <div class="todo-list" id="todo-list"></div>
+    <div class="todo-add">
+      <input type="text" id="todo-new-input" placeholder="Добавить пункт..." onkeydown="if(event.key==='Enter')addTodoItem(${t.id})">
+      <button class="btn btn-primary btn-sm" onclick="addTodoItem(${t.id})">+</button>
+    </div>
+  </div>`;
 
   app.innerHTML = `<div class="task-page">
     <div class="task-page-header">
@@ -533,19 +682,16 @@ async function renderTaskPage(taskId) {
         <div class="md-content">${descRendered || ''}</div>
       </div>
 
-      ${t.todo ? `<div class="task-page-section">
-        <h3>TODO</h3>
-        <div id="todo-preview" class="md-content" onclick="handleTodoClickPage(event, ${t.id})">${todoRendered}</div>
-        ${todoBar}
-      </div>` : ''}
+      ${todoListHtml}
 
       <div class="task-page-section">
         <h3>Комментарии (${(t.comments||[]).length})</h3>
         <div class="comments-list" style="max-height:none">${comments || '<span style="color:var(--fg3);font-size:.85rem">Нет комментариев</span>'}</div>
         <div class="comment-form" style="margin-top:12px">
-          <textarea id="m-comment" placeholder="Написать комментарий (markdown)..." rows="3"></textarea>
+          ${insertMdToolbar('m-comment')}
+          <textarea id="m-comment" placeholder="Написать комментарий (markdown)... Ctrl+Enter для отправки" rows="3"></textarea>
           <div class="comment-form-actions">
-            <span class="paste-hint">Ctrl+V для вставки картинки</span>
+            <span class="paste-hint">Ctrl+V картинка | Ctrl+Enter отправить</span>
             <button class="btn btn-primary btn-sm" onclick="addCommentFromPage(${t.id})">Отправить</button>
           </div>
         </div>
@@ -553,28 +699,54 @@ async function renderTaskPage(taskId) {
     </div>
   </div>`;
 
+  // Setup comment textarea
   const ta = document.getElementById('m-comment');
-  if (ta) setupPaste(ta);
+  if (ta) {
+    setupPaste(ta);
+    ta.addEventListener('keydown', function(e) {
+      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); addCommentFromPage(t.id); }
+    });
+  }
 }
 
-async function handleTodoClickPage(event, taskId) {
-  const checkbox = event.target;
-  if (checkbox.tagName !== 'INPUT' || checkbox.type !== 'checkbox') return;
-  event.stopPropagation();
+// --- Interactive TODO ---
+async function toggleTodoItem(taskId, index, checked) {
   const t = await api(`/api/tasks/${taskId}`);
-  const text = t.todo || '';
-  const checkboxes = document.getElementById('todo-preview').querySelectorAll('input[type="checkbox"]');
-  const idx = [...checkboxes].indexOf(checkbox);
-  if (idx === -1) return;
-  let count = 0;
-  const newText = text.replace(/- \[( |x)\]/gi, (match, mark) => {
-    if (count++ === idx) return mark === ' ' ? '- [x]' : '- [ ]';
-    return match;
-  });
+  const items = parseTodoItems(t.todo);
+  if (index >= 0 && index < items.length) {
+    items[index].done = checked;
+  }
   await api(`/api/tasks/${taskId}`, 'PUT', {
-    title: t.title, description: t.description, todo: newText, project_url: t.project_url,
-    column_id: t.column_id, epic_id: t.epic_id, priority: t.priority,
-    tag_ids: (t.tags||[]).map(tg => tg.id)
+    title: t.title, description: t.description, todo: todoItemsToText(items),
+    project_url: t.project_url, column_id: t.column_id, epic_id: t.epic_id,
+    priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
+  });
+  await loadBoard();
+}
+
+async function removeTodoItem(taskId, index) {
+  const t = await api(`/api/tasks/${taskId}`);
+  const items = parseTodoItems(t.todo);
+  items.splice(index, 1);
+  await api(`/api/tasks/${taskId}`, 'PUT', {
+    title: t.title, description: t.description, todo: todoItemsToText(items),
+    project_url: t.project_url, column_id: t.column_id, epic_id: t.epic_id,
+    priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
+  });
+  await loadBoard();
+}
+
+async function addTodoItem(taskId) {
+  const input = document.getElementById('todo-new-input');
+  const label = input.value.trim();
+  if (!label) return;
+  const t = await api(`/api/tasks/${taskId}`);
+  const items = parseTodoItems(t.todo);
+  items.push({ done: false, label });
+  await api(`/api/tasks/${taskId}`, 'PUT', {
+    title: t.title, description: t.description, todo: todoItemsToText(items),
+    project_url: t.project_url, column_id: t.column_id, epic_id: t.epic_id,
+    priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
   });
   await loadBoard();
 }
@@ -602,7 +774,6 @@ async function deleteTaskFromPage(id) {
 // --- Render Epic Page ---
 async function renderEpicPage(epicId) {
   const app = document.getElementById('app');
-  document.getElementById('search').style.display = 'none';
 
   let data;
   try {
@@ -616,13 +787,9 @@ async function renderEpicPage(epicId) {
   const tasks = data.tasks || [];
   const tc = contrastColor(epic.color);
   const p = epicProgress(epic.id);
-
   const descHtml = renderMd(epic.description);
-
-  // Group tasks by column
   const colMap = {};
   state.columns.forEach(c => { colMap[c.id] = c.name; });
-
   const prioLabels = ['—','Низкий','Средний','Высокий','Критический'];
   const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
 
@@ -686,6 +853,7 @@ async function openEditEpic(epicId) {
       <div class="field"><label>Цвет</label><input type="color" id="m-epic-color" value="${escAttr(epic.color)}"></div>
       <div class="field">
         <label>Описание (markdown)</label>
+        ${insertMdToolbar('m-epic-desc')}
         <textarea id="m-epic-desc" rows="5">${esc(epic.description)}</textarea>
       </div>
     </div>
@@ -713,6 +881,10 @@ function renderSidebar() {
     b.classList.toggle('active', b.dataset.theme === currentTheme);
   });
 
+  // Font size label
+  const fsLabel = document.getElementById('font-size-label');
+  if (fsLabel) fsLabel.textContent = getFontSize() + 'px';
+
   // Column order with delete
   document.getElementById('col-order-list').innerHTML = state.columns.map((c, i) =>
     `<div class="col-order-item" data-id="${c.id}">
@@ -727,7 +899,6 @@ function renderSidebar() {
   // Epics with progress
   document.getElementById('epic-list').innerHTML = state.epics.map(e => {
     const p = epicProgress(e.id);
-    const tc = contrastColor(e.color);
     return `<div class="entity-item" style="flex-wrap:wrap;cursor:pointer" onclick="navigateTo('/epic/${e.id}')">
       <span class="dot" style="background:${esc(e.color)}"></span>
       <span>${esc(e.name)}</span>
@@ -749,12 +920,66 @@ function renderSidebar() {
 }
 
 function filterTasks(tasks) {
-  return tasks.filter(t => {
-    if (searchQuery && !t.title.toLowerCase().includes(searchQuery) && !(t.description||'').toLowerCase().includes(searchQuery)) return false;
-    if (filterEpic && (!t.epic_id || t.epic_id !== filterEpic)) return false;
-    if (filterTag && !(t.tags || []).some(tg => tg.id === filterTag)) return false;
-    return true;
-  });
+  if (!searchMatchIds) return tasks;
+  return tasks.filter(t => searchMatchIds.has(t.id));
+}
+
+// --- Search ---
+async function performSearch(query) {
+  if (!query) {
+    searchMatchIds = null;
+    document.getElementById('search-results').classList.add('hidden');
+    if (currentView === 'board') renderBoard();
+    return;
+  }
+
+  // Validate regex if it looks like one
+  let isRegex = false;
+  try {
+    new RegExp(query);
+    isRegex = true;
+  } catch {
+    // invalid regex, use as plain text
+  }
+
+  try {
+    const res = await api(`/api/search?q=${encodeURIComponent(query)}${isRegex?'&regex=1':''}`);
+    const ids = res.task_ids || [];
+    searchMatchIds = new Set(ids);
+
+    // Show search results dropdown
+    const container = document.getElementById('search-results');
+    if (ids.length === 0) {
+      container.innerHTML = '<div style="color:var(--fg3);font-size:.85rem">Ничего не найдено</div>';
+      container.classList.remove('hidden');
+    } else {
+      const matchedTasks = state.tasks.filter(t => searchMatchIds.has(t.id));
+      container.innerHTML = matchedTasks.slice(0, 20).map(t => {
+        const col = state.columns.find(c => c.id === t.column_id);
+        const epicBadge = t.epic ? `<span class="card-epic" style="background:${esc(t.epic.color)};color:${contrastColor(t.epic.color)};font-size:.7rem">${esc(t.epic.name)}</span>` : '';
+        return `<div class="search-result-item" onclick="closeSearch();navigateTo('/task/${t.id}')">
+          <span class="card-id">#${t.id}</span>
+          <span style="flex:1;font-weight:600">${esc(t.title)}</span>
+          ${epicBadge}
+          <span style="color:var(--fg3);font-size:.78rem">${esc(col?.name||'')}</span>
+        </div>`;
+      }).join('') + (ids.length > 20 ? `<div style="color:var(--fg3);font-size:.8rem;padding:4px">...и ещё ${ids.length - 20}</div>` : '');
+      container.classList.remove('hidden');
+    }
+
+    if (currentView === 'board') renderBoard();
+  } catch (e) {
+    const container = document.getElementById('search-results');
+    container.innerHTML = `<div style="color:var(--red);font-size:.85rem">Ошибка: ${esc(e.message)}</div>`;
+    container.classList.remove('hidden');
+  }
+}
+
+function closeSearch() {
+  searchMatchIds = null;
+  document.getElementById('search-results').classList.add('hidden');
+  document.getElementById('search').value = '';
+  if (currentView === 'board') renderBoard();
 }
 
 // --- Column reorder ---
@@ -821,11 +1046,8 @@ function openCreateTask(colId) {
       <div class="field"><label>Название</label><input id="m-title"></div>
       <div class="field">
         <label>Описание <span class="paste-hint">(markdown, вставка картинок)</span></label>
+        ${insertMdToolbar('m-desc')}
         <textarea id="m-desc" placeholder="Markdown: **жирный**, ![alt](url)"></textarea>
-      </div>
-      <div class="field">
-        <label>TODO <span class="paste-hint">(- [ ] задача, - [x] готово)</span></label>
-        <textarea id="m-todo" placeholder="- [ ] Первый пункт&#10;- [ ] Второй пункт" rows="3"></textarea>
       </div>
       <div class="field">
         <label>Ссылка на проект</label>
@@ -853,7 +1075,7 @@ async function submitCreateTask() {
   const epicVal = document.getElementById('m-epic').value;
   await api('/api/tasks', 'POST', {
     title, description: document.getElementById('m-desc').value,
-    todo: document.getElementById('m-todo').value,
+    todo: '',
     project_url: document.getElementById('m-url').value.trim(),
     column_id: Number(document.getElementById('m-col').value),
     priority: Number(document.getElementById('m-prio').value),
@@ -863,7 +1085,7 @@ async function submitCreateTask() {
   await loadBoard();
 }
 
-// Edit task modal (from task page)
+// Edit task modal
 async function openEditTask(taskId) {
   const t = await api(`/api/tasks/${taskId}`);
   const epicOpts = state.epics.map(e => `<option value="${e.id}" ${t.epic_id===e.id?'selected':''}>${esc(e.name)}</option>`).join('');
@@ -880,11 +1102,8 @@ async function openEditTask(taskId) {
       <div class="field"><label>Название</label><input id="m-title" value="${escAttr(t.title)}"></div>
       <div class="field">
         <label>Описание <span class="paste-hint">(markdown, вставка картинок)</span></label>
+        ${insertMdToolbar('m-desc')}
         <textarea id="m-desc">${esc(t.description)}</textarea>
-      </div>
-      <div class="field">
-        <label>TODO <span class="paste-hint">(- [ ] задача, - [x] готово)</span></label>
-        <textarea id="m-todo" rows="4">${esc(t.todo)}</textarea>
       </div>
       <div class="field">
         <label>Ссылка на проект</label>
@@ -914,10 +1133,12 @@ async function openEditTask(taskId) {
 async function submitUpdateTask(id) {
   const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
   const epicVal = document.getElementById('m-epic').value;
+  // Preserve existing todo (edit only changes desc, not todo)
+  const existing = await api(`/api/tasks/${id}`);
   await api(`/api/tasks/${id}`, 'PUT', {
     title: document.getElementById('m-title').value.trim(),
     description: document.getElementById('m-desc').value,
-    todo: document.getElementById('m-todo').value,
+    todo: existing.todo || '',
     project_url: document.getElementById('m-url').value.trim(),
     column_id: Number(document.getElementById('m-col').value),
     priority: Number(document.getElementById('m-prio').value),
@@ -967,10 +1188,33 @@ async function deleteTag(id) { await api(`/api/tags/${id}`, 'DELETE'); await loa
 
 function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
 
-// --- Search ---
+// --- Search input ---
 document.getElementById('search').addEventListener('input', e => {
-  searchQuery = e.target.value.toLowerCase();
-  if (currentView === 'board') renderBoard();
+  const q = e.target.value.trim();
+  clearTimeout(searchTimeout);
+  if (!q) {
+    performSearch('');
+    return;
+  }
+  searchTimeout = setTimeout(() => performSearch(q), 300);
+});
+
+// Close search on Escape
+document.getElementById('search').addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeSearch();
+    e.target.blur();
+  }
+});
+
+// Close search results on click outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#search-results') && !e.target.closest('#search')) {
+    const sr = document.getElementById('search-results');
+    if (!sr.classList.contains('hidden')) {
+      sr.classList.add('hidden');
+    }
+  }
 });
 
 // --- Helpers ---

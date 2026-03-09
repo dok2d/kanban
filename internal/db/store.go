@@ -600,6 +600,35 @@ func (s *Store) GetImage(id int64) ([]byte, string, error) {
 	return data, mime, err
 }
 
+// SearchTasks searches across tasks (title, description, todo), comments, epics, tags.
+// Uses SQLite LIKE for plain text, no regex on DB side to avoid injection.
+func (s *Store) SearchTasks(query string) ([]int64, error) {
+	like := "%" + query + "%"
+	rows, err := s.db.Query(`
+		SELECT DISTINCT t.id FROM tasks t
+		LEFT JOIN comments c ON c.task_id = t.id
+		LEFT JOIN task_tags tt ON tt.task_id = t.id
+		LEFT JOIN tags tg ON tg.id = tt.tag_id
+		LEFT JOIN epics e ON e.id = t.epic_id
+		WHERE t.title LIKE ? OR t.description LIKE ? OR t.todo LIKE ? OR t.project_url LIKE ?
+		   OR c.text LIKE ? OR tg.name LIKE ? OR e.name LIKE ? OR e.description LIKE ?
+		ORDER BY t.id`,
+		like, like, like, like, like, like, like, like)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (s *Store) taskComments(taskID int64) []model.Comment {
 	rows, err := s.db.Query("SELECT id,task_id,text,created_at FROM comments WHERE task_id=? ORDER BY created_at", taskID)
 	if err != nil {
