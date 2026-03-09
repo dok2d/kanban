@@ -117,7 +117,7 @@ func (s *Store) migrate() error {
 		"ALTER TABLE tasks ADD COLUMN project_url TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE epics ADD COLUMN description TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id)",
-		"ALTER TABLE comments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+		"ALTER TABLE comments ADD COLUMN updated_at DATETIME",
 	}
 	for _, q := range alters {
 		s.db.Exec(q) // ignore "duplicate column" errors

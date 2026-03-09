@@ -299,6 +299,42 @@ a{color:var(--accent2);text-decoration:none}
 .tz-select{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none;width:100%;margin-top:4px}
 .tz-select:focus{border-color:var(--accent)}
 
+/* --- Mobile responsive --- */
+@media(max-width:768px){
+  .header{padding:8px 12px;height:48px}
+  .header h1{font-size:.95rem}
+  .header-spacer{height:48px}
+  .search-input{width:140px;font-size:.8rem}
+  .search-input:focus{width:180px}
+  .board{padding:12px;gap:12px;flex-direction:column;align-items:stretch}
+  .column{width:100%;min-width:unset;max-height:none}
+  .col-body{max-height:50vh}
+  .sidebar{width:100%;right:0;left:0}
+  .modal{width:98vw;max-width:98vw}
+  .task-page,.epic-page{padding:16px 12px}
+  .task-page-header h2,.epic-page-header h2{font-size:1.1rem}
+  .task-page-sidebar-info{flex-direction:column}
+  .field-row{flex-direction:column}
+  .search-results{padding:8px 12px}
+  .lightbox-overlay{padding:8px}
+  .lightbox-overlay img{max-width:calc(100vw - 16px);max-height:calc(100vh - 16px)}
+  .comment-replies{margin-left:12px;padding-left:8px}
+  .epic-page-header{flex-direction:column;align-items:flex-start}
+  .task-page-header{flex-direction:column;align-items:flex-start}
+  .theme-list{gap:6px}
+  .theme-btn{padding:4px 10px;font-size:.78rem}
+  .md-toolbar{gap:1px}
+  .md-toolbar button{padding:3px 5px;font-size:.72rem}
+}
+@media(max-width:480px){
+  .header-actions{gap:4px}
+  .search-input{width:100px}
+  .search-input:focus{width:140px}
+  .card-meta{gap:3px}
+  .btn-sm{padding:3px 8px;font-size:.75rem}
+  .col-body{max-height:40vh}
+}
+
 .hidden{display:none!important}
 </style>
 </head>
@@ -908,25 +944,29 @@ async function renderEpicPage(epicId) {
   const prioLabels = ['—','Низкий','Средний','Высокий','Критический'];
   const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
 
-  // Sort: get last column (done column) and current sort
+  // Sort: identify first (backlog) and last (done) columns
   const lastCol = state.columns.length ? state.columns[state.columns.length - 1] : null;
-  const epicSort = localStorage.getItem('kanban-epic-sort') || 'status';
+  const firstCol = state.columns.length ? state.columns[0] : null;
+  const epicSortRaw = localStorage.getItem('kanban-epic-sort') || 'status-asc';
+  const [epicSortType, epicSortDir] = epicSortRaw.includes('-') ? epicSortRaw.split('-') : [epicSortRaw, 'asc'];
+  const dirMul = epicSortDir === 'desc' ? -1 : 1;
 
-  // Separate active and completed tasks
-  const activeTasks = tasks.filter(t => !lastCol || t.column_id !== lastCol.id);
+  // Separate into: active (not backlog, not done), backlog, completed
+  const activeTasks = tasks.filter(t =>
+    (!lastCol || t.column_id !== lastCol.id) && (!firstCol || t.column_id !== firstCol.id));
+  const backlogTasks = tasks.filter(t => firstCol && t.column_id === firstCol.id);
   const completedTasks = tasks.filter(t => lastCol && t.column_id === lastCol.id);
 
-  // Sort active tasks
   function sortEpicTasks(arr) {
     return [...arr].sort((a, b) => {
-      if (epicSort === 'date') return new Date(b.created_at) - new Date(a.created_at);
-      // by status = by column position
+      if (epicSortType === 'date') return dirMul * (new Date(b.created_at) - new Date(a.created_at));
       const posA = state.columns.findIndex(c => c.id === a.column_id);
       const posB = state.columns.findIndex(c => c.id === b.column_id);
-      return posA - posB;
+      return dirMul * (posA - posB);
     });
   }
   const sortedActive = sortEpicTasks(activeTasks);
+  const sortedBacklog = sortEpicTasks(backlogTasks);
   const sortedCompleted = sortEpicTasks(completedTasks);
 
   function epicTaskRow(t) {
@@ -946,7 +986,10 @@ async function renderEpicPage(epicId) {
   }
 
   const activeRows = sortedActive.map(epicTaskRow).join('');
+  const backlogRows = sortedBacklog.map(epicTaskRow).join('');
   const completedRows = sortedCompleted.map(epicTaskRow).join('');
+  const statusArrow = epicSortType==='status' ? (epicSortDir==='asc'?' ▲':' ▼') : '';
+  const dateArrow = epicSortType==='date' ? (epicSortDir==='asc'?' ▲':' ▼') : '';
 
   app.innerHTML = `<div class="epic-page">
     <div class="epic-page-header">
@@ -976,16 +1019,20 @@ async function renderEpicPage(epicId) {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <h3>Задачи (${tasks.length})</h3>
         <div style="display:flex;gap:4px">
-          <button class="btn btn-sm ${epicSort==='status'?'btn-primary':'btn-ghost'}" onclick="setEpicSort('status',${epic.id})">По статусу</button>
-          <button class="btn btn-sm ${epicSort==='date'?'btn-primary':'btn-ghost'}" onclick="setEpicSort('date',${epic.id})">По дате</button>
+          <button class="btn btn-sm ${epicSortType==='status'?'btn-primary':'btn-ghost'}" onclick="toggleEpicSort('status',${epic.id})">По статусу${statusArrow}</button>
+          <button class="btn btn-sm ${epicSortType==='date'?'btn-primary':'btn-ghost'}" onclick="toggleEpicSort('date',${epic.id})">По дате${dateArrow}</button>
         </div>
       </div>
       <div class="epic-task-list">
         ${activeRows || '<span style="color:var(--fg3);font-size:.85rem">Нет активных задач</span>'}
       </div>
+      ${backlogRows ? `<div style="margin-top:16px">
+        <h3 style="font-size:.85rem;color:var(--fg3);margin-bottom:8px">${esc(firstCol?.name||'Бэклог')} (${sortedBacklog.length})</h3>
+        <div class="epic-task-list" style="opacity:.8">${backlogRows}</div>
+      </div>` : ''}
       ${completedRows ? `<div style="margin-top:16px">
-        <h3 style="font-size:.85rem;color:var(--fg3);margin-bottom:8px">Выполненные (${sortedCompleted.length})</h3>
-        <div class="epic-task-list" style="opacity:.7">${completedRows}</div>
+        <h3 style="font-size:.85rem;color:var(--fg3);margin-bottom:8px">${esc(lastCol?.name||'Выполненные')} (${sortedCompleted.length})</h3>
+        <div class="epic-task-list" style="opacity:.6">${completedRows}</div>
       </div>` : ''}
     </div>
   </div>`;
@@ -1277,9 +1324,11 @@ async function openEditTask(taskId) {
       </div>
       <div class="field"><label>Эпик</label><select id="m-epic"><option value="">—</option>${epicOpts}</select></div>
       <div class="field"><label>Теги</label><div class="checkbox-group" id="m-tags">${tagChips}</div></div>
-      <div class="field"><label>Зависит от</label><div class="checkbox-group" id="m-deps">${state.tasks.filter(x=>x.id!==t.id).map(x=>{
+      <div class="field"><label>Зависит от</label>
+        <input type="text" id="m-dep-search" placeholder="Поиск задачи..." style="margin-bottom:6px" oninput="filterDeps(this.value)">
+        <div class="checkbox-group" id="m-deps" style="max-height:150px;overflow-y:auto">${state.tasks.filter(x=>x.id!==t.id).map(x=>{
         const sel=(t.depends_on||[]).some(d=>d.id===x.id)?'selected':'';
-        return `<span class="chip ${sel}" data-id="${x.id}" style="background:var(--bg4);color:var(--fg)" onclick="this.classList.toggle('selected')">#${x.id} ${esc(x.title)}</span>`;
+        return `<span class="chip ${sel}" data-id="${x.id}" data-search="#${x.id} ${x.title.toLowerCase()}" style="background:var(--bg4);color:var(--fg)" onclick="this.classList.toggle('selected')">#${x.id} ${esc(x.title)}</span>`;
       }).join('')}</div></div>
     </div>
     <div class="modal-footer" style="justify-content:space-between">
@@ -1354,8 +1403,14 @@ async function deleteEpicFromModal(id) {
   navigateTo('/');
   await loadBoard();
 }
-function setEpicSort(sort, epicId) {
-  localStorage.setItem('kanban-epic-sort', sort);
+function toggleEpicSort(sort, epicId) {
+  const current = localStorage.getItem('kanban-epic-sort') || 'status-asc';
+  const [curType, curDir] = current.includes('-') ? current.split('-') : [current, 'asc'];
+  let newDir = 'asc';
+  if (curType === sort) {
+    newDir = curDir === 'asc' ? 'desc' : 'asc';
+  }
+  localStorage.setItem('kanban-epic-sort', sort + '-' + newDir);
   renderEpicPage(epicId);
 }
 async function addTag() {
@@ -1405,6 +1460,14 @@ document.addEventListener('click', e => {
 });
 
 // --- Helpers ---
+function filterDeps(query) {
+  const q = query.toLowerCase().trim();
+  document.querySelectorAll('#m-deps .chip').forEach(chip => {
+    const text = chip.dataset.search || '';
+    chip.style.display = (!q || text.includes(q) || chip.classList.contains('selected')) ? '' : 'none';
+  });
+}
+
 function autoPrefix(url) {
   if (!url) return url;
   url = url.trim();
