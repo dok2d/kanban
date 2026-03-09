@@ -30,7 +30,6 @@ cmd_run() {
         --read-only \
         --tmpfs /tmp:rw,noexec,nosuid,size=64m \
         --cap-drop ALL \
-        --no-new-privileges \
         --security-opt no-new-privileges:true \
         --memory 256m \
         --cpus 0.5 \
