@@ -74,11 +74,12 @@ func (h *Handler) routes() {
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
+	// SPA: serve index.html for / and /task/* routes
+	if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/task/") {
+		http.ServeFile(w, r, "web/templates/index.html")
 		return
 	}
-	http.ServeFile(w, r, "web/templates/index.html")
+	http.NotFound(w, r)
 }
 
 func (h *Handler) handleBoard(w http.ResponseWriter, r *http.Request) {

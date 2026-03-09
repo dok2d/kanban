@@ -25,6 +25,7 @@ a{color:var(--accent2);text-decoration:none}
 /* header */
 .header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--bg4);position:sticky;top:0;z-index:100}
 .header h1{font-family:'JetBrains Mono',monospace;font-size:1.1rem;color:var(--accent2);letter-spacing:-.02em}
+.header h1 a{color:inherit;text-decoration:none}
 .header-actions{display:flex;gap:8px}
 
 /* buttons */
@@ -56,9 +57,10 @@ a{color:var(--accent2);text-decoration:none}
 .card:hover{border-color:var(--bg4);box-shadow:var(--shadow)}
 .card.dragging{opacity:.5;border-color:var(--accent)}
 .card-title{font-weight:600;font-size:.88rem;margin-bottom:4px;line-height:1.3}
+.card-id{font-size:.7rem;color:var(--fg3);font-family:'JetBrains Mono',monospace}
 .card-meta{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px}
-.card-epic{font-size:.72rem;padding:2px 8px;border-radius:10px;font-weight:600;color:#fff}
-.card-tag{font-size:.7rem;padding:1px 7px;border-radius:8px;font-weight:600;color:#fff;opacity:.85}
+.card-epic{font-size:.72rem;padding:2px 8px;border-radius:10px;font-weight:600}
+.card-tag{font-size:.7rem;padding:1px 7px;border-radius:8px;font-weight:600;opacity:.85}
 .card-priority{width:3px;height:100%;position:absolute;left:0;top:0;border-radius:var(--radius) 0 0 var(--radius)}
 .priority-1{background:var(--blue)}
 .priority-2{background:var(--green)}
@@ -89,7 +91,7 @@ a{color:var(--accent2);text-decoration:none}
 .field-row{display:flex;gap:12px}
 .field-row .field{flex:1}
 .checkbox-group{display:flex;flex-wrap:wrap;gap:6px}
-.chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:12px;font-size:.78rem;font-weight:600;cursor:pointer;border:2px solid transparent;transition:all .15s;color:#fff;opacity:.6}
+.chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:12px;font-size:.78rem;font-weight:600;cursor:pointer;border:2px solid transparent;transition:all .15s;opacity:.6}
 .chip.selected{opacity:1;border-color:#fff3}
 .chip:hover{opacity:.9}
 
@@ -130,7 +132,7 @@ a{color:var(--accent2);text-decoration:none}
 .desc-toolbar button:hover{background:var(--accent);color:#fff}
 .desc-toolbar button.active{background:var(--accent);color:#fff}
 
-/* sidebar panel for epics/tags/columns management */
+/* sidebar panel */
 .sidebar{position:fixed;right:0;top:52px;width:340px;height:calc(100vh - 52px);background:var(--bg2);border-left:1px solid var(--bg4);z-index:150;transform:translateX(100%);transition:transform .25s;padding:20px;overflow-y:auto}
 .sidebar.open{transform:translateX(0)}
 .sidebar h3{font-size:.95rem;margin-bottom:12px}
@@ -150,14 +152,30 @@ a{color:var(--accent2);text-decoration:none}
 .col-order-btns button{background:transparent;border:none;color:var(--fg3);cursor:pointer;padding:2px 6px;border-radius:3px;font-size:.85rem}
 .col-order-btns button:hover{background:var(--bg4);color:var(--fg)}
 
+/* epic progress in sidebar */
+.epic-progress{margin-top:4px}
+.epic-progress-bar{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:3px}
+.epic-progress-fill{height:100%;border-radius:2px;transition:width .3s}
+.epic-progress-text{font-size:.7rem;color:var(--fg3)}
+
+/* task page (full page view) */
+.task-page{max-width:800px;margin:0 auto;padding:30px 24px}
+.task-page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.task-page-header h2{font-size:1.3rem;display:flex;align-items:center;gap:10px}
+.task-page-header .task-id-badge{font-size:.85rem;color:var(--fg3);font-family:'JetBrains Mono',monospace}
+.task-page-body{display:flex;flex-direction:column;gap:16px}
+.task-page-sidebar-info{display:flex;flex-wrap:wrap;gap:12px;padding:14px;background:var(--bg2);border-radius:var(--radius-lg);margin-bottom:8px}
+.task-info-item{display:flex;flex-direction:column;gap:3px;min-width:120px}
+.task-info-item label{font-size:.72rem;color:var(--fg3);text-transform:uppercase;font-weight:600;letter-spacing:.04em}
+.task-info-item .value{font-size:.88rem;color:var(--fg)}
+.task-page-section{background:var(--bg2);border-radius:var(--radius-lg);padding:16px 20px}
+.task-page-section h3{font-size:.9rem;margin-bottom:10px;color:var(--fg2)}
+.task-dates{font-size:.72rem;color:var(--fg3);display:flex;gap:16px}
+
 /* filter bar */
 .filter-bar{display:flex;align-items:center;gap:8px;padding:0 24px 0;flex-wrap:wrap}
 .filter-bar .search{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 10px;color:var(--fg);font-family:inherit;font-size:.85rem;outline:none;width:220px}
 .filter-bar .search:focus{border-color:var(--accent)}
-.filter-pills{display:flex;gap:4px;flex-wrap:wrap}
-.filter-pill{font-size:.75rem;padding:3px 10px;border-radius:12px;cursor:pointer;border:1px solid var(--bg4);background:transparent;color:var(--fg2);font-family:inherit;transition:all .15s}
-.filter-pill.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.filter-pill:hover{border-color:var(--fg3)}
 
 .hidden{display:none!important}
 </style>
@@ -165,14 +183,14 @@ a{color:var(--accent2);text-decoration:none}
 <body>
 
 <div class="header">
-  <h1>⬡ kanban</h1>
+  <h1><a href="/" onclick="navigateTo('/');return false;">⬡ kanban</a></h1>
   <div class="header-actions">
     <input class="search" id="search" placeholder="Поиск задач..." autocomplete="off">
     <button class="btn btn-ghost btn-sm" onclick="toggleSidebar()">⚙ Настройки</button>
   </div>
 </div>
 
-<div class="board" id="board"></div>
+<div id="app"></div>
 
 <div class="sidebar" id="sidebar">
   <div class="sidebar-section">
@@ -206,32 +224,49 @@ let draggedTaskId = null;
 let searchQuery = '';
 let filterEpic = null;
 let filterTag = null;
+let currentView = 'board'; // 'board' or 'task'
+let currentTaskId = null;
+
+// --- Contrast color util ---
+function contrastColor(hex) {
+  if (!hex || hex[0] !== '#') return '#fff';
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  // W3C relative luminance
+  const lum = (0.299*r + 0.587*g + 0.114*b) / 255;
+  return lum > 0.55 ? '#1a1a2e' : '#ffffff';
+}
 
 // --- Markdown setup ---
 function initMarked() {
   if (typeof marked === 'undefined') return;
-  marked.setOptions({
-    breaks: true,
-    gfm: true
-  });
+  marked.setOptions({ breaks: true, gfm: true });
 }
 initMarked();
 
 function renderMd(text) {
   if (!text) return '';
   if (typeof marked === 'undefined') return esc(text);
-  try {
-    return marked.parse(text);
-  } catch { return esc(text); }
+  try { return marked.parse(text); } catch { return esc(text); }
 }
 
-// Count TODO items in text
 function countTodos(text) {
   if (!text) return null;
   const all = (text.match(/- \[[ x]\]/gi) || []);
   if (all.length === 0) return null;
   const done = (text.match(/- \[x\]/gi) || []).length;
   return { done, total: all.length };
+}
+
+// --- Epic progress ---
+function epicProgress(epicId) {
+  const epicTasks = state.tasks.filter(t => t.epic_id === epicId);
+  if (epicTasks.length === 0) return { total: 0, done: 0, pct: 0 };
+  // last column = done
+  const lastCol = state.columns.length ? state.columns[state.columns.length - 1] : null;
+  const done = lastCol ? epicTasks.filter(t => t.column_id === lastCol.id).length : 0;
+  return { total: epicTasks.length, done, pct: Math.round(done / epicTasks.length * 100) };
 }
 
 // --- API helpers ---
@@ -249,7 +284,7 @@ async function loadBoard() {
   if (!state.tasks) state.tasks = [];
   if (!state.epics) state.epics = [];
   if (!state.tags) state.tags = [];
-  render();
+  renderCurrentView();
 }
 
 // --- Image paste ---
@@ -291,22 +326,45 @@ function setupPaste(textarea) {
   });
 }
 
-// --- Render ---
-function render() {
-  renderBoard();
+// --- Router ---
+function navigateTo(path) {
+  history.pushState(null, '', path);
+  route();
+}
+
+function route() {
+  const path = location.pathname;
+  const taskMatch = path.match(/^\/task\/(\d+)$/);
+  if (taskMatch) {
+    currentView = 'task';
+    currentTaskId = Number(taskMatch[1]);
+  } else {
+    currentView = 'board';
+    currentTaskId = null;
+  }
+  renderCurrentView();
+}
+
+window.addEventListener('popstate', route);
+
+function renderCurrentView() {
+  if (currentView === 'task' && currentTaskId) {
+    renderTaskPage(currentTaskId);
+  } else {
+    renderBoard();
+  }
   renderSidebar();
 }
 
+// --- Render Board ---
 function renderBoard() {
-  const board = document.getElementById('board');
-  board.innerHTML = '';
+  const app = document.getElementById('app');
   const filtered = filterTasks(state.tasks);
 
+  let html = '<div class="board">';
   for (const col of state.columns) {
     const colTasks = filtered.filter(t => t.column_id === col.id);
-    const colEl = document.createElement('div');
-    colEl.className = 'column';
-    colEl.innerHTML = `
+    html += `<div class="column">
       <div class="col-header">
         <span class="col-title">${esc(col.name)} <span class="col-count">${colTasks.length}</span></span>
         <button class="btn-icon" onclick="deleteColumn(${col.id})" title="Удалить колонку">✕</button>
@@ -315,49 +373,186 @@ function renderBoard() {
         ondragover="onDragOver(event)" ondrop="onDrop(event, ${col.id})" ondragleave="onDragLeave(event)">
         ${colTasks.map(t => renderCard(t)).join('')}
         <button class="add-task-btn" onclick="openCreateTask(${col.id})">+ Добавить задачу</button>
-      </div>`;
-    board.appendChild(colEl);
+      </div></div>`;
   }
-
-  const addCol = document.createElement('div');
-  addCol.className = 'add-col';
-  addCol.textContent = '+ Колонка';
-  addCol.onclick = addColumn;
-  board.appendChild(addCol);
+  html += '<div class="add-col" onclick="addColumn()">+ Колонка</div></div>';
+  app.innerHTML = html;
+  document.getElementById('search').style.display = '';
 }
 
 function renderCard(t) {
   const prioClass = t.priority > 0 ? `<div class="card-priority priority-${t.priority}"></div>` : '';
-  const epic = t.epic ? `<span class="card-epic" style="background:${esc(t.epic.color)}">${esc(t.epic.name)}</span>` : '';
-  const tags = (t.tags || []).map(tg => `<span class="card-tag" style="background:${esc(tg.color)}">${esc(tg.name)}</span>`).join('');
+  const epicColor = t.epic ? esc(t.epic.color) : '';
+  const epicTextColor = t.epic ? contrastColor(t.epic.color) : '';
+  const epic = t.epic ? `<span class="card-epic" style="background:${epicColor};color:${epicTextColor}">${esc(t.epic.name)}</span>` : '';
+  const tags = (t.tags || []).map(tg => {
+    const tc = contrastColor(tg.color);
+    return `<span class="card-tag" style="background:${esc(tg.color)};color:${tc}">${esc(tg.name)}</span>`;
+  }).join('');
   const comments = t.comments && t.comments.length ? `<span class="card-comments">💬 ${t.comments.length}</span>` : '';
   const todos = countTodos(t.description);
   const todoHtml = todos ? `<span class="card-todo">☑ ${todos.done}/${todos.total}</span>` : '';
-  return `<div class="card" draggable="true" ondragstart="onDragStart(event,${t.id})" ondragend="onDragEnd(event)" onclick="openTaskDetail(${t.id})">
+  return `<div class="card" draggable="true" ondragstart="onDragStart(event,${t.id})" ondragend="onDragEnd(event)" onclick="navigateTo('/task/${t.id}')">
     ${prioClass}
-    <div class="card-title">${esc(t.title)}</div>
+    <div class="card-title">${esc(t.title)} <span class="card-id">#${t.id}</span></div>
     <div class="card-meta">${epic}${tags}${todoHtml}${comments}</div>
   </div>`;
 }
 
+// --- Render Task Page ---
+async function renderTaskPage(taskId) {
+  const app = document.getElementById('app');
+  document.getElementById('search').style.display = 'none';
+
+  let t;
+  try {
+    t = await api(`/api/tasks/${taskId}`);
+  } catch {
+    app.innerHTML = '<div class="task-page"><h2>Задача не найдена</h2><p><a href="/" onclick="navigateTo(\'/\');return false;">Вернуться на доску</a></p></div>';
+    return;
+  }
+
+  const col = state.columns.find(c => c.id === t.column_id);
+  const prioLabels = ['—','Низкий','Средний','Высокий','Критический'];
+  const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
+
+  const epicHtml = t.epic
+    ? `<span class="card-epic" style="background:${esc(t.epic.color)};color:${contrastColor(t.epic.color)}">${esc(t.epic.name)}</span>`
+    : '<span style="color:var(--fg3)">—</span>';
+
+  const tagsHtml = (t.tags||[]).length
+    ? (t.tags||[]).map(tg => `<span class="card-tag" style="background:${esc(tg.color)};color:${contrastColor(tg.color)}">${esc(tg.name)}</span>`).join(' ')
+    : '<span style="color:var(--fg3)">—</span>';
+
+  const prioHtml = t.priority > 0
+    ? `<span style="color:${prioColors[t.priority]};font-weight:600">${prioLabels[t.priority]}</span>`
+    : '<span style="color:var(--fg3)">—</span>';
+
+  const descRendered = renderMd(t.description);
+  const todos = countTodos(t.description);
+  const todoBar = todos ? `<div style="font-size:.8rem;color:var(--fg2);margin-top:8px">TODO: ${todos.done}/${todos.total}</div>` : '';
+
+  const comments = (t.comments||[]).map(c => `
+    <div class="comment">
+      <div class="comment-text"><div class="md-content">${renderMd(c.text)}</div></div>
+      <div class="comment-time"><span>${fmtDate(c.created_at)}</span><button class="btn-icon" onclick="deleteCommentFromPage(${c.id},${t.id})">✕</button></div>
+    </div>`).join('');
+
+  app.innerHTML = `<div class="task-page">
+    <div class="task-page-header">
+      <h2><span class="task-id-badge">#${t.id}</span> ${esc(t.title)}</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="openEditTask(${t.id})">Редактировать</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteTaskFromPage(${t.id})">Удалить</button>
+      </div>
+    </div>
+
+    <div class="task-page-sidebar-info">
+      <div class="task-info-item"><label>Колонка</label><div class="value">${esc(col?.name || '?')}</div></div>
+      <div class="task-info-item"><label>Приоритет</label><div class="value">${prioHtml}</div></div>
+      <div class="task-info-item"><label>Эпик</label><div class="value">${epicHtml}</div></div>
+      <div class="task-info-item"><label>Теги</label><div class="value" style="display:flex;gap:4px;flex-wrap:wrap">${tagsHtml}</div></div>
+    </div>
+
+    <div class="task-dates">
+      <span>Создана: ${fmtDate(t.created_at)}</span>
+      <span>Обновлена: ${fmtDate(t.updated_at)}</span>
+    </div>
+
+    <div class="task-page-body">
+      <div class="task-page-section">
+        <h3>Описание</h3>
+        <div id="desc-preview" class="md-content" onclick="handleTodoClickPage(event, ${t.id})">${descRendered}</div>
+        ${todoBar}
+      </div>
+
+      <div class="task-page-section">
+        <h3>Комментарии (${(t.comments||[]).length})</h3>
+        <div class="comments-list" style="max-height:none">${comments || '<span style="color:var(--fg3);font-size:.85rem">Нет комментариев</span>'}</div>
+        <div class="comment-form" style="margin-top:12px">
+          <textarea id="m-comment" placeholder="Написать комментарий (markdown)..." rows="3"></textarea>
+          <div class="comment-form-actions">
+            <span class="paste-hint">Ctrl+V для вставки картинки</span>
+            <button class="btn btn-primary btn-sm" onclick="addCommentFromPage(${t.id})">Отправить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // Setup paste on comment textarea
+  const ta = document.getElementById('m-comment');
+  if (ta) setupPaste(ta);
+}
+
+async function handleTodoClickPage(event, taskId) {
+  const checkbox = event.target;
+  if (checkbox.tagName !== 'INPUT' || checkbox.type !== 'checkbox') return;
+  event.stopPropagation();
+  const t = await api(`/api/tasks/${taskId}`);
+  const text = t.description || '';
+  const checkboxes = document.getElementById('desc-preview').querySelectorAll('input[type="checkbox"]');
+  const idx = [...checkboxes].indexOf(checkbox);
+  if (idx === -1) return;
+  let count = 0;
+  const newText = text.replace(/- \[( |x)\]/gi, (match, mark) => {
+    if (count++ === idx) return mark === ' ' ? '- [x]' : '- [ ]';
+    return match;
+  });
+  await api(`/api/tasks/${taskId}`, 'PUT', {
+    title: t.title, description: newText, column_id: t.column_id,
+    epic_id: t.epic_id, priority: t.priority,
+    tag_ids: (t.tags||[]).map(tg => tg.id)
+  });
+  await loadBoard();
+}
+
+async function addCommentFromPage(taskId) {
+  const ta = document.getElementById('m-comment');
+  const text = ta.value.trim();
+  if (!text) return;
+  await api('/api/comments', 'POST', { task_id: taskId, text });
+  await loadBoard();
+}
+
+async function deleteCommentFromPage(commentId, taskId) {
+  await api(`/api/comments/${commentId}`, 'DELETE');
+  await loadBoard();
+}
+
+async function deleteTaskFromPage(id) {
+  if (!confirm('Удалить задачу?')) return;
+  await api(`/api/tasks/${id}`, 'DELETE');
+  navigateTo('/');
+  await loadBoard();
+}
+
+// --- Render Sidebar ---
 function renderSidebar() {
   // Column order
   document.getElementById('col-order-list').innerHTML = state.columns.map((c, i) =>
     `<div class="col-order-item" data-id="${c.id}">
       <span>${esc(c.name)}</span>
       <div class="col-order-btns">
-        <button onclick="event.stopPropagation();moveColumnUp(${i})" ${i===0?'disabled':''}  title="Вверх">▲</button>
+        <button onclick="event.stopPropagation();moveColumnUp(${i})" ${i===0?'disabled':''} title="Вверх">▲</button>
         <button onclick="event.stopPropagation();moveColumnDown(${i})" ${i===state.columns.length-1?'disabled':''} title="Вниз">▼</button>
       </div>
     </div>`).join('');
 
-  // Epics
-  document.getElementById('epic-list').innerHTML = state.epics.map(e =>
-    `<div class="entity-item">
+  // Epics with progress
+  document.getElementById('epic-list').innerHTML = state.epics.map(e => {
+    const p = epicProgress(e.id);
+    const tc = contrastColor(e.color);
+    return `<div class="entity-item" style="flex-wrap:wrap">
       <span class="dot" style="background:${esc(e.color)}"></span>
       <span>${esc(e.name)}</span>
       <button class="btn-icon" onclick="event.stopPropagation();deleteEpic(${e.id})">✕</button>
-    </div>`).join('');
+      ${p.total > 0 ? `<div class="epic-progress" style="width:100%">
+        <div class="epic-progress-text">${p.done}/${p.total} задач (${p.pct}%)</div>
+        <div class="epic-progress-bar"><div class="epic-progress-fill" style="width:${p.pct}%;background:${esc(e.color)}"></div></div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
 
   // Tags
   document.getElementById('tag-list').innerHTML = state.tags.map(t =>
@@ -385,7 +580,6 @@ async function moveColumnUp(index) {
   await api('/api/columns/reorder', 'POST', { ids });
   await loadBoard();
 }
-
 async function moveColumnDown(index) {
   if (index >= state.columns.length - 1) return;
   const ids = state.columns.map(c => c.id);
@@ -405,13 +599,8 @@ function onDragEnd(e) {
   draggedTaskId = null;
   document.querySelectorAll('.col-body').forEach(el => el.classList.remove('over'));
 }
-function onDragOver(e) {
-  e.preventDefault();
-  e.currentTarget.classList.add('over');
-}
-function onDragLeave(e) {
-  e.currentTarget.classList.remove('over');
-}
+function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('over'); }
+function onDragLeave(e) { e.currentTarget.classList.remove('over'); }
 async function onDrop(e, colId) {
   e.preventDefault();
   e.currentTarget.classList.remove('over');
@@ -427,27 +616,26 @@ function showModal(html) {
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
   overlay.innerHTML = `<div class="modal">${html}</div>`;
   document.body.appendChild(overlay);
-  // Setup paste on all textareas in modal
   overlay.querySelectorAll('textarea').forEach(setupPaste);
   const first = overlay.querySelector('input,textarea,select');
   if (first) first.focus();
   return overlay;
 }
-
-function closeModal() {
-  document.querySelector('.modal-overlay')?.remove();
-}
+function closeModal() { document.querySelector('.modal-overlay')?.remove(); }
 
 function openCreateTask(colId) {
   const epicOpts = state.epics.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
-  const tagChips = state.tags.map(t => `<span class="chip" data-id="${t.id}" style="background:${esc(t.color)}" onclick="this.classList.toggle('selected')">${esc(t.name)}</span>`).join('');
+  const tagChips = state.tags.map(t => {
+    const tc = contrastColor(t.color);
+    return `<span class="chip" data-id="${t.id}" style="background:${esc(t.color)};color:${tc}" onclick="this.classList.toggle('selected')">${esc(t.name)}</span>`;
+  }).join('');
   const colOpts = state.columns.map(c => `<option value="${c.id}" ${c.id===colId?'selected':''}>${esc(c.name)}</option>`).join('');
   showModal(`
     <div class="modal-header"><h2>Новая задача</h2><button class="btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="field"><label>Название</label><input id="m-title"></div>
       <div class="field">
-        <label>Описание <span class="paste-hint">(поддерживает markdown, вставку картинок из буфера)</span></label>
+        <label>Описание <span class="paste-hint">(markdown, вставка картинок)</span></label>
         <textarea id="m-desc" placeholder="Markdown: **жирный**, - [ ] TODO, ![alt](url)"></textarea>
       </div>
       <div class="field-row">
@@ -462,8 +650,7 @@ function openCreateTask(colId) {
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
       <button class="btn btn-primary" onclick="submitCreateTask()">Создать</button>
-    </div>
-  `);
+    </div>`);
 }
 
 async function submitCreateTask() {
@@ -472,50 +659,33 @@ async function submitCreateTask() {
   const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
   const epicVal = document.getElementById('m-epic').value;
   await api('/api/tasks', 'POST', {
-    title,
-    description: document.getElementById('m-desc').value,
+    title, description: document.getElementById('m-desc').value,
     column_id: Number(document.getElementById('m-col').value),
     priority: Number(document.getElementById('m-prio').value),
-    epic_id: epicVal ? Number(epicVal) : null,
-    tag_ids: tagIds
+    epic_id: epicVal ? Number(epicVal) : null, tag_ids: tagIds
   });
   closeModal();
   await loadBoard();
 }
 
-async function openTaskDetail(taskId) {
+// Edit task modal (from task page)
+async function openEditTask(taskId) {
   const t = await api(`/api/tasks/${taskId}`);
   const epicOpts = state.epics.map(e => `<option value="${e.id}" ${t.epic_id===e.id?'selected':''}>${esc(e.name)}</option>`).join('');
   const colOpts = state.columns.map(c => `<option value="${c.id}" ${t.column_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const tagChips = state.tags.map(tg => {
     const sel = (t.tags||[]).some(x=>x.id===tg.id)?'selected':'';
-    return `<span class="chip ${sel}" data-id="${tg.id}" style="background:${esc(tg.color)}" onclick="this.classList.toggle('selected')">${esc(tg.name)}</span>`;
+    const tc = contrastColor(tg.color);
+    return `<span class="chip ${sel}" data-id="${tg.id}" style="background:${esc(tg.color)};color:${tc}" onclick="this.classList.toggle('selected')">${esc(tg.name)}</span>`;
   }).join('');
-  const comments = (t.comments||[]).map(c => `
-    <div class="comment">
-      <div class="comment-text"><div class="md-content">${renderMd(c.text)}</div></div>
-      <div class="comment-time"><span>${fmtDate(c.created_at)}</span><button class="btn-icon" onclick="deleteComment(${c.id},${t.id})">✕</button></div>
-    </div>`).join('');
-
-  const descRendered = renderMd(t.description);
 
   showModal(`
-    <div class="modal-header"><h2>Задача #${t.id}</h2>
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-danger btn-sm" onclick="deleteTask(${t.id})">Удалить</button>
-        <button class="btn-icon" onclick="closeModal()">✕</button>
-      </div>
-    </div>
+    <div class="modal-header"><h2>Редактировать #${t.id}</h2><button class="btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="field"><label>Название</label><input id="m-title" value="${escAttr(t.title)}"></div>
       <div class="field">
-        <label>Описание <span class="paste-hint">(markdown, вставка картинок из буфера)</span></label>
-        <div class="desc-toolbar">
-          <button onclick="toggleDescEdit()" id="desc-toggle-btn">Редактировать</button>
-          <button onclick="insertTodo()" title="Вставить TODO">☑ TODO</button>
-        </div>
-        <div id="desc-preview" class="md-content" onclick="handleTodoClick(event, ${t.id})">${descRendered}</div>
-        <textarea id="m-desc" class="hidden">${esc(t.description)}</textarea>
+        <label>Описание <span class="paste-hint">(markdown, вставка картинок)</span></label>
+        <textarea id="m-desc">${esc(t.description)}</textarea>
       </div>
       <div class="field-row">
         <div class="field"><label>Колонка</label><select id="m-col">${colOpts}</select></div>
@@ -531,134 +701,25 @@ async function openTaskDetail(taskId) {
       </div>
       <div class="field"><label>Эпик</label><select id="m-epic"><option value="">—</option>${epicOpts}</select></div>
       <div class="field"><label>Теги</label><div class="checkbox-group" id="m-tags">${tagChips}</div></div>
-      <hr style="border:none;border-top:1px solid var(--bg4)">
-      <div class="field"><label>Комментарии</label></div>
-      <div class="comments-list">${comments || '<span style="color:var(--fg3);font-size:.85rem">Нет комментариев</span>'}</div>
-      <div class="comment-form">
-        <textarea id="m-comment" placeholder="Написать комментарий (markdown)..." rows="2"></textarea>
-        <div class="comment-form-actions">
-          <span class="paste-hint">Ctrl+V для вставки картинки</span>
-          <button class="btn btn-primary btn-sm" onclick="addComment(${t.id})">Отправить</button>
-        </div>
-      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
       <button class="btn btn-primary" onclick="submitUpdateTask(${t.id})">Сохранить</button>
-    </div>
-  `);
-}
-
-// Toggle description between preview and edit mode
-function toggleDescEdit() {
-  const preview = document.getElementById('desc-preview');
-  const textarea = document.getElementById('m-desc');
-  const btn = document.getElementById('desc-toggle-btn');
-  if (textarea.classList.contains('hidden')) {
-    textarea.classList.remove('hidden');
-    preview.classList.add('hidden');
-    btn.textContent = 'Предпросмотр';
-    btn.classList.add('active');
-    textarea.focus();
-  } else {
-    textarea.classList.add('hidden');
-    preview.classList.remove('hidden');
-    preview.innerHTML = renderMd(textarea.value);
-    btn.textContent = 'Редактировать';
-    btn.classList.remove('active');
-  }
-}
-
-// Insert TODO template at cursor
-function insertTodo() {
-  const textarea = document.getElementById('m-desc');
-  const preview = document.getElementById('desc-preview');
-  // Switch to edit mode if in preview
-  if (textarea.classList.contains('hidden')) {
-    textarea.classList.remove('hidden');
-    preview.classList.add('hidden');
-    document.getElementById('desc-toggle-btn').textContent = 'Предпросмотр';
-    document.getElementById('desc-toggle-btn').classList.add('active');
-  }
-  const pos = textarea.selectionStart;
-  const before = textarea.value.substring(0, pos);
-  const after = textarea.value.substring(textarea.selectionEnd);
-  const needNewline = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
-  textarea.value = before + needNewline + '- [ ] ' + after;
-  textarea.focus();
-  textarea.selectionStart = textarea.selectionEnd = pos + needNewline.length + 6;
-}
-
-// Handle clicking TODO checkboxes in preview to toggle them
-async function handleTodoClick(event, taskId) {
-  const checkbox = event.target;
-  if (checkbox.tagName !== 'INPUT' || checkbox.type !== 'checkbox') return;
-  event.stopPropagation();
-  const textarea = document.getElementById('m-desc');
-  const text = textarea.value;
-  // Find all checkbox occurrences
-  const checkboxes = document.getElementById('desc-preview').querySelectorAll('input[type="checkbox"]');
-  const idx = [...checkboxes].indexOf(checkbox);
-  if (idx === -1) return;
-  // Toggle in markdown source
-  let count = 0;
-  const newText = text.replace(/- \[( |x)\]/gi, (match, mark) => {
-    if (count++ === idx) {
-      return mark === ' ' ? '- [x]' : '- [ ]';
-    }
-    return match;
-  });
-  textarea.value = newText;
-  // Save immediately
-  const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
-  const epicVal = document.getElementById('m-epic').value;
-  await api(`/api/tasks/${taskId}`, 'PUT', {
-    title: document.getElementById('m-title').value.trim(),
-    description: newText,
-    column_id: Number(document.getElementById('m-col').value),
-    priority: Number(document.getElementById('m-prio').value),
-    epic_id: epicVal ? Number(epicVal) : null,
-    tag_ids: tagIds
-  });
-  await loadBoard();
+    </div>`);
 }
 
 async function submitUpdateTask(id) {
-  const textarea = document.getElementById('m-desc');
   const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
   const epicVal = document.getElementById('m-epic').value;
   await api(`/api/tasks/${id}`, 'PUT', {
     title: document.getElementById('m-title').value.trim(),
-    description: textarea.value,
+    description: document.getElementById('m-desc').value,
     column_id: Number(document.getElementById('m-col').value),
     priority: Number(document.getElementById('m-prio').value),
-    epic_id: epicVal ? Number(epicVal) : null,
-    tag_ids: tagIds
+    epic_id: epicVal ? Number(epicVal) : null, tag_ids: tagIds
   });
   closeModal();
   await loadBoard();
-}
-
-async function deleteTask(id) {
-  if (!confirm('Удалить задачу?')) return;
-  await api(`/api/tasks/${id}`, 'DELETE');
-  closeModal();
-  await loadBoard();
-}
-
-async function addComment(taskId) {
-  const input = document.getElementById('m-comment');
-  const text = input.value.trim();
-  if (!text) return;
-  await api('/api/comments', 'POST', { task_id: taskId, text });
-  closeModal();
-  await openTaskDetail(taskId);
-}
-
-async function deleteComment(commentId, taskId) {
-  await api(`/api/comments/${commentId}`, 'DELETE');
-  closeModal();
-  await openTaskDetail(taskId);
 }
 
 // --- Columns ---
@@ -668,7 +729,6 @@ async function addColumn() {
   await api('/api/columns', 'POST', { Name: name });
   await loadBoard();
 }
-
 async function deleteColumn(id) {
   const col = state.columns.find(c => c.id === id);
   const tasks = state.tasks.filter(t => t.column_id === id);
@@ -687,10 +747,7 @@ async function addEpic() {
   document.getElementById('epic-name').value = '';
   await loadBoard();
 }
-async function deleteEpic(id) {
-  await api(`/api/epics/${id}`, 'DELETE');
-  await loadBoard();
-}
+async function deleteEpic(id) { await api(`/api/epics/${id}`, 'DELETE'); await loadBoard(); }
 async function addTag() {
   const name = document.getElementById('tag-name').value.trim();
   if (!name) return;
@@ -699,19 +756,14 @@ async function addTag() {
   document.getElementById('tag-name').value = '';
   await loadBoard();
 }
-async function deleteTag(id) {
-  await api(`/api/tags/${id}`, 'DELETE');
-  await loadBoard();
-}
+async function deleteTag(id) { await api(`/api/tags/${id}`, 'DELETE'); await loadBoard(); }
 
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
-}
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
 
 // --- Search ---
 document.getElementById('search').addEventListener('input', e => {
   searchQuery = e.target.value.toLowerCase();
-  renderBoard();
+  if (currentView === 'board') renderBoard();
 });
 
 // --- Helpers ---
@@ -719,9 +771,7 @@ function esc(s) {
   if (!s) return '';
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function escAttr(s) {
-  return esc(s);
-}
+function escAttr(s) { return esc(s); }
 function fmtDate(s) {
   if (!s) return '';
   const d = new Date(s);
@@ -729,7 +779,7 @@ function fmtDate(s) {
 }
 
 // --- Init ---
-loadBoard();
+loadBoard().then(() => route());
 </script>
 </body>
 </html>
