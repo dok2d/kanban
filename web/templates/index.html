@@ -853,8 +853,21 @@ async function renderTaskPage(taskId) {
 }
 
 // --- Interactive TODO ---
-async function toggleTodoItem(taskId, index, checked) {
+// Helper: refresh task page without losing comment draft
+async function refreshTaskPage(taskId) {
   const commentDraft = document.getElementById('m-comment')?.value || '';
+  state = await api('/api/board');
+  if (!state.columns) state.columns = [];
+  if (!state.tasks) state.tasks = [];
+  if (!state.epics) state.epics = [];
+  if (!state.tags) state.tags = [];
+  await renderTaskPage(taskId);
+  highlightCode();
+  const ta = document.getElementById('m-comment');
+  if (ta && commentDraft) ta.value = commentDraft;
+}
+
+async function toggleTodoItem(taskId, index, checked) {
   const t = await api(`/api/tasks/${taskId}`);
   const items = parseTodoItems(t.todo);
   if (index >= 0 && index < items.length) {
@@ -865,13 +878,10 @@ async function toggleTodoItem(taskId, index, checked) {
     project_url: t.project_url, column_id: t.column_id, epic_id: t.epic_id,
     priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
   });
-  await loadBoard();
-  const ta = document.getElementById('m-comment');
-  if (ta && commentDraft) ta.value = commentDraft;
+  await refreshTaskPage(taskId);
 }
 
 async function removeTodoItem(taskId, index) {
-  const commentDraft = document.getElementById('m-comment')?.value || '';
   const t = await api(`/api/tasks/${taskId}`);
   const items = parseTodoItems(t.todo);
   items.splice(index, 1);
@@ -880,16 +890,13 @@ async function removeTodoItem(taskId, index) {
     project_url: t.project_url, column_id: t.column_id, epic_id: t.epic_id,
     priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
   });
-  await loadBoard();
-  const ta = document.getElementById('m-comment');
-  if (ta && commentDraft) ta.value = commentDraft;
+  await refreshTaskPage(taskId);
 }
 
 async function addTodoItem(taskId) {
   const input = document.getElementById('todo-new-input');
   const label = input.value.trim();
   if (!label) return;
-  const commentDraft = document.getElementById('m-comment')?.value || '';
   const t = await api(`/api/tasks/${taskId}`);
   const items = parseTodoItems(t.todo);
   items.push({ done: false, label });
@@ -898,9 +905,7 @@ async function addTodoItem(taskId) {
     project_url: t.project_url, column_id: t.column_id, epic_id: t.epic_id,
     priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
   });
-  await loadBoard();
-  const ta = document.getElementById('m-comment');
-  if (ta && commentDraft) ta.value = commentDraft;
+  await refreshTaskPage(taskId);
 }
 
 async function addCommentFromPage(taskId) {
@@ -956,9 +961,12 @@ async function renderEpicPage(epicId) {
   // Sort: identify first (backlog) and last (done) columns
   const lastCol = state.columns.length ? state.columns[state.columns.length - 1] : null;
   const firstCol = state.columns.length ? state.columns[0] : null;
-  const epicSortRaw = localStorage.getItem('kanban-epic-sort') || 'status-asc';
-  const [epicSortType, epicSortDir] = epicSortRaw.includes('-') ? epicSortRaw.split('-') : [epicSortRaw, 'asc'];
-  const dirMul = epicSortDir === 'desc' ? -1 : 1;
+
+  function getEpicSort(section) {
+    const raw = localStorage.getItem('kanban-epic-sort-' + section) || 'status-asc';
+    const [type, dir] = raw.includes('-') ? raw.split('-') : [raw, 'asc'];
+    return { type, dir, mul: dir === 'desc' ? -1 : 1 };
+  }
 
   // Separate into: active (not backlog, not done), backlog, completed
   const activeTasks = tasks.filter(t =>
@@ -966,17 +974,18 @@ async function renderEpicPage(epicId) {
   const backlogTasks = tasks.filter(t => firstCol && t.column_id === firstCol.id);
   const completedTasks = tasks.filter(t => lastCol && t.column_id === lastCol.id);
 
-  function sortEpicTasks(arr) {
+  function sortEpicTasks(arr, section) {
+    const s = getEpicSort(section);
     return [...arr].sort((a, b) => {
-      if (epicSortType === 'date') return dirMul * (new Date(b.created_at) - new Date(a.created_at));
+      if (s.type === 'date') return s.mul * (new Date(b.created_at) - new Date(a.created_at));
       const posA = state.columns.findIndex(c => c.id === a.column_id);
       const posB = state.columns.findIndex(c => c.id === b.column_id);
-      return dirMul * (posA - posB);
+      return s.mul * (posA - posB);
     });
   }
-  const sortedActive = sortEpicTasks(activeTasks);
-  const sortedBacklog = sortEpicTasks(backlogTasks);
-  const sortedCompleted = sortEpicTasks(completedTasks);
+  const sortedActive = sortEpicTasks(activeTasks, 'active');
+  const sortedBacklog = sortEpicTasks(backlogTasks, 'backlog');
+  const sortedCompleted = sortEpicTasks(completedTasks, 'done');
 
   function epicTaskRow(t) {
     const colName = colMap[t.column_id] || '?';
@@ -997,8 +1006,20 @@ async function renderEpicPage(epicId) {
   const activeRows = sortedActive.map(epicTaskRow).join('');
   const backlogRows = sortedBacklog.map(epicTaskRow).join('');
   const completedRows = sortedCompleted.map(epicTaskRow).join('');
-  const statusArrow = epicSortType==='status' ? (epicSortDir==='asc'?' ▲':' ▼') : '';
-  const dateArrow = epicSortType==='date' ? (epicSortDir==='asc'?' ▲':' ▼') : '';
+
+  function sortBtns(section, label) {
+    const s = getEpicSort(section);
+    const sa = s.type==='status' ? (s.dir==='asc'?' ▲':' ▼') : '';
+    const da = s.type==='date' ? (s.dir==='asc'?' ▲':' ▼') : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="font-size:.85rem;color:var(--fg3)">${label}</h3>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-sm ${s.type==='status'?'btn-primary':'btn-ghost'}" onclick="toggleEpicSort('status','${section}',${epic.id})">Статус${sa}</button>
+        <button class="btn btn-sm ${s.type==='date'?'btn-primary':'btn-ghost'}" onclick="toggleEpicSort('date','${section}',${epic.id})">Дата${da}</button>
+      </div>
+    </div>`;
+  }
+  const activeSort = getEpicSort('active');
 
   app.innerHTML = `<div class="epic-page">
     <div class="epic-page-header">
@@ -1025,22 +1046,16 @@ async function renderEpicPage(epicId) {
     </div>` : ''}
 
     <div class="task-page-section">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <h3>Задачи (${tasks.length})</h3>
-        <div style="display:flex;gap:4px">
-          <button class="btn btn-sm ${epicSortType==='status'?'btn-primary':'btn-ghost'}" onclick="toggleEpicSort('status',${epic.id})">По статусу${statusArrow}</button>
-          <button class="btn btn-sm ${epicSortType==='date'?'btn-primary':'btn-ghost'}" onclick="toggleEpicSort('date',${epic.id})">По дате${dateArrow}</button>
-        </div>
-      </div>
+      ${sortBtns('active', 'Активные (' + sortedActive.length + ')')}
       <div class="epic-task-list">
         ${activeRows || '<span style="color:var(--fg3);font-size:.85rem">Нет активных задач</span>'}
       </div>
-      ${backlogRows ? `<div style="margin-top:16px">
-        <h3 style="font-size:.85rem;color:var(--fg3);margin-bottom:8px">${esc(firstCol?.name||'Бэклог')} (${sortedBacklog.length})</h3>
+      ${sortedBacklog.length ? `<div style="margin-top:16px">
+        ${sortBtns('backlog', esc(firstCol?.name||'Бэклог') + ' (' + sortedBacklog.length + ')')}
         <div class="epic-task-list" style="opacity:.8">${backlogRows}</div>
       </div>` : ''}
-      ${completedRows ? `<div style="margin-top:16px">
-        <h3 style="font-size:.85rem;color:var(--fg3);margin-bottom:8px">${esc(lastCol?.name||'Выполненные')} (${sortedCompleted.length})</h3>
+      ${sortedCompleted.length ? `<div style="margin-top:16px">
+        ${sortBtns('done', esc(lastCol?.name||'Выполненные') + ' (' + sortedCompleted.length + ')')}
         <div class="epic-task-list" style="opacity:.6">${completedRows}</div>
       </div>` : ''}
     </div>
@@ -1412,14 +1427,15 @@ async function deleteEpicFromModal(id) {
   navigateTo('/');
   await loadBoard();
 }
-function toggleEpicSort(sort, epicId) {
-  const current = localStorage.getItem('kanban-epic-sort') || 'status-asc';
+function toggleEpicSort(sort, section, epicId) {
+  const key = 'kanban-epic-sort-' + section;
+  const current = localStorage.getItem(key) || 'status-asc';
   const [curType, curDir] = current.includes('-') ? current.split('-') : [current, 'asc'];
   let newDir = 'asc';
   if (curType === sort) {
     newDir = curDir === 'asc' ? 'desc' : 'asc';
   }
-  localStorage.setItem('kanban-epic-sort', sort + '-' + newDir);
+  localStorage.setItem(key, sort + '-' + newDir);
   renderEpicPage(epicId);
 }
 async function addTag() {
