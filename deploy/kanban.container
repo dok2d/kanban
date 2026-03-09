@@ -1,0 +1,30 @@
+[Unit]
+Description=Kanban Board
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/kanban:latest
+ContainerName=kanban
+PublishPort=127.0.0.1:8080:8080
+Volume=kanban-data:/data:Z
+
+# Security hardening
+NoNewPrivileges=true
+ReadOnly=true
+# /data needs to be writable for SQLite
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+DropCapability=ALL
+SeccompProfile=/usr/share/containers/seccomp.json
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=50%
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+
+[Install]
+WantedBy=default.target

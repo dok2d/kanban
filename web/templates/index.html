@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kanban</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--bg2:#181a24;--bg3:#1e2030;--bg4:#262840;
+  --fg:#c8cad8;--fg2:#8b8fa8;--fg3:#5c6078;
+  --accent:#7c6ff7;--accent2:#a78bfa;
+  --red:#ef4444;--orange:#f59e0b;--green:#22c55e;--blue:#3b82f6;
+  --radius:6px;--radius-lg:10px;
+  --shadow:0 2px 8px rgba(0,0,0,.3);
+  --col-w:300px;
+}
+html{font-size:14px}
+body{font-family:'Source Sans 3',sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;overflow-x:auto}
+a{color:var(--accent2);text-decoration:none}
+
+/* header */
+.header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--bg4);position:sticky;top:0;z-index:100}
+.header h1{font-family:'JetBrains Mono',monospace;font-size:1.1rem;color:var(--accent2);letter-spacing:-.02em}
+.header-actions{display:flex;gap:8px}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:none;border-radius:var(--radius);cursor:pointer;font-size:.85rem;font-family:inherit;font-weight:600;transition:all .15s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-ghost{background:transparent;color:var(--fg2);border:1px solid var(--bg4)}
+.btn-ghost:hover{background:var(--bg3);color:var(--fg)}
+.btn-danger{background:transparent;color:var(--red)}
+.btn-danger:hover{background:rgba(239,68,68,.15)}
+.btn-sm{padding:4px 10px;font-size:.8rem}
+.btn-icon{padding:4px 8px;background:transparent;border:none;color:var(--fg3);cursor:pointer;border-radius:var(--radius)}
+.btn-icon:hover{color:var(--fg);background:var(--bg4)}
+
+/* board */
+.board{display:flex;gap:16px;padding:20px 24px;min-height:calc(100vh - 52px);align-items:flex-start}
+.column{background:var(--bg2);border-radius:var(--radius-lg);width:var(--col-w);min-width:var(--col-w);flex-shrink:0;display:flex;flex-direction:column;max-height:calc(100vh - 90px)}
+.col-header{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 10px;border-bottom:1px solid var(--bg3)}
+.col-title{font-weight:700;font-size:.9rem;display:flex;align-items:center;gap:8px}
+.col-count{background:var(--bg4);color:var(--fg2);font-size:.75rem;padding:1px 7px;border-radius:10px;font-weight:600}
+.col-body{padding:8px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px}
+.col-body::-webkit-scrollbar{width:4px}
+.col-body::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+.add-col{background:var(--bg2);border:2px dashed var(--bg4);border-radius:var(--radius-lg);width:var(--col-w);min-width:var(--col-w);display:flex;align-items:center;justify-content:center;min-height:80px;cursor:pointer;color:var(--fg3);font-weight:600;transition:all .15s}
+.add-col:hover{border-color:var(--accent);color:var(--accent2)}
+
+/* cards */
+.card{background:var(--bg3);border-radius:var(--radius);padding:10px 12px;cursor:grab;border:1px solid transparent;transition:all .15s;position:relative}
+.card:hover{border-color:var(--bg4);box-shadow:var(--shadow)}
+.card.dragging{opacity:.5;border-color:var(--accent)}
+.card-title{font-weight:600;font-size:.88rem;margin-bottom:4px;line-height:1.3}
+.card-meta{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px}
+.card-epic{font-size:.72rem;padding:2px 8px;border-radius:10px;font-weight:600;color:#fff}
+.card-tag{font-size:.7rem;padding:1px 7px;border-radius:8px;font-weight:600;color:#fff;opacity:.85}
+.card-priority{width:3px;height:100%;position:absolute;left:0;top:0;border-radius:var(--radius) 0 0 var(--radius)}
+.priority-1{background:var(--blue)}
+.priority-2{background:var(--green)}
+.priority-3{background:var(--orange)}
+.priority-4{background:var(--red)}
+.card-comments{font-size:.75rem;color:var(--fg3);display:flex;align-items:center;gap:3px}
+.drop-zone{min-height:40px;border:2px dashed var(--bg4);border-radius:var(--radius);margin:4px 0;transition:all .15s}
+.drop-zone.over{border-color:var(--accent);background:rgba(124,111,247,.08)}
+.add-task-btn{width:100%;padding:8px;background:transparent;border:1px dashed var(--bg4);border-radius:var(--radius);color:var(--fg3);cursor:pointer;font-family:inherit;font-size:.82rem;transition:all .15s;margin-top:4px}
+.add-task-btn:hover{border-color:var(--accent);color:var(--accent2)}
+
+/* modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+.modal{background:var(--bg2);border-radius:var(--radius-lg);width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--bg3)}
+.modal-header h2{font-size:1rem}
+.modal-body{padding:20px;display:flex;flex-direction:column;gap:14px}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--bg3)}
+
+/* form elements */
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:.8rem;color:var(--fg2);font-weight:600}
+.field input,.field textarea,.field select{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:8px 10px;color:var(--fg);font-family:inherit;font-size:.88rem;outline:none;transition:border .15s}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--accent)}
+.field textarea{resize:vertical;min-height:80px}
+.field select{cursor:pointer}
+.field-row{display:flex;gap:12px}
+.field-row .field{flex:1}
+.checkbox-group{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:12px;font-size:.78rem;font-weight:600;cursor:pointer;border:2px solid transparent;transition:all .15s;color:#fff;opacity:.6}
+.chip.selected{opacity:1;border-color:#fff3}
+.chip:hover{opacity:.9}
+
+/* task detail */
+.detail-desc{font-size:.9rem;line-height:1.6;color:var(--fg2);padding:10px 14px;background:var(--bg3);border-radius:var(--radius);white-space:pre-wrap;min-height:40px}
+.detail-desc:empty::before{content:'Нет описания';color:var(--fg3)}
+.comments-list{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto}
+.comment{background:var(--bg3);border-radius:var(--radius);padding:10px 12px}
+.comment-text{font-size:.88rem;line-height:1.5}
+.comment-time{font-size:.72rem;color:var(--fg3);margin-top:4px;display:flex;justify-content:space-between;align-items:center}
+.comment-form{display:flex;gap:8px}
+.comment-form input{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:8px 10px;color:var(--fg);font-family:inherit;font-size:.85rem;outline:none}
+.comment-form input:focus{border-color:var(--accent)}
+
+/* sidebar panel for epics/tags management */
+.sidebar{position:fixed;right:0;top:52px;width:340px;height:calc(100vh - 52px);background:var(--bg2);border-left:1px solid var(--bg4);z-index:150;transform:translateX(100%);transition:transform .25s;padding:20px;overflow-y:auto}
+.sidebar.open{transform:translateX(0)}
+.sidebar h3{font-size:.95rem;margin-bottom:12px}
+.sidebar-section{margin-bottom:24px}
+.entity-list{display:flex;flex-direction:column;gap:6px}
+.entity-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg3);border-radius:var(--radius)}
+.entity-item .dot{width:12px;height:12px;border-radius:50%;margin-right:8px;flex-shrink:0}
+.entity-item span{flex:1;font-size:.85rem}
+.entity-add{display:flex;gap:6px;margin-top:8px}
+.entity-add input{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none}
+.entity-add input[type="color"]{width:36px;padding:2px;cursor:pointer}
+
+/* filter bar */
+.filter-bar{display:flex;align-items:center;gap:8px;padding:0 24px 0;flex-wrap:wrap}
+.filter-bar .search{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 10px;color:var(--fg);font-family:inherit;font-size:.85rem;outline:none;width:220px}
+.filter-bar .search:focus{border-color:var(--accent)}
+.filter-pills{display:flex;gap:4px;flex-wrap:wrap}
+.filter-pill{font-size:.75rem;padding:3px 10px;border-radius:12px;cursor:pointer;border:1px solid var(--bg4);background:transparent;color:var(--fg2);font-family:inherit;transition:all .15s}
+.filter-pill.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.filter-pill:hover{border-color:var(--fg3)}
+
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⬡ kanban</h1>
+  <div class="header-actions">
+    <input class="search" id="search" placeholder="Поиск задач..." autocomplete="off">
+    <button class="btn btn-ghost btn-sm" onclick="toggleSidebar()">⚙ Эпики / Теги</button>
+  </div>
+</div>
+
+<div class="board" id="board"></div>
+
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-section">
+    <h3>Эпики</h3>
+    <div class="entity-list" id="epic-list"></div>
+    <div class="entity-add">
+      <input type="color" id="epic-color" value="#6366f1">
+      <input type="text" id="epic-name" placeholder="Новый эпик...">
+      <button class="btn btn-primary btn-sm" onclick="addEpic()">+</button>
+    </div>
+  </div>
+  <div class="sidebar-section">
+    <h3>Теги</h3>
+    <div class="entity-list" id="tag-list"></div>
+    <div class="entity-add">
+      <input type="color" id="tag-color" value="#64748b">
+      <input type="text" id="tag-name" placeholder="Новый тег...">
+      <button class="btn btn-primary btn-sm" onclick="addTag()">+</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let state = { columns: [], tasks: [], epics: [], tags: [] };
+let draggedTaskId = null;
+let searchQuery = '';
+let filterEpic = null;
+let filterTag = null;
+
+// --- API helpers ---
+async function api(path, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function loadBoard() {
+  state = await api('/api/board');
+  if (!state.columns) state.columns = [];
+  if (!state.tasks) state.tasks = [];
+  if (!state.epics) state.epics = [];
+  if (!state.tags) state.tags = [];
+  render();
+}
+
+// --- Render ---
+function render() {
+  renderBoard();
+  renderSidebar();
+}
+
+function renderBoard() {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  const filtered = filterTasks(state.tasks);
+
+  for (const col of state.columns) {
+    const colTasks = filtered.filter(t => t.column_id === col.id);
+    const colEl = document.createElement('div');
+    colEl.className = 'column';
+    colEl.innerHTML = `
+      <div class="col-header">
+        <span class="col-title">${esc(col.name)} <span class="col-count">${colTasks.length}</span></span>
+        <button class="btn-icon" onclick="deleteColumn(${col.id})" title="Удалить колонку">✕</button>
+      </div>
+      <div class="col-body" data-col="${col.id}"
+        ondragover="onDragOver(event)" ondrop="onDrop(event, ${col.id})" ondragleave="onDragLeave(event)">
+        ${colTasks.map(t => renderCard(t)).join('')}
+        <button class="add-task-btn" onclick="openCreateTask(${col.id})">+ Добавить задачу</button>
+      </div>`;
+    board.appendChild(colEl);
+  }
+
+  const addCol = document.createElement('div');
+  addCol.className = 'add-col';
+  addCol.textContent = '+ Колонка';
+  addCol.onclick = addColumn;
+  board.appendChild(addCol);
+}
+
+function renderCard(t) {
+  const prioClass = t.priority > 0 ? `<div class="card-priority priority-${t.priority}"></div>` : '';
+  const epic = t.epic ? `<span class="card-epic" style="background:${esc(t.epic.color)}">${esc(t.epic.name)}</span>` : '';
+  const tags = (t.tags || []).map(tg => `<span class="card-tag" style="background:${esc(tg.color)}">${esc(tg.name)}</span>`).join('');
+  const comments = t.comments && t.comments.length ? `<span class="card-comments">💬 ${t.comments.length}</span>` : '';
+  return `<div class="card" draggable="true" ondragstart="onDragStart(event,${t.id})" ondragend="onDragEnd(event)" onclick="openTaskDetail(${t.id})">
+    ${prioClass}
+    <div class="card-title">${esc(t.title)}</div>
+    <div class="card-meta">${epic}${tags}${comments}</div>
+  </div>`;
+}
+
+function renderSidebar() {
+  document.getElementById('epic-list').innerHTML = state.epics.map(e =>
+    `<div class="entity-item">
+      <span class="dot" style="background:${esc(e.color)}"></span>
+      <span>${esc(e.name)}</span>
+      <button class="btn-icon" onclick="event.stopPropagation();deleteEpic(${e.id})">✕</button>
+    </div>`).join('');
+  document.getElementById('tag-list').innerHTML = state.tags.map(t =>
+    `<div class="entity-item">
+      <span class="dot" style="background:${esc(t.color)}"></span>
+      <span>${esc(t.name)}</span>
+      <button class="btn-icon" onclick="event.stopPropagation();deleteTag(${t.id})">✕</button>
+    </div>`).join('');
+}
+
+function filterTasks(tasks) {
+  return tasks.filter(t => {
+    if (searchQuery && !t.title.toLowerCase().includes(searchQuery) && !t.description.toLowerCase().includes(searchQuery)) return false;
+    if (filterEpic && (!t.epic_id || t.epic_id !== filterEpic)) return false;
+    if (filterTag && !(t.tags || []).some(tg => tg.id === filterTag)) return false;
+    return true;
+  });
+}
+
+// --- Drag & Drop ---
+function onDragStart(e, taskId) {
+  draggedTaskId = taskId;
+  e.target.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function onDragEnd(e) {
+  e.target.classList.remove('dragging');
+  draggedTaskId = null;
+  document.querySelectorAll('.col-body').forEach(el => el.classList.remove('over'));
+}
+function onDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('over');
+}
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('over');
+}
+async function onDrop(e, colId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('over');
+  if (!draggedTaskId) return;
+  await api('/api/tasks/move', 'POST', { task_id: draggedTaskId, column_id: colId, position: 0 });
+  await loadBoard();
+}
+
+// --- Modals ---
+function showModal(html) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `<div class="modal">${html}</div>`;
+  document.body.appendChild(overlay);
+  const first = overlay.querySelector('input,textarea,select');
+  if (first) first.focus();
+  return overlay;
+}
+
+function closeModal() {
+  document.querySelector('.modal-overlay')?.remove();
+}
+
+function openCreateTask(colId) {
+  const epicOpts = state.epics.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+  const tagChips = state.tags.map(t => `<span class="chip" data-id="${t.id}" style="background:${esc(t.color)}" onclick="this.classList.toggle('selected')">${esc(t.name)}</span>`).join('');
+  const colOpts = state.columns.map(c => `<option value="${c.id}" ${c.id===colId?'selected':''}>${esc(c.name)}</option>`).join('');
+  showModal(`
+    <div class="modal-header"><h2>Новая задача</h2><button class="btn-icon" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Название</label><input id="m-title"></div>
+      <div class="field"><label>Описание</label><textarea id="m-desc"></textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Колонка</label><select id="m-col">${colOpts}</select></div>
+        <div class="field"><label>Приоритет</label>
+          <select id="m-prio"><option value="0">—</option><option value="1">Низкий</option><option value="2">Средний</option><option value="3">Высокий</option><option value="4">Критический</option></select>
+        </div>
+      </div>
+      <div class="field"><label>Эпик</label><select id="m-epic"><option value="">—</option>${epicOpts}</select></div>
+      <div class="field"><label>Теги</label><div class="checkbox-group" id="m-tags">${tagChips}</div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="submitCreateTask()">Создать</button>
+    </div>
+  `);
+}
+
+async function submitCreateTask() {
+  const title = document.getElementById('m-title').value.trim();
+  if (!title) return;
+  const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
+  const epicVal = document.getElementById('m-epic').value;
+  await api('/api/tasks', 'POST', {
+    title,
+    description: document.getElementById('m-desc').value,
+    column_id: Number(document.getElementById('m-col').value),
+    priority: Number(document.getElementById('m-prio').value),
+    epic_id: epicVal ? Number(epicVal) : null,
+    tag_ids: tagIds
+  });
+  closeModal();
+  await loadBoard();
+}
+
+async function openTaskDetail(taskId) {
+  const t = await api(`/api/tasks/${taskId}`);
+  const epicOpts = state.epics.map(e => `<option value="${e.id}" ${t.epic_id===e.id?'selected':''}>${esc(e.name)}</option>`).join('');
+  const colOpts = state.columns.map(c => `<option value="${c.id}" ${t.column_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
+  const tagChips = state.tags.map(tg => {
+    const sel = (t.tags||[]).some(x=>x.id===tg.id)?'selected':'';
+    return `<span class="chip ${sel}" data-id="${tg.id}" style="background:${esc(tg.color)}" onclick="this.classList.toggle('selected')">${esc(tg.name)}</span>`;
+  }).join('');
+  const comments = (t.comments||[]).map(c => `
+    <div class="comment">
+      <div class="comment-text">${esc(c.text)}</div>
+      <div class="comment-time"><span>${fmtDate(c.created_at)}</span><button class="btn-icon" onclick="deleteComment(${c.id},${t.id})">✕</button></div>
+    </div>`).join('');
+
+  showModal(`
+    <div class="modal-header"><h2>Задача #${t.id}</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-danger btn-sm" onclick="deleteTask(${t.id})">Удалить</button>
+        <button class="btn-icon" onclick="closeModal()">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>Название</label><input id="m-title" value="${escAttr(t.title)}"></div>
+      <div class="field"><label>Описание</label><textarea id="m-desc">${esc(t.description)}</textarea></div>
+      <div class="field-row">
+        <div class="field"><label>Колонка</label><select id="m-col">${colOpts}</select></div>
+        <div class="field"><label>Приоритет</label>
+          <select id="m-prio">
+            <option value="0" ${t.priority===0?'selected':''}>—</option>
+            <option value="1" ${t.priority===1?'selected':''}>Низкий</option>
+            <option value="2" ${t.priority===2?'selected':''}>Средний</option>
+            <option value="3" ${t.priority===3?'selected':''}>Высокий</option>
+            <option value="4" ${t.priority===4?'selected':''}>Критический</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Эпик</label><select id="m-epic"><option value="">—</option>${epicOpts}</select></div>
+      <div class="field"><label>Теги</label><div class="checkbox-group" id="m-tags">${tagChips}</div></div>
+      <hr style="border:none;border-top:1px solid var(--bg4)">
+      <div class="field"><label>Комментарии</label></div>
+      <div class="comments-list">${comments || '<span style="color:var(--fg3);font-size:.85rem">Нет комментариев</span>'}</div>
+      <div class="comment-form">
+        <input id="m-comment" placeholder="Написать комментарий...">
+        <button class="btn btn-primary btn-sm" onclick="addComment(${t.id})">Отправить</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="submitUpdateTask(${t.id})">Сохранить</button>
+    </div>
+  `);
+}
+
+async function submitUpdateTask(id) {
+  const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
+  const epicVal = document.getElementById('m-epic').value;
+  await api(`/api/tasks/${id}`, 'PUT', {
+    title: document.getElementById('m-title').value.trim(),
+    description: document.getElementById('m-desc').value,
+    column_id: Number(document.getElementById('m-col').value),
+    priority: Number(document.getElementById('m-prio').value),
+    epic_id: epicVal ? Number(epicVal) : null,
+    tag_ids: tagIds
+  });
+  closeModal();
+  await loadBoard();
+}
+
+async function deleteTask(id) {
+  if (!confirm('Удалить задачу?')) return;
+  await api(`/api/tasks/${id}`, 'DELETE');
+  closeModal();
+  await loadBoard();
+}
+
+async function addComment(taskId) {
+  const input = document.getElementById('m-comment');
+  const text = input.value.trim();
+  if (!text) return;
+  await api('/api/comments', 'POST', { task_id: taskId, text });
+  closeModal();
+  await openTaskDetail(taskId);
+}
+
+async function deleteComment(commentId, taskId) {
+  await api(`/api/comments/${commentId}`, 'DELETE');
+  closeModal();
+  await openTaskDetail(taskId);
+}
+
+// --- Columns ---
+async function addColumn() {
+  const name = prompt('Название колонки:');
+  if (!name) return;
+  await api('/api/columns', 'POST', { Name: name });
+  await loadBoard();
+}
+
+async function deleteColumn(id) {
+  const col = state.columns.find(c => c.id === id);
+  const tasks = state.tasks.filter(t => t.column_id === id);
+  if (tasks.length > 0) { alert('Сначала переместите задачи из колонки'); return; }
+  if (!confirm(`Удалить колонку "${col?.name}"?`)) return;
+  await api(`/api/columns/${id}`, 'DELETE');
+  await loadBoard();
+}
+
+// --- Epics / Tags ---
+async function addEpic() {
+  const name = document.getElementById('epic-name').value.trim();
+  if (!name) return;
+  const color = document.getElementById('epic-color').value;
+  await api('/api/epics', 'POST', { Name: name, Color: color });
+  document.getElementById('epic-name').value = '';
+  await loadBoard();
+}
+async function deleteEpic(id) {
+  await api(`/api/epics/${id}`, 'DELETE');
+  await loadBoard();
+}
+async function addTag() {
+  const name = document.getElementById('tag-name').value.trim();
+  if (!name) return;
+  const color = document.getElementById('tag-color').value;
+  await api('/api/tags', 'POST', { Name: name, Color: color });
+  document.getElementById('tag-name').value = '';
+  await loadBoard();
+}
+async function deleteTag(id) {
+  await api(`/api/tags/${id}`, 'DELETE');
+  await loadBoard();
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+
+// --- Search ---
+document.getElementById('search').addEventListener('input', e => {
+  searchQuery = e.target.value.toLowerCase();
+  renderBoard();
+});
+
+// --- Helpers ---
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  return esc(s);
+}
+function fmtDate(s) {
+  if (!s) return '';
+  const d = new Date(s);
+  return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
+}
+
+// --- Init ---
+loadBoard();
+</script>
+</body>
+</html>
