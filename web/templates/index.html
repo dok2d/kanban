@@ -4,11 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kanban</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="/static/css/fonts.css">
+<link rel="stylesheet" href="/static/css/atom-one-dark.min.css">
+<script src="/static/js/marked.min.js"></script>
+<script src="/static/js/highlight.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
@@ -411,6 +410,21 @@ a{color:var(--accent2);text-decoration:none}
       <button class="btn btn-ghost btn-sm" onclick="exportBoard()">&#128229; Экспорт JSON</button>
       <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-file').click()">&#128228; Импорт JSON</button>
       <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBoard(this)">
+    </div>
+  </div>
+  <div class="sidebar-section" id="users-section" style="display:none">
+    <h3>Пользователи</h3>
+    <div class="entity-list" id="user-list"></div>
+    <div class="entity-add" id="add-user-form">
+      <input type="text" id="new-user-name" placeholder="Логин...">
+      <input type="password" id="new-user-pass" placeholder="Пароль...">
+      <button class="btn btn-primary btn-sm" onclick="addUser()">+</button>
+    </div>
+  </div>
+  <div class="sidebar-section">
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
+      <span id="current-user-label" style="font-size:.82rem;color:var(--fg2)"></span>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">Выход</button>
     </div>
   </div>
 </div>
@@ -1729,9 +1743,82 @@ function highlightCode() {
   }
 }
 
+// --- Auth & User management ---
+let currentUser = null;
+
+async function loadCurrentUser() {
+  try {
+    const r = await fetch('/api/auth/me');
+    if (r.ok) {
+      currentUser = await r.json();
+      const label = document.getElementById('current-user-label');
+      if (label) label.textContent = currentUser.username + (currentUser.is_admin ? ' (admin)' : '');
+      if (currentUser.is_admin) {
+        document.getElementById('users-section').style.display = '';
+        loadUsers();
+      }
+    } else {
+      location.href = '/login';
+    }
+  } catch {
+    location.href = '/login';
+  }
+}
+
+async function loadUsers() {
+  try {
+    const users = await api('/api/users');
+    document.getElementById('user-list').innerHTML = users.map(u =>
+      `<div class="entity-item">
+        <span>${esc(u.username)}${u.is_admin ? ' <small style="color:var(--accent2)">(admin)</small>' : ''}</span>
+        <div style="display:flex;gap:4px">
+          <button class="btn-icon" onclick="resetUserPassword(${u.id},'${escAttr(u.username)}')" title="Сменить пароль">&#128273;</button>
+          <button class="btn-icon" onclick="deleteUser(${u.id},'${escAttr(u.username)}')" title="Удалить" style="color:var(--red)">&#10005;</button>
+        </div>
+      </div>`).join('');
+  } catch {}
+}
+
+async function addUser() {
+  const username = document.getElementById('new-user-name').value.trim();
+  const password = document.getElementById('new-user-pass').value;
+  if (!username || password.length < 6) {
+    alert('Логин обязателен, пароль минимум 6 символов');
+    return;
+  }
+  try {
+    await api('/api/users', 'POST', { username, password, is_admin: false });
+    document.getElementById('new-user-name').value = '';
+    document.getElementById('new-user-pass').value = '';
+    loadUsers();
+  } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function deleteUser(id, name) {
+  if (!confirm('Удалить пользователя "' + name + '"?')) return;
+  try {
+    await api('/api/users/' + id, 'DELETE');
+    loadUsers();
+  } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function resetUserPassword(id, name) {
+  const pass = prompt('Новый пароль для "' + name + '" (мин. 6 символов):');
+  if (!pass || pass.length < 6) return;
+  try {
+    await api('/api/users/' + id, 'PUT', { password: pass });
+    alert('Пароль изменён');
+  } catch (e) { alert('Ошибка: ' + e.message); }
+}
+
+async function logout() {
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+  location.href = '/login';
+}
+
 // --- Init ---
 initTimezoneSelector();
-loadBoard().then(() => route());
+loadCurrentUser().then(() => loadBoard().then(() => route()));
 </script>
 </body>
 </html>

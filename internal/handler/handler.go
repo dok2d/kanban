@@ -14,6 +14,8 @@ import (
 	"strings"
 )
 
+const sessionCookie = "kanban_session"
+
 // allowed MIME types for image uploads
 var allowedImageMIME = map[string]bool{
 	"image/png":     true,
@@ -75,11 +77,82 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data:")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data:")
+
+	// Public paths: login page, login API, static assets, setup
+	path := r.URL.Path
+	if path == "/login" || path == "/api/auth/login" || path == "/api/auth/setup" ||
+		strings.HasPrefix(path, "/static/") {
+		h.mux.ServeHTTP(w, r)
+		return
+	}
+
+	// Check if any users exist — if not, redirect to setup
+	cnt, _ := h.store.UserCount()
+	if cnt == 0 {
+		if path == "/" || strings.HasPrefix(path, "/api/") {
+			if strings.HasPrefix(path, "/api/") {
+				http.Error(w, "setup required", http.StatusUnauthorized)
+			} else {
+				http.Redirect(w, r, "/login", http.StatusFound)
+			}
+			return
+		}
+	}
+
+	// Check session cookie
+	cookie, err := r.Cookie(sessionCookie)
+	if err != nil || cookie.Value == "" {
+		if strings.HasPrefix(path, "/api/") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		} else {
+			http.Redirect(w, r, "/login", http.StatusFound)
+		}
+		return
+	}
+
+	user, err := h.store.ValidateSession(cookie.Value)
+	if err != nil {
+		// Invalid/expired session
+		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
+		if strings.HasPrefix(path, "/api/") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		} else {
+			http.Redirect(w, r, "/login", http.StatusFound)
+		}
+		return
+	}
+
+	// Store user in request context
+	_ = user
 	h.mux.ServeHTTP(w, r)
 }
 
+func (h *Handler) currentUser(r *http.Request) *model.User {
+	cookie, err := r.Cookie(sessionCookie)
+	if err != nil {
+		return nil
+	}
+	user, err := h.store.ValidateSession(cookie.Value)
+	if err != nil {
+		return nil
+	}
+	return user
+}
+
 func (h *Handler) routes() {
+	// Auth routes (public)
+	h.mux.HandleFunc("/api/auth/login", h.handleLogin)
+	h.mux.HandleFunc("/api/auth/logout", h.handleLogout)
+	h.mux.HandleFunc("/api/auth/setup", h.handleSetup)
+	h.mux.HandleFunc("/api/auth/me", h.handleAuthMe)
+	h.mux.HandleFunc("/login", h.handleLoginPage)
+
+	// User management (admin only)
+	h.mux.HandleFunc("/api/users", h.handleUsers)
+	h.mux.HandleFunc("/api/users/", h.handleUser)
+
+	// Board routes
 	h.mux.HandleFunc("/api/columns/reorder", h.handleColumnsReorder)
 	h.mux.HandleFunc("/api/columns", h.handleColumns)
 	h.mux.HandleFunc("/api/columns/", h.handleColumn)
@@ -755,6 +828,194 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+// --- Auth ---
+func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	cnt, _ := h.store.UserCount()
+	if cnt > 0 {
+		http.Error(w, "setup already completed", 400)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if req.Username == "" || len(req.Password) < 6 {
+		http.Error(w, "username required, password min 6 chars", 400)
+		return
+	}
+	id, err := h.store.CreateUser(req.Username, req.Password, true)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	token, err := h.store.CreateSession(id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   30 * 24 * 3600,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	jsonResp(w, map[string]any{"status": "ok", "user_id": id})
+}
+
+func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	user, err := h.store.AuthenticateUser(req.Username, req.Password)
+	if err != nil {
+		http.Error(w, "invalid credentials", 401)
+		return
+	}
+	token, err := h.store.CreateSession(user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   30 * 24 * 3600,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	jsonResp(w, map[string]any{"status": "ok", "user": user})
+}
+
+func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	cookie, err := r.Cookie(sessionCookie)
+	if err == nil {
+		h.store.DeleteSession(cookie.Value)
+	}
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleAuthMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	jsonResp(w, user)
+}
+
+func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/templates/login.html")
+}
+
+// --- User management (admin only) ---
+func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
+	user := h.currentUser(r)
+	if user == nil || !user.IsAdmin {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		users, err := h.store.ListUsers()
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		jsonResp(w, users)
+	case http.MethodPost:
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			IsAdmin  bool   `json:"is_admin"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if req.Username == "" || len(req.Password) < 6 {
+			http.Error(w, "username required, password min 6 chars", 400)
+			return
+		}
+		id, err := h.store.CreateUser(req.Username, req.Password, req.IsAdmin)
+		if err != nil {
+			http.Error(w, "user exists or error: "+err.Error(), 409)
+			return
+		}
+		jsonResp(w, map[string]int64{"id": id})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
+	user := h.currentUser(r)
+	if user == nil || !user.IsAdmin {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	id := extractID(r.URL.Path, "/api/users/")
+	if id == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
+	switch r.Method {
+	case http.MethodDelete:
+		if err := h.store.DeleteUser(id); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		jsonResp(w, map[string]string{"status": "ok"})
+	case http.MethodPut:
+		var req struct {
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if len(req.Password) < 6 {
+			http.Error(w, "password min 6 chars", 400)
+			return
+		}
+		if err := h.store.UpdateUserPassword(id, req.Password); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		jsonResp(w, map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
 }
 
 // helpers

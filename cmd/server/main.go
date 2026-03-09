@@ -39,6 +39,14 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Clean expired sessions periodically
+	go func() {
+		for {
+			time.Sleep(1 * time.Hour)
+			store.CleanExpiredSessions()
+		}
+	}()
+
 	go func() {
 		log.Printf("kanban listening on %s", *addr)
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {

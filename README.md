@@ -1,64 +1,89 @@
-# Kanban — персональная доска задач
+# Kanban — Personal Task Board
 
-Минималистичный self-hosted канбан с эпиками, тегами, комментариями и drag-and-drop.
+[Русская версия](README.RUS.md)
 
-## Стек
+Minimalist self-hosted Kanban board with epics, tags, comments, authentication, and drag-and-drop.
 
-- **Go 1.22** — stdlib `net/http` для сервера, шаблонов и роутинга
-- **SQLite** (единственная внешняя зависимость через `mattn/go-sqlite3`)
-- **Vanilla JS** — никаких фреймворков на фронте
-- **Podman** — rootless контейнер с hardening
+## Stack
 
-## Возможности
+- **Go 1.22** — stdlib `net/http` for server, templates, and routing
+- **SQLite** (single external dependency via `mattn/go-sqlite3`)
+- **Vanilla JS** — no frontend frameworks
+- **Podman** — rootless container with hardening
 
-- Канбан-доска с перетаскиванием карточек между колонками
-- Создание / редактирование / удаление задач
-- Приоритеты (без, низкий, средний, высокий, критический)
-- Эпики с цветовой маркировкой
-- Теги (множественные на задачу)
-- Комментарии к задачам
-- Поиск по названию и описанию
-- Управление колонками
+## Features
 
-## Быстрый старт
+- Kanban board with drag-and-drop cards between columns
+- Create / edit / delete tasks
+- Priorities (none, low, medium, high, critical)
+- Epics with color coding and progress tracking
+- Tags (multiple per task)
+- Nested comments with replies
+- Task dependencies (depends on / blocks)
+- Markdown descriptions with syntax highlighting
+- Interactive TODO lists on tasks
+- File attachments and image paste (Ctrl+V)
+- Search across tasks, comments, tags, and epics (plaintext / regex)
+- Column management (create, reorder, delete)
+- 8 themes (dark, light, ocean, forest, nord, dracula, solarized, spacedust)
+- Adjustable font size
+- Timezone selector
+- Export / import board as JSON
+- Authentication with user management (admin panel)
+- All static assets served locally (no external CDN)
+- Mobile responsive
+
+## Quick Start
 
 ```bash
-# Сборка
+# Build
 ./kanban.sh build
 
-# Запуск
+# Run
 ./kanban.sh run
 
-# Открыть http://127.0.0.1:8080
+# Open http://127.0.0.1:8080
 ```
 
-## Команды
+On first launch you will be prompted to create an admin account.
 
-| Команда              | Описание                    |
-|---------------------|-----------------------------|
-| `./kanban.sh build`   | Собрать образ контейнера    |
-| `./kanban.sh run`     | Запустить контейнер         |
-| `./kanban.sh stop`    | Остановить                  |
-| `./kanban.sh restart` | Перезапустить               |
-| `./kanban.sh logs`    | Логи                        |
-| `./kanban.sh backup`  | Бэкап БД в ./backups/      |
-| `./kanban.sh status`  | Статус контейнера           |
+## Commands
 
-## Безопасность контейнера
+| Command               | Description                 |
+|-----------------------|-----------------------------|
+| `./kanban.sh build`   | Build container image       |
+| `./kanban.sh run`     | Start container             |
+| `./kanban.sh stop`    | Stop container              |
+| `./kanban.sh restart` | Restart container           |
+| `./kanban.sh logs`    | View logs                   |
+| `./kanban.sh backup`  | Backup DB to ./backups/     |
+| `./kanban.sh status`  | Container status            |
 
-- **Non-root**: процесс запускается от пользователя `kanban` (не root)
-- **Read-only filesystem**: корневая ФС монтируется только на чтение
-- **CAP_DROP ALL**: все capabilities сброшены
-- **no-new-privileges**: запрет эскалации привилегий
-- **Лимиты**: 256MB RAM, 0.5 CPU
-- **Слушает только 127.0.0.1**: наружу только через nginx
+## Authentication
+
+The application requires authentication. On first launch, create an admin account via the setup page. Admins can:
+
+- Create and delete users
+- Reset user passwords
+- All users have full board access
+
+Sessions are cookie-based (30-day expiry) with PBKDF2-HMAC-SHA256 password hashing.
+
+## Container Security
+
+- **Non-root**: runs as `kanban` user (not root)
+- **Read-only filesystem**: root FS mounted read-only
+- **CAP_DROP ALL**: all capabilities dropped
+- **no-new-privileges**: privilege escalation blocked
+- **Limits**: 256MB RAM, 0.5 CPU
+- **Listens on 127.0.0.1 only**: exposed via nginx
 
 ## Nginx
 
-Конфиг для reverse proxy с TLS в `deploy/nginx-kanban.conf`.  
-Скопировать в `/etc/nginx/sites-available/` и сгенерировать сертификаты.
+Reverse proxy config with TLS in `deploy/nginx-kanban.conf`.
+Copy to `/etc/nginx/sites-available/` and generate certificates.
 
-Для self-signed:
+Self-signed example:
 ```bash
 openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
   -keyout /etc/nginx/ssl/kanban.key \
@@ -68,8 +93,8 @@ openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
 
 ## Systemd (Quadlet)
 
-Для автозапуска через systemd quadlet — скопировать `deploy/kanban.container`
-в `~/.config/containers/systemd/` и выполнить:
+For auto-start via systemd quadlet, copy `deploy/kanban.container`
+to `~/.config/containers/systemd/` and run:
 
 ```bash
 systemctl --user daemon-reload
@@ -77,45 +102,81 @@ systemctl --user start kanban
 systemctl --user enable kanban
 ```
 
-## Структура проекта
+## Project Structure
 
 ```
 kanban/
-├── cmd/server/main.go      # точка входа
+├── cmd/server/main.go         # entry point
 ├── internal/
-│   ├── db/store.go          # SQLite хранилище + миграции
-│   ├── handler/handler.go   # HTTP обработчики (REST API)
-│   └── model/model.go       # модели данных
-├── web/templates/index.html  # SPA фронтенд
+│   ├── auth/auth.go           # PBKDF2 password hashing & tokens
+│   ├── db/store.go            # SQLite storage + migrations
+│   ├── handler/handler.go     # HTTP handlers (REST API)
+│   └── model/model.go         # data models
+├── web/
+│   └── templates/
+│       ├── index.html         # SPA frontend
+│       └── login.html         # login / setup page
 ├── deploy/
-│   ├── kanban.container      # Quadlet unit
-│   └── nginx-kanban.conf     # Nginx config
-├── Containerfile             # multi-stage build
-├── kanban.sh                 # управляющий скрипт
+│   ├── kanban.container       # Quadlet unit
+│   └── nginx-kanban.conf      # Nginx config
+├── Containerfile              # multi-stage build (assets + Go + runtime)
+├── kanban.sh                  # management script
 └── README.md
 ```
 
 ## API
 
-Все эндпоинты возвращают JSON.
+All endpoints return JSON. Authentication required (session cookie).
 
-| Метод  | Путь                | Описание                |
-|--------|---------------------|-------------------------|
-| GET    | /api/board          | Вся доска (колонки, задачи, эпики, теги) |
-| GET    | /api/tasks          | Список задач            |
-| POST   | /api/tasks          | Создать задачу          |
-| GET    | /api/tasks/:id      | Детали задачи           |
-| PUT    | /api/tasks/:id      | Обновить задачу         |
-| DELETE | /api/tasks/:id      | Удалить задачу          |
-| POST   | /api/tasks/move     | Переместить задачу      |
-| GET    | /api/columns        | Список колонок          |
-| POST   | /api/columns        | Создать колонку         |
-| DELETE | /api/columns/:id    | Удалить колонку         |
-| GET    | /api/epics          | Список эпиков           |
-| POST   | /api/epics          | Создать эпик            |
-| DELETE | /api/epics/:id      | Удалить эпик            |
-| GET    | /api/tags           | Список тегов            |
-| POST   | /api/tags           | Создать тег             |
-| DELETE | /api/tags/:id       | Удалить тег             |
-| POST   | /api/comments       | Добавить комментарий    |
-| DELETE | /api/comments/:id   | Удалить комментарий     |
+### Auth
+
+| Method | Path              | Description              |
+|--------|-------------------|--------------------------|
+| POST   | /api/auth/setup   | Create first admin user  |
+| POST   | /api/auth/login   | Login                    |
+| POST   | /api/auth/logout  | Logout                   |
+| GET    | /api/auth/me      | Current user info        |
+
+### Users (admin only)
+
+| Method | Path              | Description              |
+|--------|-------------------|--------------------------|
+| GET    | /api/users        | List users               |
+| POST   | /api/users        | Create user              |
+| PUT    | /api/users/:id    | Update user password     |
+| DELETE | /api/users/:id    | Delete user              |
+
+### Board
+
+| Method | Path                | Description                            |
+|--------|---------------------|----------------------------------------|
+| GET    | /api/board          | Full board (columns, tasks, epics, tags) |
+| GET    | /api/tasks          | List tasks                             |
+| POST   | /api/tasks          | Create task                            |
+| GET    | /api/tasks/:id      | Task details                           |
+| PUT    | /api/tasks/:id      | Update task                            |
+| DELETE | /api/tasks/:id      | Delete task                            |
+| POST   | /api/tasks/move     | Move task between columns              |
+| GET    | /api/columns        | List columns                           |
+| POST   | /api/columns        | Create column                          |
+| PUT    | /api/columns/:id    | Update column                          |
+| DELETE | /api/columns/:id    | Delete column                          |
+| POST   | /api/columns/reorder| Reorder columns                        |
+| GET    | /api/epics          | List epics                             |
+| POST   | /api/epics          | Create epic                            |
+| GET    | /api/epics/:id      | Epic with tasks                        |
+| PUT    | /api/epics/:id      | Update epic                            |
+| DELETE | /api/epics/:id      | Delete epic                            |
+| GET    | /api/tags           | List tags                              |
+| POST   | /api/tags           | Create tag                             |
+| DELETE | /api/tags/:id       | Delete tag                             |
+| POST   | /api/comments       | Add comment                            |
+| PUT    | /api/comments/:id   | Edit comment                           |
+| DELETE | /api/comments/:id   | Delete comment                         |
+| GET    | /api/search?q=...   | Search tasks                           |
+| POST   | /api/images         | Upload image (base64)                  |
+| GET    | /api/images/:id     | Serve image                            |
+| POST   | /api/files          | Upload file (base64)                   |
+| GET    | /api/files/:id      | Download file                          |
+| GET    | /api/export         | Export board as JSON                   |
+| POST   | /api/import         | Import board from JSON                 |

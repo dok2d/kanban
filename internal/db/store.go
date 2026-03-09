@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"kanban/internal/auth"
 	"kanban/internal/model"
 	"log"
 	"time"
@@ -96,10 +97,23 @@ func (s *Store) migrate() error {
 			depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
 			PRIMARY KEY (task_id, depends_on_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			is_admin INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			token TEXT PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			expires_at DATETIME NOT NULL
+		)`,
 		// indexes for FK lookups
 		`CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_comments_task_id ON comments(task_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -835,6 +849,127 @@ func (s *Store) TaskDependents(taskID int64) []model.TaskDep {
 		deps = append(deps, d)
 	}
 	return deps
+}
+
+// --- Users ---
+
+func (s *Store) UserCount() (int, error) {
+	var cnt int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&cnt)
+	return cnt, err
+}
+
+func (s *Store) CreateUser(username, password string, isAdmin bool) (int64, error) {
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return 0, err
+	}
+	admin := 0
+	if isAdmin {
+		admin = 1
+	}
+	r, err := s.db.Exec("INSERT INTO users(username,password_hash,is_admin) VALUES(?,?,?)", username, hash, admin)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastInsertId()
+}
+
+func (s *Store) AuthenticateUser(username, password string) (*model.User, error) {
+	var u model.User
+	var hash string
+	var admin int
+	err := s.db.QueryRow("SELECT id,username,password_hash,is_admin,created_at FROM users WHERE username=?", username).
+		Scan(&u.ID, &u.Username, &hash, &admin, &u.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+	if !auth.CheckPassword(password, hash) {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+	u.IsAdmin = admin == 1
+	return &u, nil
+}
+
+func (s *Store) CreateSession(userID int64) (string, error) {
+	token, err := auth.GenerateToken()
+	if err != nil {
+		return "", err
+	}
+	expires := time.Now().Add(30 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	_, err = s.db.Exec("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)", token, userID, expires)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (s *Store) ValidateSession(token string) (*model.User, error) {
+	var u model.User
+	var admin int
+	err := s.db.QueryRow(`SELECT u.id,u.username,u.is_admin,u.created_at FROM users u
+		JOIN sessions s ON s.user_id=u.id
+		WHERE s.token=? AND s.expires_at > datetime('now')`, token).
+		Scan(&u.ID, &u.Username, &admin, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	u.IsAdmin = admin == 1
+	return &u, nil
+}
+
+func (s *Store) DeleteSession(token string) error {
+	_, err := s.db.Exec("DELETE FROM sessions WHERE token=?", token)
+	return err
+}
+
+func (s *Store) CleanExpiredSessions() {
+	s.db.Exec("DELETE FROM sessions WHERE expires_at <= datetime('now')")
+}
+
+func (s *Store) ListUsers() ([]model.User, error) {
+	rows, err := s.db.Query("SELECT id,username,is_admin,created_at FROM users ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make([]model.User, 0)
+	for rows.Next() {
+		var u model.User
+		var admin int
+		if err := rows.Scan(&u.ID, &u.Username, &admin, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		u.IsAdmin = admin == 1
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+func (s *Store) DeleteUser(id int64) error {
+	// Don't delete the last admin
+	var adminCount int
+	s.db.QueryRow("SELECT COUNT(*) FROM users WHERE is_admin=1").Scan(&adminCount)
+	var isAdmin int
+	s.db.QueryRow("SELECT is_admin FROM users WHERE id=?", id).Scan(&isAdmin)
+	if isAdmin == 1 && adminCount <= 1 {
+		return fmt.Errorf("cannot delete the last admin user")
+	}
+	_, err := s.db.Exec("DELETE FROM sessions WHERE user_id=?", id)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("DELETE FROM users WHERE id=?", id)
+	return err
+}
+
+func (s *Store) UpdateUserPassword(id int64, newPassword string) error {
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("UPDATE users SET password_hash=? WHERE id=?", hash, id)
+	return err
 }
 
 func (s *Store) ImportAll(data *model.ExportData) error {

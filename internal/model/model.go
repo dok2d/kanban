@@ -65,6 +65,21 @@ type Attachment struct {
 	URL       string `json:"url"`
 }
 
+// User represents an authenticated user
+type User struct {
+	ID        int64  `json:"id"`
+	Username  string `json:"username"`
+	IsAdmin   bool   `json:"is_admin"`
+	CreatedAt string `json:"created_at"`
+}
+
+// Session represents an active user session
+type Session struct {
+	Token     string
+	UserID    int64
+	ExpiresAt string
+}
+
 // ExportData is the full board export structure
 type ExportData struct {
 	Columns  []Column  `json:"columns"`
