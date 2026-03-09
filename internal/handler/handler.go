@@ -13,10 +13,10 @@ import (
 
 // allowed MIME types for image uploads
 var allowedImageMIME = map[string]bool{
-	"image/png":  true,
-	"image/jpeg": true,
-	"image/gif":  true,
-	"image/webp": true,
+	"image/png":     true,
+	"image/jpeg":    true,
+	"image/gif":     true,
+	"image/webp":    true,
 	"image/svg+xml": false, // SVG can contain scripts
 }
 
@@ -74,8 +74,8 @@ func (h *Handler) routes() {
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	// SPA: serve index.html for / and /task/* routes
-	if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/task/") {
+	// SPA: serve index.html for /, /task/*, /epic/* routes
+	if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") {
 		http.ServeFile(w, r, "web/templates/index.html")
 		return
 	}
@@ -308,16 +308,29 @@ func (h *Handler) handleEpic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodGet:
+		epic, err := h.store.GetEpic(id)
+		if err != nil {
+			http.Error(w, "not found", 404)
+			return
+		}
+		tasks, err := h.store.EpicTasks(id)
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		jsonResp(w, map[string]any{"epic": epic, "tasks": tasks})
 	case http.MethodPut:
 		var req struct {
-			Name  string
-			Color string
+			Name        string `json:"name"`
+			Color       string `json:"color"`
+			Description string `json:"description"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", 400)
 			return
 		}
-		if err := h.store.UpdateEpic(id, req.Name, req.Color); err != nil {
+		if err := h.store.UpdateEpic(id, req.Name, req.Color, req.Description); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -401,6 +414,8 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Title       string  `json:"title"`
 			Description string  `json:"description"`
+			Todo        string  `json:"todo"`
+			ProjectURL  string  `json:"project_url"`
 			ColumnID    int64   `json:"column_id"`
 			EpicID      *int64  `json:"epic_id"`
 			Priority    int     `json:"priority"`
@@ -414,7 +429,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "title and column_id required", 400)
 			return
 		}
-		id, err := h.store.CreateTask(req.Title, req.Description, req.ColumnID, req.EpicID, req.Priority, req.TagIDs)
+		id, err := h.store.CreateTask(req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.Priority, req.TagIDs)
 		if err != nil {
 			h.logf("create task: %v", err)
 			http.Error(w, err.Error(), 500)
@@ -449,6 +464,8 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Title       string  `json:"title"`
 			Description string  `json:"description"`
+			Todo        string  `json:"todo"`
+			ProjectURL  string  `json:"project_url"`
 			ColumnID    int64   `json:"column_id"`
 			EpicID      *int64  `json:"epic_id"`
 			Priority    int     `json:"priority"`
@@ -458,7 +475,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request", 400)
 			return
 		}
-		if err := h.store.UpdateTask(id, req.Title, req.Description, req.ColumnID, req.EpicID, req.Priority, req.TagIDs); err != nil {
+		if err := h.store.UpdateTask(id, req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.Priority, req.TagIDs); err != nil {
 			h.logf("UpdateTask(%d) error: %v", id, err)
 			http.Error(w, err.Error(), 500)
 			return

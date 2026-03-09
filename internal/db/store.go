@@ -97,6 +97,17 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("exec %q: %w", label, err)
 		}
 	}
+
+	// add new columns if missing (safe ALTER TABLE for existing DBs)
+	alters := []string{
+		"ALTER TABLE tasks ADD COLUMN todo TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE tasks ADD COLUMN project_url TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE epics ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+	}
+	for _, q := range alters {
+		s.db.Exec(q) // ignore "duplicate column" errors
+	}
+
 	// seed default columns if empty
 	var cnt int
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM columns").Scan(&cnt); err != nil {
@@ -204,7 +215,7 @@ func (s *Store) ReorderColumns(ids []int64) error {
 // --- Epics ---
 
 func (s *Store) ListEpics() ([]model.Epic, error) {
-	rows, err := s.db.Query("SELECT id,name,color FROM epics ORDER BY name")
+	rows, err := s.db.Query("SELECT id,name,color,description FROM epics ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +223,7 @@ func (s *Store) ListEpics() ([]model.Epic, error) {
 	epics := make([]model.Epic, 0)
 	for rows.Next() {
 		var e model.Epic
-		if err := rows.Scan(&e.ID, &e.Name, &e.Color); err != nil {
+		if err := rows.Scan(&e.ID, &e.Name, &e.Color, &e.Description); err != nil {
 			return nil, fmt.Errorf("scan epic: %w", err)
 		}
 		epics = append(epics, e)
@@ -223,6 +234,16 @@ func (s *Store) ListEpics() ([]model.Epic, error) {
 	return epics, nil
 }
 
+func (s *Store) GetEpic(id int64) (*model.Epic, error) {
+	var e model.Epic
+	err := s.db.QueryRow("SELECT id,name,color,description FROM epics WHERE id=?", id).
+		Scan(&e.ID, &e.Name, &e.Color, &e.Description)
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
 func (s *Store) CreateEpic(name, color string) (int64, error) {
 	r, err := s.db.Exec("INSERT INTO epics(name,color) VALUES(?,?)", name, color)
 	if err != nil {
@@ -231,8 +252,8 @@ func (s *Store) CreateEpic(name, color string) (int64, error) {
 	return r.LastInsertId()
 }
 
-func (s *Store) UpdateEpic(id int64, name, color string) error {
-	_, err := s.db.Exec("UPDATE epics SET name=?,color=? WHERE id=?", name, color, id)
+func (s *Store) UpdateEpic(id int64, name, color, description string) error {
+	_, err := s.db.Exec("UPDATE epics SET name=?,color=?,description=? WHERE id=?", name, color, description, id)
 	return err
 }
 
@@ -249,6 +270,51 @@ func (s *Store) DeleteEpic(id int64) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// EpicTasks returns tasks belonging to an epic with their column info.
+func (s *Store) EpicTasks(epicID int64) ([]model.Task, error) {
+	rows, err := s.db.Query(`
+		SELECT t.id, t.title, t.description, t.todo, t.project_url,
+		       t.column_id, t.epic_id, t.position, t.priority, t.created_at, t.updated_at
+		FROM tasks t WHERE t.epic_id=? ORDER BY t.position, t.id`, epicID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tasks := make([]model.Task, 0)
+	var taskIDs []int64
+	for rows.Next() {
+		var t model.Task
+		var eid sql.NullInt64
+		var ca, ua string
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL,
+			&t.ColumnID, &eid, &t.Position, &t.Priority, &ca, &ua); err != nil {
+			return nil, fmt.Errorf("scan epic task: %w", err)
+		}
+		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
+		t.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+		if eid.Valid {
+			t.EpicID = &eid.Int64
+		}
+		t.Tags = []model.Tag{}
+		tasks = append(tasks, t)
+		taskIDs = append(taskIDs, t.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(taskIDs) > 0 {
+		tagMap, err := s.batchTaskTags(taskIDs)
+		if err == nil {
+			for i := range tasks {
+				if tags, ok := tagMap[tasks[i].ID]; ok {
+					tasks[i].Tags = tags
+				}
+			}
+		}
+	}
+	return tasks, nil
 }
 
 // --- Tags ---
@@ -300,7 +366,8 @@ func (s *Store) DeleteTag(id int64) error {
 
 func (s *Store) ListTasks() ([]model.Task, error) {
 	rows, err := s.db.Query(`
-		SELECT t.id, t.title, t.description, t.column_id, t.epic_id,
+		SELECT t.id, t.title, t.description, t.todo, t.project_url,
+		       t.column_id, t.epic_id,
 		       t.position, t.priority, t.created_at, t.updated_at,
 		       e.id, e.name, e.color
 		FROM tasks t
@@ -318,7 +385,8 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 		var eid sql.NullInt64
 		var epicName, epicColor sql.NullString
 		var ca, ua string
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ColumnID, &eid,
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL,
+			&t.ColumnID, &eid,
 			&t.Position, &t.Priority, &ca, &ua,
 			&eid, &epicName, &epicColor); err != nil {
 			return nil, fmt.Errorf("scan task: %w", err)
@@ -359,8 +427,8 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 	var t model.Task
 	var eid sql.NullInt64
 	var ca, ua string
-	err := s.db.QueryRow(`SELECT id,title,description,column_id,epic_id,position,priority,created_at,updated_at
-		FROM tasks WHERE id=?`, id).Scan(&t.ID, &t.Title, &t.Description, &t.ColumnID, &eid,
+	err := s.db.QueryRow(`SELECT id,title,description,todo,project_url,column_id,epic_id,position,priority,created_at,updated_at
+		FROM tasks WHERE id=?`, id).Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL, &t.ColumnID, &eid,
 		&t.Position, &t.Priority, &ca, &ua)
 	if err != nil {
 		return nil, err
@@ -370,7 +438,7 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 	if eid.Valid {
 		t.EpicID = &eid.Int64
 		var e model.Epic
-		if err := s.db.QueryRow("SELECT id,name,color FROM epics WHERE id=?", eid.Int64).Scan(&e.ID, &e.Name, &e.Color); err == nil {
+		if err := s.db.QueryRow("SELECT id,name,color,description FROM epics WHERE id=?", eid.Int64).Scan(&e.ID, &e.Name, &e.Color, &e.Description); err == nil {
 			t.Epic = &e
 		}
 	}
@@ -379,7 +447,7 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 	return &t, nil
 }
 
-func (s *Store) CreateTask(title, desc string, colID int64, epicID *int64, priority int, tagIDs []int64) (int64, error) {
+func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, epicID *int64, priority int, tagIDs []int64) (int64, error) {
 	s.logf("CreateTask(%q, col=%d, prio=%d, tags=%v)", title, colID, priority, tagIDs)
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -389,8 +457,8 @@ func (s *Store) CreateTask(title, desc string, colID int64, epicID *int64, prior
 
 	var maxPos int
 	tx.QueryRow("SELECT COALESCE(MAX(position),0) FROM tasks WHERE column_id=?", colID).Scan(&maxPos)
-	r, err := tx.Exec(`INSERT INTO tasks(title,description,column_id,epic_id,position,priority)
-		VALUES(?,?,?,?,?,?)`, title, desc, colID, epicID, maxPos+1, priority)
+	r, err := tx.Exec(`INSERT INTO tasks(title,description,todo,project_url,column_id,epic_id,position,priority)
+		VALUES(?,?,?,?,?,?,?,?)`, title, desc, todo, projectURL, colID, epicID, maxPos+1, priority)
 	if err != nil {
 		s.logf("CreateTask error: %v", err)
 		return 0, err
@@ -408,15 +476,15 @@ func (s *Store) CreateTask(title, desc string, colID int64, epicID *int64, prior
 	return id, nil
 }
 
-func (s *Store) UpdateTask(id int64, title, desc string, colID int64, epicID *int64, priority int, tagIDs []int64) error {
+func (s *Store) UpdateTask(id int64, title, desc, todo, projectURL string, colID int64, epicID *int64, priority int, tagIDs []int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`UPDATE tasks SET title=?,description=?,column_id=?,epic_id=?,priority=?,
-		updated_at=datetime('now') WHERE id=?`, title, desc, colID, epicID, priority, id)
+	_, err = tx.Exec(`UPDATE tasks SET title=?,description=?,todo=?,project_url=?,column_id=?,epic_id=?,priority=?,
+		updated_at=datetime('now') WHERE id=?`, title, desc, todo, projectURL, colID, epicID, priority, id)
 	if err != nil {
 		return err
 	}

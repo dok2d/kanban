@@ -9,9 +9,10 @@ type Column struct {
 }
 
 type Epic struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	Color string `json:"color"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
 }
 
 type Tag struct {
@@ -24,6 +25,8 @@ type Task struct {
 	ID          int64     `json:"id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
+	Todo        string    `json:"todo"`
+	ProjectURL  string    `json:"project_url"`
 	ColumnID    int64     `json:"column_id"`
 	EpicID      *int64    `json:"epic_id"`
 	Position    int       `json:"position"`
