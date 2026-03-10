@@ -1,17 +1,20 @@
 package handler
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"kanban/internal/db"
 	"kanban/internal/model"
 	"log"
+	"math/big"
 	"net/http"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const sessionCookie = "kanban_session"
@@ -84,6 +87,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Public paths: login page, login API, static assets, setup
 	path := r.URL.Path
 	if path == "/login" || path == "/api/auth/login" || path == "/api/auth/setup" ||
+		path == "/api/auth/reset-request" || path == "/api/auth/reset-confirm" ||
 		strings.HasPrefix(path, "/static/") {
 		h.mux.ServeHTTP(w, r)
 		return
@@ -160,6 +164,8 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/auth/logout", h.handleLogout)
 	h.mux.HandleFunc("/api/auth/setup", h.handleSetup)
 	h.mux.HandleFunc("/api/auth/me", h.handleAuthMe)
+	h.mux.HandleFunc("/api/auth/reset-request", h.handleResetRequest)
+	h.mux.HandleFunc("/api/auth/reset-confirm", h.handleResetConfirm)
 	h.mux.HandleFunc("/login", h.handleLoginPage)
 
 	// User management (admin only)
@@ -1031,7 +1037,7 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   30 * 24 * 3600,
+		MaxAge:   90 * 24 * 3600,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -1065,7 +1071,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   30 * 24 * 3600,
+		MaxAge:   90 * 24 * 3600,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -1120,6 +1126,76 @@ func (h *Handler) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "web/templates/login.html")
+}
+
+func (h *Handler) handleResetRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" {
+		http.Error(w, "username required", 400)
+		return
+	}
+	user, err := h.store.GetUserByUsername(req.Username)
+	if err != nil {
+		// Don't reveal whether user exists
+		jsonResp(w, map[string]string{"status": "ok"})
+		return
+	}
+	if user.TelegramID == 0 {
+		// Don't reveal whether user has Telegram linked
+		jsonResp(w, map[string]string{"status": "ok"})
+		return
+	}
+	// Generate 6-digit code using crypto/rand
+	n, err2 := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err2 != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	code := fmt.Sprintf("%06d", n.Int64())
+	if err := h.store.SetResetCode(user.ID, code); err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	// Send code via Telegram
+	h.sendTelegramNotification(user.ID, fmt.Sprintf("Код восстановления пароля: %s\nДействителен 10 минут.", code))
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleResetConfirm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Username    string `json:"username"`
+		Code        string `json:"code"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if req.Username == "" || req.Code == "" || len(req.NewPassword) < 6 {
+		http.Error(w, "username, code, and new_password (min 6) required", 400)
+		return
+	}
+	user, err := h.store.ValidateResetCode(req.Username, req.Code)
+	if err != nil {
+		http.Error(w, "invalid or expired code", 400)
+		return
+	}
+	if err := h.store.UpdateUserPassword(user.ID, req.NewPassword); err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	h.store.ClearResetCode(user.ID)
+	jsonResp(w, map[string]string{"status": "ok"})
 }
 
 // --- User management (admin only) ---

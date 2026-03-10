@@ -170,6 +170,8 @@ func (s *Store) migrate() error {
 		"ALTER TABLE users ADD COLUMN telegram_chat_id INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE users ADD COLUMN link_hash TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE tasks ADD COLUMN deadline TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE users ADD COLUMN reset_code TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE users ADD COLUMN reset_code_expires DATETIME",
 	}
 	for _, q := range alters {
 		s.db.Exec(q) // ignore "duplicate column" errors
@@ -618,13 +620,59 @@ func (s *Store) UpdateComment(id int64, text string) error {
 }
 
 func (s *Store) DeleteComment(id int64) error {
-	// Delete child comments first, then the comment itself
-	_, err := s.db.Exec("DELETE FROM comments WHERE parent_id=?", id)
+	// Recursively delete all descendants, then the comment itself
+	return s.deleteCommentTree(id)
+}
+
+func (s *Store) deleteCommentTree(id int64) error {
+	// Find all direct children
+	rows, err := s.db.Query("SELECT id FROM comments WHERE parent_id=?", id)
 	if err != nil {
 		return err
 	}
+	var childIDs []int64
+	for rows.Next() {
+		var cid int64
+		if err := rows.Scan(&cid); err != nil {
+			rows.Close()
+			return err
+		}
+		childIDs = append(childIDs, cid)
+	}
+	rows.Close()
+	// Recursively delete children
+	for _, cid := range childIDs {
+		if err := s.deleteCommentTree(cid); err != nil {
+			return err
+		}
+	}
+	// Delete the comment itself
 	_, err = s.db.Exec("DELETE FROM comments WHERE id=?", id)
 	return err
+}
+
+// CountCommentDescendants returns the number of replies (all levels) for a comment
+func (s *Store) CountCommentDescendants(id int64) int {
+	var count int
+	s.db.QueryRow("SELECT COUNT(*) FROM comments WHERE parent_id=?", id).Scan(&count)
+	// Add descendants of children recursively
+	rows, err := s.db.Query("SELECT id FROM comments WHERE parent_id=?", id)
+	if err != nil {
+		return count
+	}
+	defer rows.Close()
+	var childIDs []int64
+	for rows.Next() {
+		var cid int64
+		if err := rows.Scan(&cid); err != nil {
+			continue
+		}
+		childIDs = append(childIDs, cid)
+	}
+	for _, cid := range childIDs {
+		count += s.CountCommentDescendants(cid)
+	}
+	return count
 }
 
 func (s *Store) GetCommentTaskID(commentID int64) (int64, error) {
@@ -978,7 +1026,7 @@ func (s *Store) CreateSession(userID int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	expires := time.Now().Add(30 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	expires := time.Now().Add(90 * 24 * time.Hour).Format("2006-01-02 15:04:05")
 	_, err = s.db.Exec("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)", token, userID, expires)
 	if err != nil {
 		return "", err
@@ -1050,8 +1098,8 @@ func (s *Store) GetUserByUsername(username string) (*model.User, error) {
 	var u model.User
 	var admin int
 	var role string
-	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at FROM users WHERE username=?", username).
-		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt)
+	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at,telegram_chat_id FROM users WHERE username=?", username).
+		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt, &u.TelegramID)
 	if err != nil {
 		return nil, err
 	}
@@ -1142,8 +1190,63 @@ func (s *Store) ClearLinkHash(userID int64) error {
 	return err
 }
 
+func (s *Store) FindUserByChatID(chatID int64) *model.User {
+	if chatID == 0 {
+		return nil
+	}
+	var u model.User
+	var admin int
+	var role string
+	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at,telegram_chat_id FROM users WHERE telegram_chat_id=?", chatID).
+		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt, &u.TelegramID)
+	if err != nil {
+		return nil
+	}
+	u.IsAdmin = admin == 1
+	u.Role = role
+	return &u
+}
+
 func (s *Store) UnlinkTelegram(userID int64) error {
 	_, err := s.db.Exec("UPDATE users SET telegram_chat_id=0 WHERE id=?", userID)
+	return err
+}
+
+// --- Password Reset ---
+
+func (s *Store) SetResetCode(userID int64, code string) error {
+	expires := time.Now().Add(10 * time.Minute).Format("2006-01-02 15:04:05")
+	_, err := s.db.Exec("UPDATE users SET reset_code=?, reset_code_expires=? WHERE id=?", code, expires, userID)
+	return err
+}
+
+func (s *Store) ValidateResetCode(username, code string) (*model.User, error) {
+	var u model.User
+	var admin int
+	var role string
+	var resetCode string
+	var expiresStr sql.NullString
+	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at,reset_code,reset_code_expires FROM users WHERE username=?", username).
+		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt, &resetCode, &expiresStr)
+	if err != nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if resetCode == "" || resetCode != code {
+		return nil, fmt.Errorf("invalid code")
+	}
+	if expiresStr.Valid {
+		expires, _ := time.Parse("2006-01-02 15:04:05", expiresStr.String)
+		if time.Now().After(expires) {
+			return nil, fmt.Errorf("code expired")
+		}
+	}
+	u.IsAdmin = admin == 1
+	u.Role = role
+	return &u, nil
+}
+
+func (s *Store) ClearResetCode(userID int64) error {
+	_, err := s.db.Exec("UPDATE users SET reset_code='', reset_code_expires=NULL WHERE id=?", userID)
 	return err
 }
 

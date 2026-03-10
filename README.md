@@ -74,7 +74,9 @@ Three roles are available:
 - **User** — create/edit/delete tasks, comment, subscribe to notifications
 - **Read-only** — view board and tasks, receive notifications
 
-Sessions are cookie-based (30-day expiry) with PBKDF2-HMAC-SHA256 password hashing.
+Sessions are cookie-based (90-day expiry) with PBKDF2-HMAC-SHA256 password hashing.
+
+Password recovery is available for users with linked Telegram — a 6-digit code is sent to the bot.
 
 ## Telegram Integration
 
@@ -85,6 +87,12 @@ Admins can configure a Telegram bot for push notifications:
 3. Users link their accounts by sending a hash code to the bot
 
 Notifications are sent for: task assignments, @mentions, comments on subscribed tasks, and task updates.
+
+Bot commands:
+- `/tasks` — list your assigned tasks
+- `/task N` — view task #N details and recent comments
+- `/comment N text` — add a comment to task #N
+- `/help` — show available commands
 
 ## Container Security
 
@@ -157,6 +165,8 @@ All endpoints return JSON. Authentication required (session cookie).
 | POST   | /api/auth/login   | Login                    |
 | POST   | /api/auth/logout  | Logout                   |
 | GET    | /api/auth/me      | Current user info        |
+| POST   | /api/auth/reset-request | Request password reset (via Telegram) |
+| POST   | /api/auth/reset-confirm | Confirm reset with code |
 
 ### Users (admin only)
 
