@@ -1319,6 +1319,10 @@ func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "invalid role", 400)
 				return
 			}
+			if id == user.ID {
+				http.Error(w, "cannot change own role", 400)
+				return
+			}
 			if err := h.store.UpdateUserRole(id, req.Role); err != nil {
 				http.Error(w, err.Error(), 500)
 				return

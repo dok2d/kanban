@@ -932,7 +932,7 @@ function renderSidebar() {
         <span style="cursor:pointer" onclick="navigateTo('/user/${u.id}')">${esc(u.username)}</span>
         <span style="font-size:.72rem;color:var(--fg3)">${t(u.role)}</span>
         <div style="display:flex;gap:2px">
-          <button class="btn-icon btn-sm" onclick="changeUserRole(${u.id},'${u.role}')" title="${t('role')}">&#9881;</button>
+          ${u.id !== currentUser.id ? `<button class="btn-icon btn-sm" onclick="changeUserRole(${u.id},'${u.role}')" title="${t('role')}">&#9881;</button>` : ''}
           <button class="btn-icon btn-sm" onclick="resetUserPassword(${u.id})" title="${t('resetPassword')}">&#128274;</button>
           ${u.id !== currentUser.id ? `<button class="btn-icon btn-sm" onclick="deleteUser(${u.id})" title="${t('delete')}" style="color:var(--red)">&#10005;</button>` : ''}
         </div>
