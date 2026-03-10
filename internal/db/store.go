@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"kanban/internal/auth"
 	"kanban/internal/model"
 	"log"
 	"time"
@@ -96,10 +97,55 @@ func (s *Store) migrate() error {
 			depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
 			PRIMARY KEY (task_id, depends_on_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			is_admin INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			token TEXT PRIMARY KEY,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			expires_at DATETIME NOT NULL
+		)`,
+		// Notifications
+		`CREATE TABLE IF NOT EXISTS notifications (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			type TEXT NOT NULL DEFAULT 'mention',
+			text TEXT NOT NULL,
+			task_id INTEGER,
+			is_read INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		// Task subscriptions
+		`CREATE TABLE IF NOT EXISTS task_subscriptions (
+			task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			PRIMARY KEY (task_id, user_id)
+		)`,
+		// Activity log
+		`CREATE TABLE IF NOT EXISTS activity_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			action TEXT NOT NULL,
+			task_id INTEGER,
+			details TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		// App settings (key-value)
+		`CREATE TABLE IF NOT EXISTS app_settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL DEFAULT ''
+		)`,
 		// indexes for FK lookups
 		`CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_comments_task_id ON comments(task_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_activity_log_user_id ON activity_log(user_id)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -115,13 +161,21 @@ func (s *Store) migrate() error {
 	alters := []string{
 		"ALTER TABLE tasks ADD COLUMN todo TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE tasks ADD COLUMN project_url TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE tasks ADD COLUMN assignee_id INTEGER REFERENCES users(id)",
 		"ALTER TABLE epics ADD COLUMN description TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id)",
 		"ALTER TABLE comments ADD COLUMN updated_at DATETIME",
+		"ALTER TABLE comments ADD COLUMN author_id INTEGER REFERENCES users(id)",
+		"ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'regular'",
+		"ALTER TABLE users ADD COLUMN telegram_chat_id INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE users ADD COLUMN link_hash TEXT NOT NULL DEFAULT ''",
 	}
 	for _, q := range alters {
 		s.db.Exec(q) // ignore "duplicate column" errors
 	}
+
+	// Migrate existing users: set role based on is_admin
+	s.db.Exec("UPDATE users SET role='admin' WHERE is_admin=1 AND role='regular'")
 
 	// seed default columns if empty
 	var cnt int
@@ -289,7 +343,7 @@ func (s *Store) DeleteEpic(id int64) error {
 func (s *Store) EpicTasks(epicID int64) ([]model.Task, error) {
 	rows, err := s.db.Query(`
 		SELECT t.id, t.title, t.description, t.todo, t.project_url,
-		       t.column_id, t.epic_id, t.position, t.priority, t.created_at, t.updated_at
+		       t.column_id, t.epic_id, t.assignee_id, t.position, t.priority, t.created_at, t.updated_at
 		FROM tasks t WHERE t.epic_id=? ORDER BY t.position, t.id`, epicID)
 	if err != nil {
 		return nil, err
@@ -299,16 +353,19 @@ func (s *Store) EpicTasks(epicID int64) ([]model.Task, error) {
 	var taskIDs []int64
 	for rows.Next() {
 		var t model.Task
-		var eid sql.NullInt64
+		var eid, aid sql.NullInt64
 		var ca, ua string
 		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL,
-			&t.ColumnID, &eid, &t.Position, &t.Priority, &ca, &ua); err != nil {
+			&t.ColumnID, &eid, &aid, &t.Position, &t.Priority, &ca, &ua); err != nil {
 			return nil, fmt.Errorf("scan epic task: %w", err)
 		}
 		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
 		t.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
 		if eid.Valid {
 			t.EpicID = &eid.Int64
+		}
+		if aid.Valid {
+			t.AssigneeID = &aid.Int64
 		}
 		t.Tags = []model.Tag{}
 		tasks = append(tasks, t)
@@ -380,11 +437,13 @@ func (s *Store) DeleteTag(id int64) error {
 func (s *Store) ListTasks() ([]model.Task, error) {
 	rows, err := s.db.Query(`
 		SELECT t.id, t.title, t.description, t.todo, t.project_url,
-		       t.column_id, t.epic_id,
+		       t.column_id, t.epic_id, t.assignee_id,
 		       t.position, t.priority, t.created_at, t.updated_at,
-		       e.id, e.name, e.color
+		       e.id, e.name, e.color,
+		       u.id, u.username
 		FROM tasks t
 		LEFT JOIN epics e ON t.epic_id = e.id
+		LEFT JOIN users u ON t.assignee_id = u.id
 		ORDER BY t.position, t.id`)
 	if err != nil {
 		return nil, err
@@ -395,13 +454,16 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 	var taskIDs []int64
 	for rows.Next() {
 		var t model.Task
-		var eid sql.NullInt64
+		var eid, aid sql.NullInt64
 		var epicName, epicColor sql.NullString
+		var assigneeID sql.NullInt64
+		var assigneeName sql.NullString
 		var ca, ua string
 		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL,
-			&t.ColumnID, &eid,
+			&t.ColumnID, &eid, &aid,
 			&t.Position, &t.Priority, &ca, &ua,
-			&eid, &epicName, &epicColor); err != nil {
+			&eid, &epicName, &epicColor,
+			&assigneeID, &assigneeName); err != nil {
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
 		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
@@ -409,6 +471,10 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 		if eid.Valid {
 			t.EpicID = &eid.Int64
 			t.Epic = &model.Epic{ID: eid.Int64, Name: epicName.String, Color: epicColor.String}
+		}
+		if assigneeID.Valid {
+			t.AssigneeID = &assigneeID.Int64
+			t.Assignee = &model.User{ID: assigneeID.Int64, Username: assigneeName.String}
 		}
 		t.Tags = []model.Tag{}
 		tasks = append(tasks, t)
@@ -436,10 +502,10 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 
 func (s *Store) GetTask(id int64) (*model.Task, error) {
 	var t model.Task
-	var eid sql.NullInt64
+	var eid, aid sql.NullInt64
 	var ca, ua string
-	err := s.db.QueryRow(`SELECT id,title,description,todo,project_url,column_id,epic_id,position,priority,created_at,updated_at
-		FROM tasks WHERE id=?`, id).Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL, &t.ColumnID, &eid,
+	err := s.db.QueryRow(`SELECT id,title,description,todo,project_url,column_id,epic_id,assignee_id,position,priority,created_at,updated_at
+		FROM tasks WHERE id=?`, id).Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL, &t.ColumnID, &eid, &aid,
 		&t.Position, &t.Priority, &ca, &ua)
 	if err != nil {
 		return nil, err
@@ -453,6 +519,17 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 			t.Epic = &e
 		}
 	}
+	if aid.Valid {
+		t.AssigneeID = &aid.Int64
+		var u model.User
+		var admin int
+		var role string
+		if err := s.db.QueryRow("SELECT id,username,is_admin,role FROM users WHERE id=?", aid.Int64).Scan(&u.ID, &u.Username, &admin, &role); err == nil {
+			u.Role = role
+			u.IsAdmin = admin == 1
+			t.Assignee = &u
+		}
+	}
 	t.Tags = s.taskTags(t.ID)
 	t.Comments = s.taskCommentsTree(t.ID)
 	t.DependsOn = s.TaskDependencies(t.ID)
@@ -460,7 +537,7 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 	return &t, nil
 }
 
-func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, epicID *int64, priority int, tagIDs []int64) (int64, error) {
+func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, epicID *int64, assigneeID *int64, priority int, tagIDs []int64) (int64, error) {
 	s.logf("CreateTask(%q, col=%d, prio=%d, tags=%v)", title, colID, priority, tagIDs)
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -470,8 +547,8 @@ func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, ep
 
 	var maxPos int
 	tx.QueryRow("SELECT COALESCE(MAX(position),0) FROM tasks WHERE column_id=?", colID).Scan(&maxPos)
-	r, err := tx.Exec(`INSERT INTO tasks(title,description,todo,project_url,column_id,epic_id,position,priority)
-		VALUES(?,?,?,?,?,?,?,?)`, title, desc, todo, projectURL, colID, epicID, maxPos+1, priority)
+	r, err := tx.Exec(`INSERT INTO tasks(title,description,todo,project_url,column_id,epic_id,assignee_id,position,priority)
+		VALUES(?,?,?,?,?,?,?,?,?)`, title, desc, todo, projectURL, colID, epicID, assigneeID, maxPos+1, priority)
 	if err != nil {
 		s.logf("CreateTask error: %v", err)
 		return 0, err
@@ -489,15 +566,15 @@ func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, ep
 	return id, nil
 }
 
-func (s *Store) UpdateTask(id int64, title, desc, todo, projectURL string, colID int64, epicID *int64, priority int, tagIDs []int64) error {
+func (s *Store) UpdateTask(id int64, title, desc, todo, projectURL string, colID int64, epicID *int64, assigneeID *int64, priority int, tagIDs []int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`UPDATE tasks SET title=?,description=?,todo=?,project_url=?,column_id=?,epic_id=?,priority=?,
-		updated_at=datetime('now') WHERE id=?`, title, desc, todo, projectURL, colID, epicID, priority, id)
+	_, err = tx.Exec(`UPDATE tasks SET title=?,description=?,todo=?,project_url=?,column_id=?,epic_id=?,assignee_id=?,priority=?,
+		updated_at=datetime('now') WHERE id=?`, title, desc, todo, projectURL, colID, epicID, assigneeID, priority, id)
 	if err != nil {
 		return err
 	}
@@ -525,8 +602,8 @@ func (s *Store) DeleteTask(id int64) error {
 
 // --- Comments ---
 
-func (s *Store) AddComment(taskID int64, text string, parentID *int64) (int64, error) {
-	r, err := s.db.Exec("INSERT INTO comments(task_id,text,parent_id) VALUES(?,?,?)", taskID, text, parentID)
+func (s *Store) AddComment(taskID int64, text string, parentID *int64, authorID *int64) (int64, error) {
+	r, err := s.db.Exec("INSERT INTO comments(task_id,text,parent_id,author_id) VALUES(?,?,?,?)", taskID, text, parentID, authorID)
 	if err != nil {
 		return 0, err
 	}
@@ -547,6 +624,12 @@ func (s *Store) DeleteComment(id int64) error {
 	}
 	_, err = s.db.Exec("DELETE FROM comments WHERE id=?", id)
 	return err
+}
+
+func (s *Store) GetCommentTaskID(commentID int64) (int64, error) {
+	var taskID int64
+	err := s.db.QueryRow("SELECT task_id FROM comments WHERE id=?", commentID).Scan(&taskID)
+	return taskID, err
 }
 
 func (s *Store) taskTags(taskID int64) []model.Tag {
@@ -606,7 +689,10 @@ func (s *Store) batchTaskTags(taskIDs []int64) (map[int64][]model.Tag, error) {
 
 // taskCommentsTree returns comments as a tree (top-level + nested replies).
 func (s *Store) taskCommentsTree(taskID int64) []model.Comment {
-	rows, err := s.db.Query("SELECT id,task_id,COALESCE(parent_id,0),text,created_at,COALESCE(updated_at,created_at) FROM comments WHERE task_id=? ORDER BY created_at", taskID)
+	rows, err := s.db.Query(`SELECT c.id, c.task_id, COALESCE(c.parent_id,0), c.text, c.created_at, COALESCE(c.updated_at,''),
+		COALESCE(c.author_id,0), COALESCE(u.username,'')
+		FROM comments c LEFT JOIN users u ON c.author_id=u.id
+		WHERE c.task_id=? ORDER BY c.created_at`, taskID)
 	if err != nil {
 		s.logf("taskCommentsTree(%d) error: %v", taskID, err)
 		return []model.Comment{}
@@ -615,42 +701,49 @@ func (s *Store) taskCommentsTree(taskID int64) []model.Comment {
 	all := make([]model.Comment, 0)
 	for rows.Next() {
 		var c model.Comment
-		var pid int64
+		var pid, authorID int64
+		var authorName string
 		var ca, ua string
-		if err := rows.Scan(&c.ID, &c.TaskID, &pid, &c.Text, &ca, &ua); err != nil {
+		if err := rows.Scan(&c.ID, &c.TaskID, &pid, &c.Text, &ca, &ua, &authorID, &authorName); err != nil {
 			s.logf("taskCommentsTree scan error: %v", err)
 			continue
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
-		c.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+		if ua != "" {
+			c.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+		}
 		if pid != 0 {
 			c.ParentID = &pid
+		}
+		if authorID != 0 {
+			c.AuthorID = &authorID
+			c.Author = &model.User{ID: authorID, Username: authorName}
 		}
 		c.Replies = []model.Comment{}
 		all = append(all, c)
 	}
-	// Build tree
+	// Build tree using pointers for proper deep nesting
 	byID := make(map[int64]*model.Comment)
 	for i := range all {
 		byID[all[i].ID] = &all[i]
 	}
-	roots := make([]model.Comment, 0)
+	var roots []*model.Comment
 	for i := range all {
 		if all[i].ParentID != nil {
 			if parent, ok := byID[*all[i].ParentID]; ok {
 				parent.Replies = append(parent.Replies, all[i])
+				// Keep byID pointing to the appended copy
+				byID[all[i].ID] = &parent.Replies[len(parent.Replies)-1]
 				continue
 			}
 		}
-		roots = append(roots, all[i])
+		roots = append(roots, &all[i])
 	}
-	// Update replies in roots from byID
-	for i := range roots {
-		if p, ok := byID[roots[i].ID]; ok {
-			roots[i].Replies = p.Replies
-		}
+	result := make([]model.Comment, 0, len(roots))
+	for _, r := range roots {
+		result = append(result, *r)
 	}
-	return roots
+	return result
 }
 
 // --- Images ---
@@ -836,6 +929,364 @@ func (s *Store) TaskDependents(taskID int64) []model.TaskDep {
 	}
 	return deps
 }
+
+// --- Users ---
+
+func (s *Store) UserCount() (int, error) {
+	var cnt int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&cnt)
+	return cnt, err
+}
+
+func (s *Store) CreateUser(username, password string, role string) (int64, error) {
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return 0, err
+	}
+	isAdmin := 0
+	if role == "admin" {
+		isAdmin = 1
+	}
+	r, err := s.db.Exec("INSERT INTO users(username,password_hash,is_admin,role) VALUES(?,?,?,?)", username, hash, isAdmin, role)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastInsertId()
+}
+
+func (s *Store) AuthenticateUser(username, password string) (*model.User, error) {
+	var u model.User
+	var hash string
+	var admin int
+	var role string
+	err := s.db.QueryRow("SELECT id,username,password_hash,is_admin,role,created_at FROM users WHERE username=?", username).
+		Scan(&u.ID, &u.Username, &hash, &admin, &role, &u.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+	if !auth.CheckPassword(password, hash) {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+	u.IsAdmin = admin == 1
+	u.Role = role
+	return &u, nil
+}
+
+func (s *Store) CreateSession(userID int64) (string, error) {
+	token, err := auth.GenerateToken()
+	if err != nil {
+		return "", err
+	}
+	expires := time.Now().Add(30 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	_, err = s.db.Exec("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)", token, userID, expires)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (s *Store) ValidateSession(token string) (*model.User, error) {
+	var u model.User
+	var admin int
+	var role string
+	err := s.db.QueryRow(`SELECT u.id,u.username,u.is_admin,u.role,u.created_at FROM users u
+		JOIN sessions s ON s.user_id=u.id
+		WHERE s.token=? AND s.expires_at > datetime('now')`, token).
+		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	u.IsAdmin = admin == 1
+	u.Role = role
+	return &u, nil
+}
+
+func (s *Store) DeleteSession(token string) error {
+	_, err := s.db.Exec("DELETE FROM sessions WHERE token=?", token)
+	return err
+}
+
+func (s *Store) CleanExpiredSessions() {
+	s.db.Exec("DELETE FROM sessions WHERE expires_at <= datetime('now')")
+}
+
+func (s *Store) ListUsers() ([]model.User, error) {
+	rows, err := s.db.Query("SELECT id,username,is_admin,role,created_at FROM users ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make([]model.User, 0)
+	for rows.Next() {
+		var u model.User
+		var admin int
+		var role string
+		if err := rows.Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt); err != nil {
+			return nil, err
+		}
+		u.IsAdmin = admin == 1
+		u.Role = role
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
+func (s *Store) GetUser(id int64) (*model.User, error) {
+	var u model.User
+	var admin int
+	var role string
+	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at,telegram_chat_id,link_hash FROM users WHERE id=?", id).
+		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt, &u.TelegramID, &u.LinkHash)
+	if err != nil {
+		return nil, err
+	}
+	u.IsAdmin = admin == 1
+	u.Role = role
+	return &u, nil
+}
+
+func (s *Store) GetUserByUsername(username string) (*model.User, error) {
+	var u model.User
+	var admin int
+	var role string
+	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at FROM users WHERE username=?", username).
+		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	u.IsAdmin = admin == 1
+	u.Role = role
+	return &u, nil
+}
+
+func (s *Store) DeleteUser(id int64) error {
+	// Don't delete the last admin
+	var adminCount int
+	s.db.QueryRow("SELECT COUNT(*) FROM users WHERE is_admin=1").Scan(&adminCount)
+	var isAdmin int
+	s.db.QueryRow("SELECT is_admin FROM users WHERE id=?", id).Scan(&isAdmin)
+	if isAdmin == 1 && adminCount <= 1 {
+		return fmt.Errorf("cannot delete the last admin user")
+	}
+	// Check if it's the only user
+	var totalCount int
+	s.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&totalCount)
+	if totalCount <= 1 {
+		return fmt.Errorf("cannot delete the only user")
+	}
+	_, err := s.db.Exec("DELETE FROM sessions WHERE user_id=?", id)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("DELETE FROM users WHERE id=?", id)
+	return err
+}
+
+func (s *Store) UpdateUserPassword(id int64, newPassword string) error {
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec("UPDATE users SET password_hash=? WHERE id=?", hash, id)
+	return err
+}
+
+func (s *Store) UpdateUserRole(id int64, role string) error {
+	isAdmin := 0
+	if role == "admin" {
+		isAdmin = 1
+	}
+	_, err := s.db.Exec("UPDATE users SET role=?,is_admin=? WHERE id=?", role, isAdmin, id)
+	return err
+}
+
+func (s *Store) UpdateUserTelegram(id int64, chatID int64) error {
+	_, err := s.db.Exec("UPDATE users SET telegram_chat_id=? WHERE id=?", chatID, id)
+	return err
+}
+
+func (s *Store) GenerateLinkHash(userID int64) (string, error) {
+	hash, err := auth.GenerateToken()
+	if err != nil {
+		return "", err
+	}
+	// Use first 16 chars for a shorter hash
+	hash = hash[:16]
+	_, err = s.db.Exec("UPDATE users SET link_hash=? WHERE id=?", hash, userID)
+	if err != nil {
+		return "", err
+	}
+	return hash, nil
+}
+
+func (s *Store) FindUserByLinkHash(hash string) (*model.User, error) {
+	if hash == "" {
+		return nil, fmt.Errorf("empty hash")
+	}
+	var u model.User
+	var admin int
+	var role string
+	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at FROM users WHERE link_hash=?", hash).
+		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	u.IsAdmin = admin == 1
+	u.Role = role
+	return &u, nil
+}
+
+func (s *Store) ClearLinkHash(userID int64) error {
+	_, err := s.db.Exec("UPDATE users SET link_hash='' WHERE id=?", userID)
+	return err
+}
+
+func (s *Store) UnlinkTelegram(userID int64) error {
+	_, err := s.db.Exec("UPDATE users SET telegram_chat_id=0 WHERE id=?", userID)
+	return err
+}
+
+// --- Notifications ---
+
+func (s *Store) CreateNotification(userID int64, typ, text string, taskID *int64) (int64, error) {
+	r, err := s.db.Exec("INSERT INTO notifications(user_id,type,text,task_id) VALUES(?,?,?,?)",
+		userID, typ, text, taskID)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastInsertId()
+}
+
+func (s *Store) ListNotifications(userID int64, limit int) ([]model.Notification, error) {
+	rows, err := s.db.Query(`SELECT id,user_id,type,text,task_id,is_read,created_at
+		FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT ?`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	notifs := make([]model.Notification, 0)
+	for rows.Next() {
+		var n model.Notification
+		var taskID sql.NullInt64
+		var ca string
+		var isRead int
+		if err := rows.Scan(&n.ID, &n.UserID, &n.Type, &n.Text, &taskID, &isRead, &ca); err != nil {
+			continue
+		}
+		n.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
+		n.IsRead = isRead == 1
+		if taskID.Valid {
+			n.TaskID = &taskID.Int64
+		}
+		notifs = append(notifs, n)
+	}
+	return notifs, rows.Err()
+}
+
+func (s *Store) UnreadNotificationCount(userID int64) int {
+	var cnt int
+	s.db.QueryRow("SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0", userID).Scan(&cnt)
+	return cnt
+}
+
+func (s *Store) MarkNotificationRead(id, userID int64) error {
+	_, err := s.db.Exec("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?", id, userID)
+	return err
+}
+
+func (s *Store) MarkAllNotificationsRead(userID int64) error {
+	_, err := s.db.Exec("UPDATE notifications SET is_read=1 WHERE user_id=?", userID)
+	return err
+}
+
+// --- Task Subscriptions ---
+
+func (s *Store) SubscribeToTask(taskID, userID int64) error {
+	_, err := s.db.Exec("INSERT OR IGNORE INTO task_subscriptions(task_id,user_id) VALUES(?,?)", taskID, userID)
+	return err
+}
+
+func (s *Store) UnsubscribeFromTask(taskID, userID int64) error {
+	_, err := s.db.Exec("DELETE FROM task_subscriptions WHERE task_id=? AND user_id=?", taskID, userID)
+	return err
+}
+
+func (s *Store) IsSubscribed(taskID, userID int64) bool {
+	var cnt int
+	s.db.QueryRow("SELECT COUNT(*) FROM task_subscriptions WHERE task_id=? AND user_id=?", taskID, userID).Scan(&cnt)
+	return cnt > 0
+}
+
+func (s *Store) TaskSubscribers(taskID int64) []model.User {
+	rows, err := s.db.Query(`SELECT u.id,u.username,u.is_admin,u.role,u.telegram_chat_id
+		FROM users u JOIN task_subscriptions ts ON ts.user_id=u.id WHERE ts.task_id=?`, taskID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var users []model.User
+	for rows.Next() {
+		var u model.User
+		var admin int
+		var role string
+		var tgID int64
+		if err := rows.Scan(&u.ID, &u.Username, &admin, &role, &tgID); err != nil {
+			continue
+		}
+		u.IsAdmin = admin == 1
+		u.Role = role
+		u.TelegramID = tgID
+		users = append(users, u)
+	}
+	return users
+}
+
+// --- Activity Log ---
+
+func (s *Store) LogActivity(userID int64, action string, taskID *int64, details string) {
+	s.db.Exec("INSERT INTO activity_log(user_id,action,task_id,details) VALUES(?,?,?,?)",
+		userID, action, taskID, details)
+}
+
+func (s *Store) UserActivity(userID int64, limit int) ([]model.ActivityEntry, error) {
+	rows, err := s.db.Query(`SELECT id,user_id,action,task_id,details,created_at
+		FROM activity_log WHERE user_id=? ORDER BY created_at DESC LIMIT ?`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	entries := make([]model.ActivityEntry, 0)
+	for rows.Next() {
+		var e model.ActivityEntry
+		var taskID sql.NullInt64
+		var ca string
+		if err := rows.Scan(&e.ID, &e.UserID, &e.Action, &taskID, &e.Details, &ca); err != nil {
+			continue
+		}
+		e.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
+		if taskID.Valid {
+			e.TaskID = &taskID.Int64
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// --- App Settings ---
+
+func (s *Store) GetSetting(key string) string {
+	var val string
+	s.db.QueryRow("SELECT value FROM app_settings WHERE key=?", key).Scan(&val)
+	return val
+}
+
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(`INSERT INTO app_settings(key,value) VALUES(?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
+	return err
+}
+
+// --- Import ---
 
 func (s *Store) ImportAll(data *model.ExportData) error {
 	tx, err := s.db.Begin()

@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kanban</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/css/fonts.css">
+<link rel="stylesheet" href="/static/css/atom-one-dark.min.css">
+<script src="/static/js/marked.min.js"></script>
+<script src="/static/js/highlight.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
@@ -77,16 +77,12 @@ html{font-size:var(--font-size)}
 body{font-family:'Source Sans 3',sans-serif;background:var(--bg);color:var(--fg);min-height:100vh}
 a{color:var(--accent2);text-decoration:none}
 
-/* header — fixed position, never scrolls */
 .header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--bg4);position:fixed;top:0;left:0;right:0;z-index:100;height:52px}
 .header h1{font-family:'JetBrains Mono',monospace;font-size:1.1rem;color:var(--accent2);letter-spacing:-.02em}
 .header h1 a{color:inherit;text-decoration:none}
 .header-actions{display:flex;gap:8px;align-items:center}
-
-/* spacer so content isn't behind fixed header */
 .header-spacer{height:52px}
 
-/* buttons */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:none;border-radius:var(--radius);cursor:pointer;font-size:.85rem;font-family:inherit;font-weight:600;transition:all .15s}
 .btn-primary{background:var(--accent);color:#fff}
 .btn-primary:hover{background:var(--accent2)}
@@ -98,7 +94,6 @@ a{color:var(--accent2);text-decoration:none}
 .btn-icon{padding:4px 8px;background:transparent;border:none;color:var(--fg3);cursor:pointer;border-radius:var(--radius)}
 .btn-icon:hover{color:var(--fg);background:var(--bg4)}
 
-/* board */
 .board{display:flex;gap:16px;padding:20px 24px;min-height:calc(100vh - 52px);align-items:flex-start;overflow-x:auto}
 .column{background:var(--bg2);border-radius:var(--radius-lg);width:var(--col-w);min-width:var(--col-w);flex-shrink:0;display:flex;flex-direction:column;max-height:calc(100vh - 90px)}
 .col-header{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 10px;border-bottom:1px solid var(--bg3)}
@@ -108,7 +103,6 @@ a{color:var(--accent2);text-decoration:none}
 .col-body::-webkit-scrollbar{width:4px}
 .col-body::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 
-/* cards */
 .card{background:var(--bg3);border-radius:var(--radius);padding:10px 12px;cursor:grab;border:1px solid transparent;transition:all .15s;position:relative}
 .card:hover{border-color:var(--bg4);box-shadow:var(--shadow)}
 .card.dragging{opacity:.5;border-color:var(--accent)}
@@ -125,12 +119,13 @@ a{color:var(--accent2);text-decoration:none}
 .card-comments{font-size:.75rem;color:var(--fg3);display:flex;align-items:center;gap:3px}
 .card-todo{font-size:.72rem;color:var(--fg3);display:flex;align-items:center;gap:3px}
 .card-link{font-size:.72rem;color:var(--accent2);display:flex;align-items:center;gap:2px}
+.card-assignee{font-size:.72rem;color:var(--accent2);display:flex;align-items:center;gap:2px;background:var(--bg4);padding:1px 6px;border-radius:8px}
+.card-private{font-size:.72rem;color:var(--orange);display:flex;align-items:center;gap:2px}
 .drop-zone{min-height:40px;border:2px dashed var(--bg4);border-radius:var(--radius);margin:4px 0;transition:all .15s}
 .drop-zone.over{border-color:var(--accent);background:rgba(124,111,247,.08)}
 .add-task-btn{width:100%;padding:8px;background:transparent;border:1px dashed var(--bg4);border-radius:var(--radius);color:var(--fg3);cursor:pointer;font-family:inherit;font-size:.82rem;transition:all .15s;margin-top:4px}
 .add-task-btn:hover{border-color:var(--accent);color:var(--accent2)}
 
-/* modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
 .modal{background:var(--bg2);border-radius:var(--radius-lg);width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.5)}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--bg3)}
@@ -138,11 +133,9 @@ a{color:var(--accent2);text-decoration:none}
 .modal-body{padding:20px;display:flex;flex-direction:column;gap:14px}
 .modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--bg3)}
 
-/* image lightbox */
 .lightbox-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:300;display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:20px}
 .lightbox-overlay img{max-width:calc(100vw - 40px);max-height:calc(100vh - 40px);object-fit:contain;border-radius:var(--radius-lg);box-shadow:0 4px 30px rgba(0,0,0,.6)}
 
-/* form elements */
 .field{display:flex;flex-direction:column;gap:4px}
 .field label{font-size:.8rem;color:var(--fg2);font-weight:600}
 .field input,.field textarea,.field select{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:8px 10px;color:var(--fg);font-family:inherit;font-size:.88rem;outline:none;transition:border .15s}
@@ -156,15 +149,13 @@ a{color:var(--accent2);text-decoration:none}
 .chip.selected{opacity:1;border-color:#fff3}
 .chip:hover{opacity:.9}
 
-/* markdown toolbar */
 .md-toolbar{display:flex;gap:2px;padding:4px;background:var(--bg4);border-radius:var(--radius) var(--radius) 0 0;flex-wrap:wrap}
 .md-toolbar button{background:transparent;border:none;color:var(--fg2);padding:3px 8px;border-radius:3px;cursor:pointer;font-size:.78rem;font-family:'JetBrains Mono',monospace;font-weight:600;transition:all .1s}
 .md-toolbar button:hover{background:var(--accent);color:#fff}
 .md-toolbar+textarea{border-radius:0 0 var(--radius) var(--radius)!important}
 
-/* markdown rendered content */
 .md-content{font-size:.9rem;line-height:1.6;color:var(--fg2);padding:10px 14px;background:var(--bg3);border-radius:var(--radius);min-height:40px;overflow-wrap:break-word}
-.md-content:empty::before{content:'Нет описания';color:var(--fg3)}
+.md-content:empty::before{content:attr(data-empty);color:var(--fg3)}
 .md-content h1,.md-content h2,.md-content h3{color:var(--fg);margin:8px 0 4px;font-size:1rem}
 .md-content h1{font-size:1.15rem}
 .md-content h2{font-size:1.05rem}
@@ -178,8 +169,13 @@ a{color:var(--accent2);text-decoration:none}
 .md-content blockquote{border-left:3px solid var(--accent);padding-left:12px;color:var(--fg3);margin:6px 0}
 .md-content input[type="checkbox"]{margin-right:6px;accent-color:var(--accent);cursor:pointer}
 .md-content a{color:var(--accent2)}
+.md-content details{background:var(--bg4);border-radius:var(--radius);padding:8px 12px;margin:6px 0}
+.md-content details summary{cursor:pointer;font-weight:600;color:var(--fg);user-select:none}
+.md-content details summary:hover{color:var(--accent2)}
 
-/* task detail page */
+/* mention highlighting */
+.mention{color:var(--accent2);font-weight:600;cursor:pointer}
+
 .task-page{max-width:800px;margin:0 auto;padding:30px 24px}
 .task-page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px}
 .task-page-header h2{font-size:1.3rem;display:flex;align-items:center;gap:10px}
@@ -193,7 +189,6 @@ a{color:var(--accent2);text-decoration:none}
 .task-page-section h3{font-size:.9rem;margin-bottom:10px;color:var(--fg2)}
 .task-dates{font-size:.72rem;color:var(--fg3);display:flex;gap:16px}
 
-/* interactive todo list */
 .todo-list{display:flex;flex-direction:column;gap:4px}
 .todo-item{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg3);border-radius:var(--radius);transition:all .15s}
 .todo-item:hover{background:var(--bg4)}
@@ -206,7 +201,6 @@ a{color:var(--accent2);text-decoration:none}
 .todo-add input{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 10px;color:var(--fg);font-family:inherit;font-size:.85rem;outline:none}
 .todo-add input:focus{border-color:var(--accent)}
 
-/* epic page */
 .epic-page{max-width:900px;margin:0 auto;padding:30px 24px}
 .epic-page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px}
 .epic-page-header h2{font-size:1.3rem;display:flex;align-items:center;gap:10px}
@@ -217,14 +211,12 @@ a{color:var(--accent2);text-decoration:none}
 .epic-task-title{flex:1;font-size:.9rem;font-weight:600}
 .epic-task-prio{font-size:.75rem;font-weight:600}
 
-/* search */
 .search-input{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 10px;color:var(--fg);font-family:inherit;font-size:.85rem;outline:none;width:240px;transition:border .15s}
 .search-input:focus{border-color:var(--accent);width:300px}
 .search-results{position:fixed;top:52px;left:0;right:0;z-index:99;background:var(--bg2);border-bottom:1px solid var(--bg4);padding:12px 24px;max-height:60vh;overflow-y:auto;box-shadow:var(--shadow)}
 .search-result-item{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg3);border-radius:var(--radius);cursor:pointer;margin-bottom:4px;transition:all .15s}
 .search-result-item:hover{background:var(--bg4)}
 
-/* sidebar panel */
 .sidebar{position:fixed;right:0;top:52px;width:360px;height:calc(100vh - 52px);background:var(--bg2);border-left:1px solid var(--bg4);z-index:150;transform:translateX(100%);transition:transform .25s;padding:20px;overflow-y:auto}
 .sidebar.open{transform:translateX(0)}
 .sidebar h3{font-size:.95rem;margin-bottom:12px}
@@ -232,40 +224,34 @@ a{color:var(--accent2);text-decoration:none}
 .entity-list{display:flex;flex-direction:column;gap:6px}
 .entity-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg3);border-radius:var(--radius)}
 .entity-item .dot{width:12px;height:12px;max-width:12px;min-width:12px;min-height:12px;border-radius:50%;margin-right:8px;flex-shrink:0}
-.entity-item span{flex:1;font-size:.85rem}
-.entity-add{display:flex;gap:6px;margin-top:8px}
-.entity-add input{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none}
-.entity-add input[type="color"]{width:36px;padding:2px;cursor:pointer;flex:none}
+.entity-item span{flex:1;font-size:.85rem;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.entity-add{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.entity-add input{flex:1;min-width:60px;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none}
+.entity-add input[type="color"]{width:36px;padding:2px;cursor:pointer;flex:none;min-width:36px}
 
-/* column reorder controls */
 .col-order-item{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--bg3);border-radius:var(--radius)}
 .col-order-item span{flex:1;font-size:.85rem}
 .col-order-btns{display:flex;gap:2px}
 .col-order-btns button{background:transparent;border:none;color:var(--fg3);cursor:pointer;padding:2px 6px;border-radius:3px;font-size:.85rem}
 .col-order-btns button:hover{background:var(--bg4);color:var(--fg)}
 
-/* epic progress in sidebar */
 .epic-progress{margin-top:4px}
 .epic-progress-bar{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:3px}
 .epic-progress-fill{height:100%;border-radius:2px;transition:width .3s}
 .epic-progress-text{font-size:.7rem;color:var(--fg3)}
 
-/* theme selector */
 .theme-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .theme-btn{padding:6px 14px;border-radius:var(--radius);border:2px solid var(--bg4);background:var(--bg3);color:var(--fg);font-family:inherit;font-size:.82rem;font-weight:600;cursor:pointer;transition:all .15s}
 .theme-btn:hover{border-color:var(--accent)}
 .theme-btn.active{border-color:var(--accent);background:var(--accent);color:#fff}
 
-/* font size control */
 .font-size-ctrl{display:flex;align-items:center;gap:8px;margin-top:4px}
 .font-size-ctrl button{width:32px;height:32px;border-radius:var(--radius);border:1px solid var(--bg4);background:var(--bg3);color:var(--fg);font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .font-size-ctrl button:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .font-size-ctrl span{font-size:.85rem;color:var(--fg2);min-width:40px;text-align:center}
 
-/* project link display */
 .project-link{display:inline-flex;align-items:center;gap:4px;font-size:.82rem;color:var(--accent2);padding:4px 10px;background:var(--bg3);border-radius:var(--radius);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* comment form */
 .comment-form{display:flex;flex-direction:column;gap:8px}
 .comment-form textarea{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:8px 10px;color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:.82rem;outline:none;resize:vertical;min-height:60px}
 .comment-form textarea:focus{border-color:var(--accent)}
@@ -273,11 +259,11 @@ a{color:var(--accent2);text-decoration:none}
 .paste-hint{font-size:.72rem;color:var(--fg3)}
 .comments-list{display:flex;flex-direction:column;gap:8px}
 .comment{background:var(--bg3);border-radius:var(--radius);padding:10px 12px}
+.comment-author{font-size:.78rem;color:var(--accent2);font-weight:600;margin-bottom:4px}
 .comment-text{font-size:.88rem;line-height:1.5}
 .comment-text .md-content{padding:0;background:none;min-height:auto}
 .comment-time{font-size:.72rem;color:var(--fg3);margin-top:4px;display:flex;justify-content:space-between;align-items:center}
 
-/* nested comments */
 .comment-replies{margin-left:20px;border-left:2px solid var(--bg4);padding-left:12px;display:flex;flex-direction:column;gap:6px;margin-top:6px}
 .comment-actions{display:flex;gap:6px;align-items:center}
 .comment-actions button{background:transparent;border:none;color:var(--fg3);cursor:pointer;font-size:.72rem;padding:2px 6px;border-radius:3px;font-family:inherit}
@@ -285,21 +271,32 @@ a{color:var(--accent2);text-decoration:none}
 .reply-form{margin-top:6px;display:flex;flex-direction:column;gap:4px}
 .reply-form textarea{background:var(--bg);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:.8rem;outline:none;resize:vertical;min-height:50px}
 .reply-form textarea:focus{border-color:var(--accent)}
-.comment-edited{font-size:.68rem;color:var(--fg3);font-style:italic}
+.comment-edited{font-size:.68rem;color:var(--fg3);font-style:italic;cursor:help}
 
-/* spoiler / details */
-.md-content details{background:var(--bg4);border-radius:var(--radius);padding:8px 12px;margin:6px 0}
-.md-content details summary{cursor:pointer;font-weight:600;color:var(--fg);user-select:none}
-.md-content details summary:hover{color:var(--accent2)}
-
-/* export/import section */
 .export-import-btns{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
-
-/* timezone select */
 .tz-select{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none;width:100%;margin-top:4px}
 .tz-select:focus{border-color:var(--accent)}
 
-/* --- Mobile responsive --- */
+/* Notification badge */
+.notif-badge{background:var(--red);color:#fff;font-size:.7rem;padding:1px 5px;border-radius:8px;font-weight:700;margin-left:4px}
+.notif-dropdown{position:fixed;right:20px;top:52px;width:380px;max-height:60vh;background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius-lg);box-shadow:var(--shadow);z-index:200;overflow-y:auto;padding:12px}
+.notif-item{padding:8px 10px;background:var(--bg3);border-radius:var(--radius);margin-bottom:6px;font-size:.82rem;cursor:pointer;transition:all .15s;border-left:3px solid transparent}
+.notif-item.unread{border-left-color:var(--accent)}
+.notif-item:hover{background:var(--bg4)}
+.notif-time{font-size:.7rem;color:var(--fg3);margin-top:4px}
+
+/* User profile page */
+.user-page{max-width:800px;margin:0 auto;padding:30px 24px}
+.user-page-header{margin-bottom:20px}
+.user-page-header h2{font-size:1.3rem}
+.activity-list{display:flex;flex-direction:column;gap:6px}
+.activity-item{padding:8px 12px;background:var(--bg3);border-radius:var(--radius);font-size:.85rem;display:flex;gap:10px;align-items:center}
+.activity-time{font-size:.72rem;color:var(--fg3);white-space:nowrap}
+.activity-action{flex:1}
+
+/* Language selector */
+.lang-select{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:inherit;font-size:.82rem;outline:none;width:100%;margin-top:4px}
+
 @media(max-width:768px){
   .header{padding:8px 12px;height:48px}
   .header h1{font-size:.95rem}
@@ -311,7 +308,7 @@ a{color:var(--accent2);text-decoration:none}
   .col-body{max-height:50vh}
   .sidebar{width:100%;right:0;left:0}
   .modal{width:98vw;max-width:98vw}
-  .task-page,.epic-page{padding:16px 12px}
+  .task-page,.epic-page,.user-page{padding:16px 12px}
   .task-page-header h2,.epic-page-header h2{font-size:1.1rem}
   .task-page-sidebar-info{flex-direction:column}
   .field-row{flex-direction:column}
@@ -325,6 +322,7 @@ a{color:var(--accent2);text-decoration:none}
   .theme-btn{padding:4px 10px;font-size:.78rem}
   .md-toolbar{gap:1px}
   .md-toolbar button{padding:3px 5px;font-size:.72rem}
+  .notif-dropdown{width:calc(100vw - 20px);right:10px}
 }
 @media(max-width:480px){
   .header-actions{gap:4px}
@@ -334,7 +332,6 @@ a{color:var(--accent2);text-decoration:none}
   .btn-sm{padding:3px 8px;font-size:.75rem}
   .col-body{max-height:40vh}
 }
-
 .hidden{display:none!important}
 </style>
 </head>
@@ -343,24 +340,25 @@ a{color:var(--accent2);text-decoration:none}
 <div class="header">
   <h1><a href="/" onclick="navigateTo('/');return false;">&#x2B21; kanban</a></h1>
   <div class="header-actions">
-    <input class="search-input" id="search" placeholder="Поиск (plaintext / regex)..." autocomplete="off">
-    <button class="btn btn-ghost btn-sm" onclick="toggleSidebar()">&#9881; Настройки</button>
+    <input class="search-input" id="search" autocomplete="off">
+    <button class="btn btn-ghost btn-sm" id="notif-btn" onclick="toggleNotifications()" style="position:relative">&#128276;<span id="notif-count" class="notif-badge hidden">0</span></button>
+    <button class="btn btn-ghost btn-sm" id="personal-toggle" onclick="togglePersonalView()" style="display:none"></button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleSidebar()">&#9881;</button>
   </div>
 </div>
 <div class="header-spacer"></div>
-
+<div id="notif-dropdown" class="notif-dropdown hidden"></div>
 <div id="search-results" class="search-results hidden"></div>
-
 <div id="app"></div>
 
 <div class="sidebar" id="sidebar">
   <div class="sidebar-section">
-    <h3>Тема оформления</h3>
+    <h3 data-i18n="theme"></h3>
     <div class="theme-list" id="theme-list">
-      <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">Тёмная</button>
-      <button class="theme-btn" data-theme="light" onclick="setTheme('light')">Светлая</button>
-      <button class="theme-btn" data-theme="ocean" onclick="setTheme('ocean')">Океан</button>
-      <button class="theme-btn" data-theme="forest" onclick="setTheme('forest')">Лес</button>
+      <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">&#9790;</button>
+      <button class="theme-btn" data-theme="light" onclick="setTheme('light')">&#9788;</button>
+      <button class="theme-btn" data-theme="ocean" onclick="setTheme('ocean')">Ocean</button>
+      <button class="theme-btn" data-theme="forest" onclick="setTheme('forest')">Forest</button>
       <button class="theme-btn" data-theme="nord" onclick="setTheme('nord')">Nord</button>
       <button class="theme-btn" data-theme="dracula" onclick="setTheme('dracula')">Dracula</button>
       <button class="theme-btn" data-theme="solarized" onclick="setTheme('solarized')">Solarized</button>
@@ -368,80 +366,145 @@ a{color:var(--accent2);text-decoration:none}
     </div>
   </div>
   <div class="sidebar-section">
-    <h3>Размер шрифта</h3>
+    <h3 data-i18n="language"></h3>
+    <select class="lang-select" id="lang-select" onchange="setLang(this.value)"></select>
+  </div>
+  <div class="sidebar-section">
+    <h3 data-i18n="fontSize"></h3>
     <div class="font-size-ctrl">
       <button onclick="changeFontSize(-1)">-</button>
       <span id="font-size-label">14px</span>
       <button onclick="changeFontSize(1)">+</button>
     </div>
   </div>
-  <div class="sidebar-section">
-    <h3>Колонки</h3>
+  <div class="sidebar-section" id="columns-section" style="display:none">
+    <h3 data-i18n="columns"></h3>
     <div class="entity-list" id="col-order-list"></div>
     <div class="entity-add" style="margin-top:8px">
-      <input type="text" id="new-col-name" placeholder="Новая колонка..." onkeydown="if(event.key==='Enter')addColumn()">
+      <input type="text" id="new-col-name" onkeydown="if(event.key==='Enter')addColumn()">
       <button class="btn btn-primary btn-sm" onclick="addColumn()">+</button>
     </div>
   </div>
-  <div class="sidebar-section">
-    <h3>Эпики</h3>
+  <div class="sidebar-section" id="epics-section">
+    <h3 data-i18n="epics"></h3>
     <div class="entity-list" id="epic-list"></div>
-    <div class="entity-add">
+    <div class="entity-add" id="epic-add-form" style="display:none">
       <input type="color" id="epic-color" value="#6366f1">
-      <input type="text" id="epic-name" placeholder="Новый эпик..." onkeydown="if(event.key==='Enter')addEpic()">
+      <input type="text" id="epic-name" onkeydown="if(event.key==='Enter')addEpic()">
       <button class="btn btn-primary btn-sm" onclick="addEpic()">+</button>
     </div>
   </div>
-  <div class="sidebar-section">
-    <h3>Теги</h3>
+  <div class="sidebar-section" id="tags-section">
+    <h3 data-i18n="tags"></h3>
     <div class="entity-list" id="tag-list"></div>
-    <div class="entity-add">
+    <div class="entity-add" id="tag-add-form" style="display:none">
       <input type="color" id="tag-color" value="#64748b">
-      <input type="text" id="tag-name" placeholder="Новый тег..." onkeydown="if(event.key==='Enter')addTag()">
+      <input type="text" id="tag-name" onkeydown="if(event.key==='Enter')addTag()">
       <button class="btn btn-primary btn-sm" onclick="addTag()">+</button>
     </div>
   </div>
   <div class="sidebar-section">
-    <h3>Часовой пояс</h3>
+    <h3 data-i18n="timezone"></h3>
     <select class="tz-select" id="tz-select" onchange="setTimezone(this.value)"></select>
   </div>
   <div class="sidebar-section">
-    <h3>Экспорт / Импорт</h3>
+    <h3 data-i18n="exportImport"></h3>
     <div class="export-import-btns">
-      <button class="btn btn-ghost btn-sm" onclick="exportBoard()">&#128229; Экспорт JSON</button>
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-file').click()">&#128228; Импорт JSON</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportBoard()">&#128229; Export JSON</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-file').click()">&#128228; Import JSON</button>
       <input type="file" id="import-file" accept=".json" style="display:none" onchange="importBoard(this)">
+    </div>
+  </div>
+  <div class="sidebar-section" id="telegram-section" style="display:none">
+    <h3>Telegram</h3>
+    <div id="telegram-content"></div>
+  </div>
+  <div class="sidebar-section" id="users-section" style="display:none">
+    <h3 data-i18n="users"></h3>
+    <div class="entity-list" id="user-list"></div>
+    <div class="entity-add" id="add-user-form">
+      <input type="text" id="new-user-name" style="min-width:70px">
+      <input type="password" id="new-user-pass" style="min-width:70px">
+      <select id="new-user-role" style="min-width:70px;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 4px;color:var(--fg);font-size:.82rem">
+        <option value="regular" data-i18n-value="regular"></option>
+        <option value="readonly" data-i18n-value="readonly"></option>
+        <option value="admin" data-i18n-value="admin"></option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="addUser()">+</button>
+    </div>
+  </div>
+  <div class="sidebar-section">
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <span id="current-user-label" style="font-size:.82rem;color:var(--fg2);cursor:pointer" onclick="if(currentUser)navigateTo('/user/'+currentUser.id)"></span>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="changeOwnPassword()" data-i18n="changePassword"></button>
+        <button class="btn btn-ghost btn-sm" onclick="logout()" data-i18n="logout"></button>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-// --- State ---
-let state = { columns: [], tasks: [], epics: [], tags: [] };
+// === i18n ===
+const LANGS = {
+  ru:{name:'Русский',theme:'Тема оформления',language:'Язык',fontSize:'Размер шрифта',columns:'Колонки',epics:'Эпики',tags:'Теги',timezone:'Часовой пояс',exportImport:'Экспорт / Импорт',users:'Пользователи',logout:'Выход',changePassword:'Пароль',search:'Поиск...',addTask:'+ Добавить задачу',newTask:'Новая задача',editTask:'Редактировать',save:'Сохранить',cancel:'Отмена',delete:'Удалить',title:'Название',description:'Описание',column:'Колонка',priority:'Приоритет',epic:'Эпик',assignee:'Исполнитель',none:'—',low:'Низкий',medium:'Средний',high:'Высокий',critical:'Критический',projectUrl:'Ссылка на проект',dependsOn:'Зависит от',blocks:'Блокирует',created:'Создана',updated:'Обновлена',comments:'Комментарии',noComments:'Нет комментариев',writeComment:'Написать комментарий...',send:'Отправить',reply:'Ответить',edit:'Ред.',noDescription:'Нет описания',deleteTask:'Удалить задачу',deleteConfirm:'Удалить задачу?',back:'Доска',notFound:'Не найдено',backToBoard:'Вернуться на доску',todo:'TODO',addTodoItem:'Добавить пункт...',newColumn:'Новая колонка...',newEpic:'Новый эпик...',newTag:'Новый тег...',login:'Логин...',password:'Пароль...',admin:'Админ',regular:'Обычная',readonly:'Только чтение',role:'Роль',deleteColumn:'Удалить колонку',deleteEpic:'Удалить эпик',deleteTag:'Удалить тег',deleteUser:'Удалить пользователя',moveTasksFirst:'Сначала переместите задачи из колонки',confirmDeleteCol:'Удалить колонку',confirmDeleteEpic:'Удалить эпик',confirmDeleteTag:'Удалить тег',confirmDeleteUser:'Удалить пользователя',tasksWillUnlink:'задач будут отвязаны.',userRequired:'Логин обязателен, пароль минимум 6 символов',error:'Ошибка',importConfirm:'Импорт заменит ВСЕ данные. Продолжить?',importDone:'Импорт выполнен успешно',exportError:'Ошибка экспорта',importError:'Ошибка импорта',uploadError:'Ошибка загрузки',fileTooLarge:'Файл слишком большой (макс 10МБ)',fileTypeNotAllowed:'Этот тип файла не разрешён',uploading:'Загрузка...',uploadFailed:'Ошибка загрузки',searchTasks:'Поиск задач...',nothingFound:'Ничего не найдено',andMore:'...и ещё',editEpic:'Редактировать эпик',tasksCompleted:'задач выполнено',active:'Активные',status:'Статус',date:'Дата',noActiveTasks:'Нет активных задач',subscribe:'Подписаться',unsubscribe:'Отписаться',subscribed:'Вы подписаны',notifications:'Уведомления',markAllRead:'Прочитать все',noNotifications:'Нет уведомлений',profile:'Профиль',activity:'Активность',noActivity:'Нет активности',personalTask:'Личная задача',showPersonal:'Мои',showAll:'Все',passwordChanged:'Пароль изменён',newPassword:'Новый пароль (мин. 6):',telegram:'Telegram',telegramLinked:'Привязан',telegramNotLinked:'Не привязан',generateHash:'Получить хэш',unlinkTelegram:'Отвязать',telegramHint:'Отправьте хэш боту для привязки',telegramBotToken:'Токен бота',saveTelegramToken:'Сохранить токен',private:'Личная',searchTask:'Поиск задачи...',edited:'ред.',ctrlEnter:'Ctrl+Enter отправить',pasteHint:'Ctrl+V картинка',attachFile:'Вложить файл',bold:'Жирный',italic:'Курсив',strikethrough:'Зачёркнутый',heading:'Заголовок',list:'Список',todoItem:'TODO',link:'Ссылка',code:'Код',quote:'Цитата',spoiler:'Спойлер',resetPassword:'Сменить пароль',createTask:'Создать',markdown:'markdown'},
+  en:{name:'English',theme:'Theme',language:'Language',fontSize:'Font size',columns:'Columns',epics:'Epics',tags:'Tags',timezone:'Timezone',exportImport:'Export / Import',users:'Users',logout:'Logout',changePassword:'Password',search:'Search...',addTask:'+ Add task',newTask:'New task',editTask:'Edit',save:'Save',cancel:'Cancel',delete:'Delete',title:'Title',description:'Description',column:'Column',priority:'Priority',epic:'Epic',assignee:'Assignee',none:'—',low:'Low',medium:'Medium',high:'High',critical:'Critical',projectUrl:'Project link',dependsOn:'Depends on',blocks:'Blocks',created:'Created',updated:'Updated',comments:'Comments',noComments:'No comments',writeComment:'Write a comment...',send:'Send',reply:'Reply',edit:'Edit',noDescription:'No description',deleteTask:'Delete task',deleteConfirm:'Delete task?',back:'Board',notFound:'Not found',backToBoard:'Back to board',todo:'TODO',addTodoItem:'Add item...',newColumn:'New column...',newEpic:'New epic...',newTag:'New tag...',login:'Login...',password:'Password...',admin:'Admin',regular:'Regular',readonly:'Read-only',role:'Role',deleteColumn:'Delete column',deleteEpic:'Delete epic',deleteTag:'Delete tag',deleteUser:'Delete user',moveTasksFirst:'Move tasks out of this column first',confirmDeleteCol:'Delete column',confirmDeleteEpic:'Delete epic',confirmDeleteTag:'Delete tag',confirmDeleteUser:'Delete user',tasksWillUnlink:'tasks will be unlinked.',userRequired:'Login required, password min 6 chars',error:'Error',importConfirm:'Import will replace ALL data. Continue?',importDone:'Import completed',exportError:'Export error',importError:'Import error',uploadError:'Upload error',fileTooLarge:'File too large (max 10MB)',fileTypeNotAllowed:'File type not allowed',uploading:'Uploading...',uploadFailed:'Upload failed',searchTasks:'Search tasks...',nothingFound:'Nothing found',andMore:'...and more',editEpic:'Edit epic',tasksCompleted:'tasks completed',active:'Active',status:'Status',date:'Date',noActiveTasks:'No active tasks',subscribe:'Subscribe',unsubscribe:'Unsubscribe',subscribed:'Subscribed',notifications:'Notifications',markAllRead:'Mark all read',noNotifications:'No notifications',profile:'Profile',activity:'Activity',noActivity:'No activity',personalTask:'Personal task',showPersonal:'Mine',showAll:'All',passwordChanged:'Password changed',newPassword:'New password (min 6):',telegram:'Telegram',telegramLinked:'Linked',telegramNotLinked:'Not linked',generateHash:'Get hash',unlinkTelegram:'Unlink',telegramHint:'Send hash to bot to link',telegramBotToken:'Bot token',saveTelegramToken:'Save token',private:'Personal',searchTask:'Search task...',edited:'edited',ctrlEnter:'Ctrl+Enter to send',pasteHint:'Ctrl+V image',attachFile:'Attach file',bold:'Bold',italic:'Italic',strikethrough:'Strikethrough',heading:'Heading',list:'List',todoItem:'TODO',link:'Link',code:'Code',quote:'Quote',spoiler:'Spoiler',resetPassword:'Reset password',createTask:'Create',markdown:'markdown'},
+  zh:{name:'中文',theme:'主题',language:'语言',fontSize:'字体大小',columns:'列',epics:'史诗',tags:'标签',timezone:'时区',exportImport:'导出/导入',users:'用户',logout:'退出',changePassword:'密码',search:'搜索...',addTask:'+ 添加任务',newTask:'新任务',editTask:'编辑',save:'保存',cancel:'取消',delete:'删除',title:'标题',description:'描述',column:'列',priority:'优先级',epic:'史诗',assignee:'执行人',none:'—',low:'低',medium:'中',high:'高',critical:'紧急',projectUrl:'项目链接',dependsOn:'依赖于',blocks:'阻塞',created:'创建',updated:'更新',comments:'评论',noComments:'无评论',writeComment:'写评论...',send:'发送',reply:'回复',edit:'编辑',noDescription:'无描述',deleteTask:'删除任务',deleteConfirm:'删除任务?',back:'看板',notFound:'未找到',backToBoard:'返回看板',todo:'待办',addTodoItem:'添加项...',newColumn:'新列...',newEpic:'新史诗...',newTag:'新标签...',login:'登录...',password:'密码...',admin:'管理员',regular:'普通',readonly:'只读',role:'角色',deleteColumn:'删除列',deleteEpic:'删除史诗',deleteTag:'删除标签',deleteUser:'删除用户',moveTasksFirst:'先移出任务',confirmDeleteCol:'删除列',confirmDeleteEpic:'删除史诗',confirmDeleteTag:'删除标签',confirmDeleteUser:'删除用户',tasksWillUnlink:'任务将解除关联',userRequired:'需要用户名，密码至少6位',error:'错误',importConfirm:'导入将替换所有数据，继续？',importDone:'导入完成',exportError:'导出错误',importError:'导入错误',uploadError:'上传错误',fileTooLarge:'文件过大(最大10MB)',fileTypeNotAllowed:'不允许的文件类型',uploading:'上传中...',uploadFailed:'上传失败',searchTasks:'搜索任务...',nothingFound:'未找到',andMore:'...更多',editEpic:'编辑史诗',tasksCompleted:'任务已完成',active:'活跃',status:'状态',date:'日期',noActiveTasks:'无活跃任务',subscribe:'订阅',unsubscribe:'取消订阅',subscribed:'已订阅',notifications:'通知',markAllRead:'全部已读',noNotifications:'无通知',profile:'个人资料',activity:'活动',noActivity:'无活动',personalTask:'个人任务',showPersonal:'我的',showAll:'全部',passwordChanged:'密码已更改',newPassword:'新密码(最少6位):',telegram:'Telegram',telegramLinked:'已绑定',telegramNotLinked:'未绑定',generateHash:'获取哈希',unlinkTelegram:'解绑',telegramHint:'将哈希发送给机器人以绑定',telegramBotToken:'机器人令牌',saveTelegramToken:'保存令牌',private:'个人',searchTask:'搜索任务...',edited:'已编辑',ctrlEnter:'Ctrl+Enter发送',pasteHint:'Ctrl+V粘贴图片',attachFile:'附件',bold:'粗体',italic:'斜体',strikethrough:'删除线',heading:'标题',list:'列表',todoItem:'待办',link:'链接',code:'代码',quote:'引用',spoiler:'折叠',resetPassword:'重置密码',createTask:'创建',markdown:'markdown'},
+  es:{name:'Español',theme:'Tema',language:'Idioma',fontSize:'Tamaño de fuente',columns:'Columnas',epics:'Épicas',tags:'Etiquetas',timezone:'Zona horaria',exportImport:'Exportar/Importar',users:'Usuarios',logout:'Salir',changePassword:'Contraseña',search:'Buscar...',addTask:'+ Añadir tarea',newTask:'Nueva tarea',editTask:'Editar',save:'Guardar',cancel:'Cancelar',delete:'Eliminar',title:'Título',description:'Descripción',column:'Columna',priority:'Prioridad',epic:'Épica',assignee:'Asignado',none:'—',low:'Baja',medium:'Media',high:'Alta',critical:'Crítica',projectUrl:'Enlace del proyecto',dependsOn:'Depende de',blocks:'Bloquea',created:'Creada',updated:'Actualizada',comments:'Comentarios',noComments:'Sin comentarios',writeComment:'Escribir comentario...',send:'Enviar',reply:'Responder',edit:'Editar',noDescription:'Sin descripción',deleteTask:'Eliminar tarea',deleteConfirm:'¿Eliminar tarea?',back:'Tablero',notFound:'No encontrado',backToBoard:'Volver al tablero',todo:'TODO',addTodoItem:'Añadir elemento...',newColumn:'Nueva columna...',newEpic:'Nueva épica...',newTag:'Nueva etiqueta...',login:'Usuario...',password:'Contraseña...',admin:'Admin',regular:'Normal',readonly:'Solo lectura',role:'Rol',deleteColumn:'Eliminar columna',deleteEpic:'Eliminar épica',deleteTag:'Eliminar etiqueta',deleteUser:'Eliminar usuario',moveTasksFirst:'Mueva las tareas primero',confirmDeleteCol:'Eliminar columna',confirmDeleteEpic:'Eliminar épica',confirmDeleteTag:'Eliminar etiqueta',confirmDeleteUser:'Eliminar usuario',tasksWillUnlink:'tareas serán desvinculadas.',userRequired:'Usuario requerido, contraseña mín 6 caracteres',error:'Error',importConfirm:'La importación reemplazará TODOS los datos. ¿Continuar?',importDone:'Importación completada',exportError:'Error de exportación',importError:'Error de importación',uploadError:'Error de subida',fileTooLarge:'Archivo muy grande (máx 10MB)',fileTypeNotAllowed:'Tipo de archivo no permitido',uploading:'Subiendo...',uploadFailed:'Error de subida',searchTasks:'Buscar tareas...',nothingFound:'Nada encontrado',andMore:'...y más',editEpic:'Editar épica',tasksCompleted:'tareas completadas',active:'Activas',status:'Estado',date:'Fecha',noActiveTasks:'Sin tareas activas',subscribe:'Suscribirse',unsubscribe:'Desuscribirse',subscribed:'Suscrito',notifications:'Notificaciones',markAllRead:'Marcar todo leído',noNotifications:'Sin notificaciones',profile:'Perfil',activity:'Actividad',noActivity:'Sin actividad',personalTask:'Tarea personal',showPersonal:'Mías',showAll:'Todas',passwordChanged:'Contraseña cambiada',newPassword:'Nueva contraseña (mín 6):',telegram:'Telegram',telegramLinked:'Vinculado',telegramNotLinked:'No vinculado',generateHash:'Obtener hash',unlinkTelegram:'Desvincular',telegramHint:'Envíe el hash al bot para vincular',telegramBotToken:'Token del bot',saveTelegramToken:'Guardar token',private:'Personal',searchTask:'Buscar tarea...',edited:'editado',ctrlEnter:'Ctrl+Enter enviar',pasteHint:'Ctrl+V imagen',attachFile:'Adjuntar',bold:'Negrita',italic:'Cursiva',strikethrough:'Tachado',heading:'Encabezado',list:'Lista',todoItem:'TODO',link:'Enlace',code:'Código',quote:'Cita',spoiler:'Spoiler',resetPassword:'Cambiar contraseña',createTask:'Crear',markdown:'markdown'},
+  fr:{name:'Français',theme:'Thème',language:'Langue',fontSize:'Taille police',columns:'Colonnes',epics:'Épiques',tags:'Tags',timezone:'Fuseau horaire',exportImport:'Export/Import',users:'Utilisateurs',logout:'Déconnexion',changePassword:'Mot de passe',search:'Rechercher...',addTask:'+ Ajouter tâche',newTask:'Nouvelle tâche',editTask:'Modifier',save:'Enregistrer',cancel:'Annuler',delete:'Supprimer',title:'Titre',description:'Description',column:'Colonne',priority:'Priorité',epic:'Épique',assignee:'Assigné',none:'—',low:'Basse',medium:'Moyenne',high:'Haute',critical:'Critique',projectUrl:'Lien projet',dependsOn:'Dépend de',blocks:'Bloque',created:'Créée',updated:'Mise à jour',comments:'Commentaires',noComments:'Pas de commentaires',writeComment:'Écrire un commentaire...',send:'Envoyer',reply:'Répondre',edit:'Modifier',noDescription:'Pas de description',deleteTask:'Supprimer tâche',deleteConfirm:'Supprimer la tâche?',back:'Tableau',notFound:'Non trouvé',backToBoard:'Retour au tableau',todo:'TODO',addTodoItem:'Ajouter élément...',newColumn:'Nouvelle colonne...',newEpic:'Nouvel épique...',newTag:'Nouveau tag...',login:'Login...',password:'Mot de passe...',admin:'Admin',regular:'Normal',readonly:'Lecture seule',role:'Rôle',deleteColumn:'Supprimer colonne',deleteEpic:'Supprimer épique',deleteTag:'Supprimer tag',deleteUser:'Supprimer utilisateur',moveTasksFirst:'Déplacez les tâches d\'abord',confirmDeleteCol:'Supprimer colonne',confirmDeleteEpic:'Supprimer épique',confirmDeleteTag:'Supprimer tag',confirmDeleteUser:'Supprimer utilisateur',tasksWillUnlink:'tâches seront détachées.',userRequired:'Login requis, mot de passe min 6 caractères',error:'Erreur',importConfirm:'L\'import remplacera TOUTES les données. Continuer?',importDone:'Import terminé',exportError:'Erreur d\'export',importError:'Erreur d\'import',uploadError:'Erreur d\'upload',fileTooLarge:'Fichier trop grand (max 10Mo)',fileTypeNotAllowed:'Type de fichier non autorisé',uploading:'Upload...',uploadFailed:'Échec d\'upload',searchTasks:'Rechercher tâches...',nothingFound:'Rien trouvé',andMore:'...et plus',editEpic:'Modifier épique',tasksCompleted:'tâches terminées',active:'Actives',status:'Statut',date:'Date',noActiveTasks:'Pas de tâches actives',subscribe:'S\'abonner',unsubscribe:'Se désabonner',subscribed:'Abonné',notifications:'Notifications',markAllRead:'Tout marquer lu',noNotifications:'Pas de notifications',profile:'Profil',activity:'Activité',noActivity:'Pas d\'activité',personalTask:'Tâche personnelle',showPersonal:'Mes',showAll:'Toutes',passwordChanged:'Mot de passe changé',newPassword:'Nouveau mot de passe (min 6):',telegram:'Telegram',telegramLinked:'Lié',telegramNotLinked:'Non lié',generateHash:'Obtenir hash',unlinkTelegram:'Délier',telegramHint:'Envoyez le hash au bot pour lier',telegramBotToken:'Token du bot',saveTelegramToken:'Sauvegarder token',private:'Personnel',searchTask:'Rechercher tâche...',edited:'modifié',ctrlEnter:'Ctrl+Enter envoyer',pasteHint:'Ctrl+V image',attachFile:'Joindre fichier',bold:'Gras',italic:'Italique',strikethrough:'Barré',heading:'Titre',list:'Liste',todoItem:'TODO',link:'Lien',code:'Code',quote:'Citation',spoiler:'Spoiler',resetPassword:'Changer mot de passe',createTask:'Créer',markdown:'markdown'},
+  de:{name:'Deutsch',theme:'Design',language:'Sprache',fontSize:'Schriftgröße',columns:'Spalten',epics:'Epics',tags:'Tags',timezone:'Zeitzone',exportImport:'Export/Import',users:'Benutzer',logout:'Abmelden',changePassword:'Passwort',search:'Suche...',addTask:'+ Aufgabe hinzufügen',newTask:'Neue Aufgabe',editTask:'Bearbeiten',save:'Speichern',cancel:'Abbrechen',delete:'Löschen',title:'Titel',description:'Beschreibung',column:'Spalte',priority:'Priorität',epic:'Epic',assignee:'Zugewiesen',none:'—',low:'Niedrig',medium:'Mittel',high:'Hoch',critical:'Kritisch',projectUrl:'Projektlink',dependsOn:'Abhängig von',blocks:'Blockiert',created:'Erstellt',updated:'Aktualisiert',comments:'Kommentare',noComments:'Keine Kommentare',writeComment:'Kommentar schreiben...',send:'Senden',reply:'Antworten',edit:'Bearbeiten',noDescription:'Keine Beschreibung',deleteTask:'Aufgabe löschen',deleteConfirm:'Aufgabe löschen?',back:'Board',notFound:'Nicht gefunden',backToBoard:'Zurück zum Board',todo:'TODO',addTodoItem:'Element hinzufügen...',newColumn:'Neue Spalte...',newEpic:'Neues Epic...',newTag:'Neuer Tag...',login:'Login...',password:'Passwort...',admin:'Admin',regular:'Normal',readonly:'Nur lesen',role:'Rolle',deleteColumn:'Spalte löschen',deleteEpic:'Epic löschen',deleteTag:'Tag löschen',deleteUser:'Benutzer löschen',moveTasksFirst:'Verschieben Sie zuerst die Aufgaben',confirmDeleteCol:'Spalte löschen',confirmDeleteEpic:'Epic löschen',confirmDeleteTag:'Tag löschen',confirmDeleteUser:'Benutzer löschen',tasksWillUnlink:'Aufgaben werden getrennt.',userRequired:'Login erforderlich, Passwort min 6 Zeichen',error:'Fehler',importConfirm:'Import ersetzt ALLE Daten. Fortfahren?',importDone:'Import abgeschlossen',exportError:'Exportfehler',importError:'Importfehler',uploadError:'Uploadfehler',fileTooLarge:'Datei zu groß (max 10MB)',fileTypeNotAllowed:'Dateityp nicht erlaubt',uploading:'Hochladen...',uploadFailed:'Upload fehlgeschlagen',searchTasks:'Aufgaben suchen...',nothingFound:'Nichts gefunden',andMore:'...und mehr',editEpic:'Epic bearbeiten',tasksCompleted:'Aufgaben erledigt',active:'Aktiv',status:'Status',date:'Datum',noActiveTasks:'Keine aktiven Aufgaben',subscribe:'Abonnieren',unsubscribe:'Abbestellen',subscribed:'Abonniert',notifications:'Benachrichtigungen',markAllRead:'Alle gelesen',noNotifications:'Keine Benachrichtigungen',profile:'Profil',activity:'Aktivität',noActivity:'Keine Aktivität',personalTask:'Persönliche Aufgabe',showPersonal:'Meine',showAll:'Alle',passwordChanged:'Passwort geändert',newPassword:'Neues Passwort (min 6):',telegram:'Telegram',telegramLinked:'Verknüpft',telegramNotLinked:'Nicht verknüpft',generateHash:'Hash erhalten',unlinkTelegram:'Trennen',telegramHint:'Hash an Bot senden zum Verknüpfen',telegramBotToken:'Bot-Token',saveTelegramToken:'Token speichern',private:'Persönlich',searchTask:'Aufgabe suchen...',edited:'bearbeitet',ctrlEnter:'Ctrl+Enter senden',pasteHint:'Ctrl+V Bild',attachFile:'Datei anhängen',bold:'Fett',italic:'Kursiv',strikethrough:'Durchgestrichen',heading:'Überschrift',list:'Liste',todoItem:'TODO',link:'Link',code:'Code',quote:'Zitat',spoiler:'Spoiler',resetPassword:'Passwort zurücksetzen',createTask:'Erstellen',markdown:'markdown'},
+  pt:{name:'Português',theme:'Tema',language:'Idioma',fontSize:'Tamanho da fonte',columns:'Colunas',epics:'Épicos',tags:'Tags',timezone:'Fuso horário',exportImport:'Exportar/Importar',users:'Usuários',logout:'Sair',changePassword:'Senha',search:'Buscar...',addTask:'+ Adicionar tarefa',newTask:'Nova tarefa',editTask:'Editar',save:'Salvar',cancel:'Cancelar',delete:'Excluir',title:'Título',description:'Descrição',column:'Coluna',priority:'Prioridade',epic:'Épico',assignee:'Responsável',none:'—',low:'Baixa',medium:'Média',high:'Alta',critical:'Crítica',projectUrl:'Link do projeto',dependsOn:'Depende de',blocks:'Bloqueia',created:'Criada',updated:'Atualizada',comments:'Comentários',noComments:'Sem comentários',writeComment:'Escrever comentário...',send:'Enviar',reply:'Responder',edit:'Editar',noDescription:'Sem descrição',deleteTask:'Excluir tarefa',deleteConfirm:'Excluir tarefa?',back:'Quadro',notFound:'Não encontrado',backToBoard:'Voltar ao quadro',todo:'TODO',addTodoItem:'Adicionar item...',newColumn:'Nova coluna...',newEpic:'Novo épico...',newTag:'Nova tag...',login:'Login...',password:'Senha...',admin:'Admin',regular:'Normal',readonly:'Somente leitura',role:'Função',deleteColumn:'Excluir coluna',deleteEpic:'Excluir épico',deleteTag:'Excluir tag',deleteUser:'Excluir usuário',moveTasksFirst:'Mova as tarefas primeiro',confirmDeleteCol:'Excluir coluna',confirmDeleteEpic:'Excluir épico',confirmDeleteTag:'Excluir tag',confirmDeleteUser:'Excluir usuário',tasksWillUnlink:'tarefas serão desvinculadas.',userRequired:'Login obrigatório, senha mín 6 caracteres',error:'Erro',importConfirm:'A importação substituirá TODOS os dados. Continuar?',importDone:'Importação concluída',exportError:'Erro de exportação',importError:'Erro de importação',uploadError:'Erro de upload',fileTooLarge:'Arquivo muito grande (máx 10MB)',fileTypeNotAllowed:'Tipo de arquivo não permitido',uploading:'Enviando...',uploadFailed:'Falha no upload',searchTasks:'Buscar tarefas...',nothingFound:'Nada encontrado',andMore:'...e mais',editEpic:'Editar épico',tasksCompleted:'tarefas concluídas',active:'Ativas',status:'Status',date:'Data',noActiveTasks:'Sem tarefas ativas',subscribe:'Inscrever',unsubscribe:'Cancelar inscrição',subscribed:'Inscrito',notifications:'Notificações',markAllRead:'Marcar tudo lido',noNotifications:'Sem notificações',profile:'Perfil',activity:'Atividade',noActivity:'Sem atividade',personalTask:'Tarefa pessoal',showPersonal:'Minhas',showAll:'Todas',passwordChanged:'Senha alterada',newPassword:'Nova senha (mín 6):',telegram:'Telegram',telegramLinked:'Vinculado',telegramNotLinked:'Não vinculado',generateHash:'Obter hash',unlinkTelegram:'Desvincular',telegramHint:'Envie o hash ao bot para vincular',telegramBotToken:'Token do bot',saveTelegramToken:'Salvar token',private:'Pessoal',searchTask:'Buscar tarefa...',edited:'editado',ctrlEnter:'Ctrl+Enter enviar',pasteHint:'Ctrl+V imagem',attachFile:'Anexar arquivo',bold:'Negrito',italic:'Itálico',strikethrough:'Riscado',heading:'Cabeçalho',list:'Lista',todoItem:'TODO',link:'Link',code:'Código',quote:'Citação',spoiler:'Spoiler',resetPassword:'Redefinir senha',createTask:'Criar',markdown:'markdown'},
+  ja:{name:'日本語',theme:'テーマ',language:'言語',fontSize:'フォントサイズ',columns:'カラム',epics:'エピック',tags:'タグ',timezone:'タイムゾーン',exportImport:'エクスポート/インポート',users:'ユーザー',logout:'ログアウト',changePassword:'パスワード',search:'検索...',addTask:'+ タスク追加',newTask:'新規タスク',editTask:'編集',save:'保存',cancel:'キャンセル',delete:'削除',title:'タイトル',description:'説明',column:'カラム',priority:'優先度',epic:'エピック',assignee:'担当者',none:'—',low:'低',medium:'中',high:'高',critical:'緊急',projectUrl:'プロジェクトリンク',dependsOn:'依存',blocks:'ブロック',created:'作成',updated:'更新',comments:'コメント',noComments:'コメントなし',writeComment:'コメントを書く...',send:'送信',reply:'返信',edit:'編集',noDescription:'説明なし',deleteTask:'タスク削除',deleteConfirm:'タスクを削除しますか？',back:'ボード',notFound:'見つかりません',backToBoard:'ボードに戻る',todo:'TODO',addTodoItem:'項目追加...',newColumn:'新規カラム...',newEpic:'新規エピック...',newTag:'新規タグ...',login:'ログイン...',password:'パスワード...',admin:'管理者',regular:'一般',readonly:'閲覧のみ',role:'役割',deleteColumn:'カラム削除',deleteEpic:'エピック削除',deleteTag:'タグ削除',deleteUser:'ユーザー削除',moveTasksFirst:'先にタスクを移動してください',confirmDeleteCol:'カラム削除',confirmDeleteEpic:'エピック削除',confirmDeleteTag:'タグ削除',confirmDeleteUser:'ユーザー削除',tasksWillUnlink:'タスクが解除されます。',userRequired:'ログイン必須、パスワード最低6文字',error:'エラー',importConfirm:'インポートで全データが置換されます。続行しますか？',importDone:'インポート完了',exportError:'エクスポートエラー',importError:'インポートエラー',uploadError:'アップロードエラー',fileTooLarge:'ファイルが大きすぎます(最大10MB)',fileTypeNotAllowed:'許可されていないファイル形式',uploading:'アップロード中...',uploadFailed:'アップロード失敗',searchTasks:'タスク検索...',nothingFound:'見つかりません',andMore:'...他',editEpic:'エピック編集',tasksCompleted:'タスク完了',active:'アクティブ',status:'ステータス',date:'日付',noActiveTasks:'アクティブタスクなし',subscribe:'購読',unsubscribe:'購読解除',subscribed:'購読中',notifications:'通知',markAllRead:'すべて既読',noNotifications:'通知なし',profile:'プロフィール',activity:'アクティビティ',noActivity:'アクティビティなし',personalTask:'個人タスク',showPersonal:'自分の',showAll:'全て',passwordChanged:'パスワード変更済',newPassword:'新パスワード(最低6文字):',telegram:'Telegram',telegramLinked:'連携済',telegramNotLinked:'未連携',generateHash:'ハッシュ取得',unlinkTelegram:'連携解除',telegramHint:'ボットにハッシュを送信して連携',telegramBotToken:'ボットトークン',saveTelegramToken:'トークン保存',private:'個人',searchTask:'タスク検索...',edited:'編集済',ctrlEnter:'Ctrl+Enter送信',pasteHint:'Ctrl+V画像',attachFile:'ファイル添付',bold:'太字',italic:'斜体',strikethrough:'取消線',heading:'見出し',list:'リスト',todoItem:'TODO',link:'リンク',code:'コード',quote:'引用',spoiler:'スポイラー',resetPassword:'パスワードリセット',createTask:'作成',markdown:'markdown'},
+  ko:{name:'한국어',theme:'테마',language:'언어',fontSize:'글꼴 크기',columns:'컬럼',epics:'에픽',tags:'태그',timezone:'시간대',exportImport:'내보내기/가져오기',users:'사용자',logout:'로그아웃',changePassword:'비밀번호',search:'검색...',addTask:'+ 작업 추가',newTask:'새 작업',editTask:'편집',save:'저장',cancel:'취소',delete:'삭제',title:'제목',description:'설명',column:'컬럼',priority:'우선순위',epic:'에픽',assignee:'담당자',none:'—',low:'낮음',medium:'보통',high:'높음',critical:'긴급',projectUrl:'프로젝트 링크',dependsOn:'의존',blocks:'차단',created:'생성',updated:'수정',comments:'댓글',noComments:'댓글 없음',writeComment:'댓글 작성...',send:'전송',reply:'답글',edit:'편집',noDescription:'설명 없음',deleteTask:'작업 삭제',deleteConfirm:'작업을 삭제하시겠습니까?',back:'보드',notFound:'찾을 수 없음',backToBoard:'보드로 돌아가기',todo:'TODO',addTodoItem:'항목 추가...',newColumn:'새 컬럼...',newEpic:'새 에픽...',newTag:'새 태그...',login:'로그인...',password:'비밀번호...',admin:'관리자',regular:'일반',readonly:'읽기 전용',role:'역할',deleteColumn:'컬럼 삭제',deleteEpic:'에픽 삭제',deleteTag:'태그 삭제',deleteUser:'사용자 삭제',moveTasksFirst:'먼저 작업을 이동하세요',confirmDeleteCol:'컬럼 삭제',confirmDeleteEpic:'에픽 삭제',confirmDeleteTag:'태그 삭제',confirmDeleteUser:'사용자 삭제',tasksWillUnlink:'작업이 분리됩니다.',userRequired:'로그인 필수, 비밀번호 최소 6자',error:'오류',importConfirm:'가져오기는 모든 데이터를 대체합니다. 계속하시겠습니까?',importDone:'가져오기 완료',exportError:'내보내기 오류',importError:'가져오기 오류',uploadError:'업로드 오류',fileTooLarge:'파일이 너무 큽니다(최대 10MB)',fileTypeNotAllowed:'허용되지 않는 파일 형식',uploading:'업로드 중...',uploadFailed:'업로드 실패',searchTasks:'작업 검색...',nothingFound:'찾을 수 없음',andMore:'...그 외',editEpic:'에픽 편집',tasksCompleted:'완료된 작업',active:'활성',status:'상태',date:'날짜',noActiveTasks:'활성 작업 없음',subscribe:'구독',unsubscribe:'구독 취소',subscribed:'구독 중',notifications:'알림',markAllRead:'모두 읽음',noNotifications:'알림 없음',profile:'프로필',activity:'활동',noActivity:'활동 없음',personalTask:'개인 작업',showPersonal:'내 것',showAll:'전체',passwordChanged:'비밀번호 변경됨',newPassword:'새 비밀번호(최소 6자):',telegram:'Telegram',telegramLinked:'연동됨',telegramNotLinked:'미연동',generateHash:'해시 가져오기',unlinkTelegram:'연동 해제',telegramHint:'봇에 해시를 전송하여 연동',telegramBotToken:'봇 토큰',saveTelegramToken:'토큰 저장',private:'개인',searchTask:'작업 검색...',edited:'수정됨',ctrlEnter:'Ctrl+Enter 전송',pasteHint:'Ctrl+V 이미지',attachFile:'파일 첨부',bold:'굵게',italic:'기울임',strikethrough:'취소선',heading:'제목',list:'목록',todoItem:'TODO',link:'링크',code:'코드',quote:'인용',spoiler:'스포일러',resetPassword:'비밀번호 초기화',createTask:'생성',markdown:'markdown'},
+  ar:{name:'العربية',theme:'المظهر',language:'اللغة',fontSize:'حجم الخط',columns:'الأعمدة',epics:'الملاحم',tags:'الوسوم',timezone:'المنطقة الزمنية',exportImport:'تصدير/استيراد',users:'المستخدمون',logout:'خروج',changePassword:'كلمة المرور',search:'بحث...',addTask:'+ إضافة مهمة',newTask:'مهمة جديدة',editTask:'تعديل',save:'حفظ',cancel:'إلغاء',delete:'حذف',title:'العنوان',description:'الوصف',column:'العمود',priority:'الأولوية',epic:'الملحمة',assignee:'المسؤول',none:'—',low:'منخفضة',medium:'متوسطة',high:'عالية',critical:'حرجة',projectUrl:'رابط المشروع',dependsOn:'يعتمد على',blocks:'يحظر',created:'أنشئت',updated:'حُدّثت',comments:'التعليقات',noComments:'لا تعليقات',writeComment:'كتابة تعليق...',send:'إرسال',reply:'رد',edit:'تعديل',noDescription:'لا وصف',deleteTask:'حذف المهمة',deleteConfirm:'حذف المهمة؟',back:'اللوحة',notFound:'غير موجود',backToBoard:'العودة للوحة',todo:'المهام',addTodoItem:'إضافة عنصر...',newColumn:'عمود جديد...',newEpic:'ملحمة جديدة...',newTag:'وسم جديد...',login:'تسجيل الدخول...',password:'كلمة المرور...',admin:'مدير',regular:'عادي',readonly:'قراءة فقط',role:'الدور',deleteColumn:'حذف العمود',deleteEpic:'حذف الملحمة',deleteTag:'حذف الوسم',deleteUser:'حذف المستخدم',moveTasksFirst:'انقل المهام أولاً',confirmDeleteCol:'حذف العمود',confirmDeleteEpic:'حذف الملحمة',confirmDeleteTag:'حذف الوسم',confirmDeleteUser:'حذف المستخدم',tasksWillUnlink:'ستُفصل المهام.',userRequired:'اسم المستخدم مطلوب، كلمة المرور 6 أحرف على الأقل',error:'خطأ',importConfirm:'الاستيراد سيستبدل جميع البيانات. متابعة؟',importDone:'تم الاستيراد',exportError:'خطأ في التصدير',importError:'خطأ في الاستيراد',uploadError:'خطأ في الرفع',fileTooLarge:'ملف كبير جداً (حد 10 ميجا)',fileTypeNotAllowed:'نوع الملف غير مسموح',uploading:'جاري الرفع...',uploadFailed:'فشل الرفع',searchTasks:'بحث المهام...',nothingFound:'لم يتم العثور',andMore:'...والمزيد',editEpic:'تعديل الملحمة',tasksCompleted:'مهام مكتملة',active:'نشطة',status:'الحالة',date:'التاريخ',noActiveTasks:'لا مهام نشطة',subscribe:'اشتراك',unsubscribe:'إلغاء الاشتراك',subscribed:'مشترك',notifications:'الإشعارات',markAllRead:'قراءة الكل',noNotifications:'لا إشعارات',profile:'الملف الشخصي',activity:'النشاط',noActivity:'لا نشاط',personalTask:'مهمة شخصية',showPersonal:'مهامي',showAll:'الكل',passwordChanged:'تم تغيير كلمة المرور',newPassword:'كلمة مرور جديدة (6 أحرف):',telegram:'Telegram',telegramLinked:'مرتبط',telegramNotLinked:'غير مرتبط',generateHash:'الحصول على الهاش',unlinkTelegram:'إلغاء الربط',telegramHint:'أرسل الهاش للبوت للربط',telegramBotToken:'توكن البوت',saveTelegramToken:'حفظ التوكن',private:'شخصي',searchTask:'بحث مهمة...',edited:'معدّل',ctrlEnter:'Ctrl+Enter إرسال',pasteHint:'Ctrl+V صورة',attachFile:'إرفاق ملف',bold:'عريض',italic:'مائل',strikethrough:'مشطوب',heading:'عنوان',list:'قائمة',todoItem:'مهمة',link:'رابط',code:'كود',quote:'اقتباس',spoiler:'مخفي',resetPassword:'إعادة تعيين كلمة المرور',createTask:'إنشاء',markdown:'markdown'}
+};
+
+let currentLang = localStorage.getItem('kanban-lang') || 'ru';
+function t(key) { return (LANGS[currentLang] || LANGS.ru)[key] || (LANGS.ru)[key] || key; }
+function setLang(lang) {
+  currentLang = lang;
+  localStorage.setItem('kanban-lang', lang);
+  applyI18n();
+  renderCurrentView();
+}
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-value]').forEach(el => { el.textContent = t(el.dataset.i18nValue); });
+  const s = document.getElementById('search'); if(s) s.placeholder = t('search');
+  const nc = document.getElementById('new-col-name'); if(nc) nc.placeholder = t('newColumn');
+  const ne = document.getElementById('epic-name'); if(ne) ne.placeholder = t('newEpic');
+  const nt = document.getElementById('tag-name'); if(nt) nt.placeholder = t('newTag');
+  const nu = document.getElementById('new-user-name'); if(nu) nu.placeholder = t('login');
+  const np = document.getElementById('new-user-pass'); if(np) np.placeholder = t('password');
+  const ls = document.getElementById('lang-select');
+  if(ls) { ls.innerHTML = Object.entries(LANGS).map(([k,v]) => `<option value="${k}" ${k===currentLang?'selected':''}>${v.name}</option>`).join(''); }
+  const pt = document.getElementById('personal-toggle');
+  if(pt) pt.textContent = showPersonalOnly ? t('showAll') : t('showPersonal');
+}
+
+// === State ===
+let state = { columns: [], tasks: [], epics: [], tags: [], users: [] };
 let draggedTaskId = null;
 let searchQuery = '';
-let searchMatchIds = null; // null = no search active, Set = matched task IDs
+let searchMatchIds = null;
 let currentView = 'board';
 let currentTaskId = null;
 let currentEpicId = null;
+let currentProfileId = null;
 let searchTimeout = null;
+let currentUser = null;
+let showPersonalOnly = false;
 
-// --- Theme ---
+// === Theme ===
 function setTheme(name) {
   document.documentElement.setAttribute('data-theme', name);
   localStorage.setItem('kanban-theme', name);
-  document.querySelectorAll('.theme-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.theme === name);
-  });
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === name));
 }
-(function initTheme() {
-  setTheme(localStorage.getItem('kanban-theme') || 'dark');
-})();
+(function initTheme() { setTheme(localStorage.getItem('kanban-theme') || 'dark'); })();
 
-// --- Font size ---
-function getFontSize() {
-  return parseInt(localStorage.getItem('kanban-font-size') || '14');
-}
+// === Font size ===
+function getFontSize() { return parseInt(localStorage.getItem('kanban-font-size') || '14'); }
 function setFontSize(px) {
   px = Math.max(10, Math.min(22, px));
   localStorage.setItem('kanban-font-size', px);
@@ -452,28 +515,34 @@ function setFontSize(px) {
 function changeFontSize(delta) { setFontSize(getFontSize() + delta); }
 (function initFontSize() { setFontSize(getFontSize()); })();
 
-// --- Contrast color util ---
+// === Utils ===
 function contrastColor(hex) {
   if (!hex || hex[0] !== '#') return '#fff';
-  const r = parseInt(hex.slice(1,3),16);
-  const g = parseInt(hex.slice(3,5),16);
-  const b = parseInt(hex.slice(5,7),16);
-  const lum = (0.299*r + 0.587*g + 0.114*b) / 255;
-  return lum > 0.55 ? '#1a1a2e' : '#ffffff';
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return (0.299*r + 0.587*g + 0.114*b) / 255 > 0.55 ? '#1a1a2e' : '#ffffff';
 }
+function esc(s) { if (!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return esc(s); }
+function fmtDate(s) {
+  if (!s) return '';
+  const d = new Date(s);
+  const tz = getTimezone();
+  try { return d.toLocaleDateString('ru-RU', {timeZone: tz}) + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit', timeZone: tz}); }
+  catch { return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'}); }
+}
+function autoPrefix(url) {
+  if (!url) return url;
+  url = url.trim();
+  if (url && !/^https?:\/\//i.test(url) && /^[a-zA-Z0-9]/.test(url) && url.includes('.')) return 'https://' + url;
+  return url;
+}
+function isAdmin() { return currentUser && currentUser.role === 'admin'; }
+function isReadonly() { return currentUser && currentUser.role === 'readonly'; }
 
-// --- Markdown setup ---
+// === Markdown ===
 function initMarked() {
   if (typeof marked === 'undefined') return;
   marked.setOptions({ breaks: true, gfm: true });
-  // Custom renderer for spoiler via :::spoiler syntax
-  const renderer = new marked.Renderer();
-  const origParagraph = renderer.paragraph.bind(renderer);
-  renderer.paragraph = function(text) {
-    // Handle :::spoiler Title / ::: blocks converted to <details>
-    return origParagraph(text);
-  };
-  marked.use({ renderer });
 }
 initMarked();
 
@@ -481,21 +550,21 @@ function renderMd(text) {
   if (!text) return '';
   if (typeof marked === 'undefined') return esc(text);
   try {
-    // Pre-process: extract <details> blocks, render their inner content as markdown
     let processed = text.replace(/<details><summary>(.*?)<\/summary>\n?([\s\S]*?)\n?<\/details>/g,
-      function(_, summary, body) {
-        const innerHtml = marked.parse(body.trim());
-        return `<details><summary>${summary}</summary>\n${innerHtml}</details>`;
-      });
+      function(_, summary, body) { return `<details><summary>${summary}</summary>\n${marked.parse(body.trim())}</details>`; });
+    // Highlight @mentions
+    processed = processed.replace(/@(\w+)/g, '<span class="mention" onclick="navigateTo(\'/user/\'+getUserIdByName(\'$1\'))">@$1</span>');
     let html = marked.parse(processed);
-    // Fix double-wrapped details that marked may wrap in <p>
     html = html.replace(/<p>\s*<details>/g, '<details>').replace(/<\/details>\s*<\/p>/g, '</details>');
-    // Auto-prefix bare domain links that marked created without protocol
     html = html.replace(/<a\s+href="(?!https?:\/\/|\/|#|mailto:)([^"]+\.[^"]+)"/g, '<a href="https://$1"');
-    // External links open in new tab
     html = html.replace(/<a\s+href="(https?:\/\/[^"]+)"/g, '<a href="$1" target="_blank" rel="noopener"');
     return html;
   } catch { return esc(text); }
+}
+
+function getUserIdByName(name) {
+  const u = (state.users || []).find(u => u.username === name);
+  return u ? u.id : 0;
 }
 
 function countTodos(text) {
@@ -505,7 +574,6 @@ function countTodos(text) {
   const done = (text.match(/- \[x\]/gi) || []).length;
   return { done, total: all.length };
 }
-
 function parseTodoItems(text) {
   if (!text) return [];
   return text.split('\n').filter(l => /^- \[[ x]\]/i.test(l.trim())).map(l => {
@@ -514,21 +582,17 @@ function parseTodoItems(text) {
     return { done, label };
   });
 }
+function todoItemsToText(items) { return items.map(i => `- [${i.done ? 'x' : ' '}] ${i.label}`).join('\n'); }
 
-function todoItemsToText(items) {
-  return items.map(i => `- [${i.done ? 'x' : ' '}] ${i.label}`).join('\n');
-}
-
-// --- Epic progress ---
 function epicProgress(epicId) {
-  const epicTasks = state.tasks.filter(t => t.epic_id === epicId);
+  const epicTasks = state.tasks.filter(t => t.epic_id === epicId && !t.is_personal);
   if (epicTasks.length === 0) return { total: 0, done: 0, pct: 0 };
   const lastCol = state.columns.length ? state.columns[state.columns.length - 1] : null;
   const done = lastCol ? epicTasks.filter(t => t.column_id === lastCol.id).length : 0;
   return { total: epicTasks.length, done, pct: Math.round(done / epicTasks.length * 100) };
 }
 
-// --- API helpers ---
+// === API ===
 async function api(path, method = 'GET', body = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
@@ -543,24 +607,22 @@ async function loadBoard() {
   if (!state.tasks) state.tasks = [];
   if (!state.epics) state.epics = [];
   if (!state.tags) state.tags = [];
+  if (!state.users) state.users = [];
   renderCurrentView();
 }
 
-// --- Image paste ---
+// === Image paste ===
 async function uploadImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result.split(',')[1];
-      try {
-        const res = await api('/api/images', 'POST', { data: base64, mime: file.type });
-        resolve(res.url);
-      } catch (e) { reject(e); }
+      try { const res = await api('/api/images', 'POST', { data: base64, mime: file.type }); resolve(res.url); }
+      catch (e) { reject(e); }
     };
     reader.readAsDataURL(file);
   });
 }
-
 function setupPaste(textarea) {
   textarea.addEventListener('paste', async (e) => {
     const items = e.clipboardData?.items;
@@ -572,1040 +634,532 @@ function setupPaste(textarea) {
         const pos = textarea.selectionStart;
         const before = textarea.value.substring(0, pos);
         const after = textarea.value.substring(textarea.selectionEnd);
-        textarea.value = before + '![Загрузка...]()' + after;
-        try {
-          const url = await uploadImage(file);
-          textarea.value = before + `![image](${url})` + after;
-        } catch {
-          textarea.value = before + '![Ошибка загрузки]()' + after;
-        }
+        textarea.value = before + `![${t('uploading')}]()` + after;
+        try { const url = await uploadImage(file); textarea.value = before + `![image](${url})` + after; }
+        catch { textarea.value = before + `![${t('uploadFailed')}]()` + after; }
         break;
       }
     }
   });
 }
 
-// --- Image lightbox ---
+// === Lightbox ===
 function openLightbox(src) {
   const overlay = document.createElement('div');
   overlay.className = 'lightbox-overlay';
   overlay.onclick = () => overlay.remove();
   overlay.innerHTML = `<img src="${src}" alt="">`;
   document.body.appendChild(overlay);
-  document.addEventListener('keydown', function handler(e) {
-    if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', handler); }
-  });
+  document.addEventListener('keydown', function handler(e) { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', handler); } });
 }
+document.addEventListener('click', function(e) { if (e.target.tagName === 'IMG' && e.target.closest('.md-content')) { e.preventDefault(); openLightbox(e.target.src); } });
 
-// Delegate image clicks in md-content
-document.addEventListener('click', function(e) {
-  if (e.target.tagName === 'IMG' && e.target.closest('.md-content')) {
-    e.preventDefault();
-    openLightbox(e.target.src);
-  }
-});
-
-// --- Markdown toolbar ---
+// === Markdown toolbar ===
 function insertMdToolbar(textareaId) {
   return `<div class="md-toolbar">
-    <button type="button" onclick="mdInsert('${textareaId}','**','**')" title="Жирный"><b>B</b></button>
-    <button type="button" onclick="mdInsert('${textareaId}','*','*')" title="Курсив"><i>I</i></button>
-    <button type="button" onclick="mdInsert('${textareaId}','~~','~~')" title="Зачёркнутый"><s>S</s></button>
-    <button type="button" onclick="mdInsert('${textareaId}','## ','')" title="Заголовок">H</button>
-    <button type="button" onclick="mdInsert('${textareaId}','\\n- ','')" title="Список">&#8226;</button>
-    <button type="button" onclick="mdInsert('${textareaId}','\\n- [ ] ','')" title="TODO">&#9745;</button>
-    <button type="button" onclick="mdInsert('${textareaId}','[','](url)')" title="Ссылка">&#128279;</button>
-    <button type="button" onclick="mdInsert('${textareaId}','\\n\`\`\`\\n','\\n\`\`\`\\n')" title="Код">&lt;/&gt;</button>
-    <button type="button" onclick="mdInsert('${textareaId}','> ','')" title="Цитата">&#10077;</button>
-    <button type="button" onclick="mdInsert('${textareaId}','\\n<details><summary>Спойлер</summary>\\n','\\n</details>\\n')" title="Спойлер">&#9660;S</button>
-    <button type="button" onclick="triggerFileAttach('${textareaId}')" title="Вложить файл">&#128206;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','**','**')" title="${t('bold')}"><b>B</b></button>
+    <button type="button" onclick="mdInsert('${textareaId}','*','*')" title="${t('italic')}"><i>I</i></button>
+    <button type="button" onclick="mdInsert('${textareaId}','~~','~~')" title="${t('strikethrough')}"><s>S</s></button>
+    <button type="button" onclick="mdInsert('${textareaId}','## ','')" title="${t('heading')}">H</button>
+    <button type="button" onclick="mdInsert('${textareaId}','\\n- ','')" title="${t('list')}">&#8226;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','\\n- [ ] ','')" title="${t('todoItem')}">&#9745;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','[','](url)')" title="${t('link')}">&#128279;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','\\n\`\`\`\\n','\\n\`\`\`\\n')" title="${t('code')}">&lt;/&gt;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','> ','')" title="${t('quote')}">&#10077;</button>
+    <button type="button" onclick="mdInsert('${textareaId}','\\n<details><summary>${t('spoiler')}</summary>\\n','\\n</details>\\n')" title="${t('spoiler')}">&#9660;S</button>
+    <button type="button" onclick="triggerFileAttach('${textareaId}')" title="${t('attachFile')}">&#128206;</button>
   </div>`;
 }
-
 function mdInsert(id, before, after) {
   const ta = document.getElementById(id);
   if (!ta) return;
-  const start = ta.selectionStart;
-  const end = ta.selectionEnd;
-  const sel = ta.value.substring(start, end);
-  const b = before.replace(/\\n/g, '\n');
-  const a = after.replace(/\\n/g, '\n');
+  const start = ta.selectionStart, end = ta.selectionEnd, sel = ta.value.substring(start, end);
+  const b = before.replace(/\\n/g, '\n'), a = after.replace(/\\n/g, '\n');
   ta.value = ta.value.substring(0, start) + b + sel + a + ta.value.substring(end);
   ta.focus();
   ta.selectionStart = start + b.length;
   ta.selectionEnd = start + b.length + sel.length;
 }
 
-// --- Router ---
-function navigateTo(path) {
-  history.pushState(null, '', path);
-  route();
-}
-
+// === Router ===
+function navigateTo(path) { history.pushState(null, '', path); route(); }
 function route() {
   const path = location.pathname;
   const taskMatch = path.match(/^\/task\/(\d+)$/);
   const epicMatch = path.match(/^\/epic\/(\d+)$/);
-  if (taskMatch) {
-    currentView = 'task';
-    currentTaskId = Number(taskMatch[1]);
-    currentEpicId = null;
-  } else if (epicMatch) {
-    currentView = 'epic';
-    currentEpicId = Number(epicMatch[1]);
-    currentTaskId = null;
-  } else {
-    currentView = 'board';
-    currentTaskId = null;
-    currentEpicId = null;
-  }
+  const userMatch = path.match(/^\/user\/(\d+)$/);
+  if (taskMatch) { currentView = 'task'; currentTaskId = Number(taskMatch[1]); currentEpicId = null; currentProfileId = null; }
+  else if (epicMatch) { currentView = 'epic'; currentEpicId = Number(epicMatch[1]); currentTaskId = null; currentProfileId = null; }
+  else if (userMatch) { currentView = 'user'; currentProfileId = Number(userMatch[1]); currentTaskId = null; currentEpicId = null; }
+  else { currentView = 'board'; currentTaskId = null; currentEpicId = null; currentProfileId = null; }
   renderCurrentView();
 }
-
 window.addEventListener('popstate', route);
 
 function renderCurrentView() {
-  if (currentView === 'task' && currentTaskId) {
-    renderTaskPage(currentTaskId).then(() => highlightCode());
-  } else if (currentView === 'epic' && currentEpicId) {
-    renderEpicPage(currentEpicId).then(() => highlightCode());
-  } else {
-    renderBoard();
-  }
+  if (currentView === 'task' && currentTaskId) { renderTaskPage(currentTaskId).then(() => highlightCode()); }
+  else if (currentView === 'epic' && currentEpicId) { renderEpicPage(currentEpicId).then(() => highlightCode()); }
+  else if (currentView === 'user' && currentProfileId) { renderUserPage(currentProfileId); }
+  else { renderBoard(); }
   renderSidebar();
 }
 
-// --- Render Board ---
+// === Personal view toggle ===
+function togglePersonalView() {
+  showPersonalOnly = !showPersonalOnly;
+  const pt = document.getElementById('personal-toggle');
+  if(pt) pt.textContent = showPersonalOnly ? t('showAll') : t('showPersonal');
+  renderCurrentView();
+}
+
+// === Timezone ===
+function getTimezone() { return localStorage.getItem('kanban-tz') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+function setTimezone(tz) { localStorage.setItem('kanban-tz', tz); renderCurrentView(); }
+function initTimezoneSelect() {
+  const sel = document.getElementById('tz-select');
+  if (!sel) return;
+  const zones = Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : ['UTC','Europe/Moscow','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','Europe/London','Europe/Paris','Europe/Berlin','Asia/Tokyo','Asia/Shanghai','Asia/Kolkata','Australia/Sydney'];
+  const cur = getTimezone();
+  sel.innerHTML = zones.map(z => `<option value="${z}" ${z===cur?'selected':''}>${z}</option>`).join('');
+}
+
+// === Highlight code blocks ===
+function highlightCode() {
+  if (typeof hljs === 'undefined') return;
+  document.querySelectorAll('.md-content pre code').forEach(el => { if (!el.dataset.highlighted) { hljs.highlightElement(el); el.dataset.highlighted = '1'; } });
+}
+
+// === File attachment ===
+function triggerFileAttach(textareaId) {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.pdf,.txt,.csv,.json,.xml,.zip,.gz,.png,.jpg,.jpeg,.gif,.webp';
+  inp.onchange = async () => {
+    const file = inp.files[0];
+    if (!file) return;
+    if (file.size > 10*1024*1024) { alert(t('fileTooLarge')); return; }
+    const ta = document.getElementById(textareaId);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result.split(',')[1];
+      try {
+        const res = await api('/api/files', 'POST', { data: base64, filename: file.name, mime: file.type });
+        const link = file.type.startsWith('image/') ? `![${file.name}](${res.url})` : `[${file.name}](${res.url})`;
+        if (ta) { const pos = ta.selectionStart; ta.value = ta.value.substring(0, pos) + link + ta.value.substring(ta.selectionEnd); ta.focus(); }
+      } catch(e) { alert(t('uploadError') + ': ' + e.message); }
+    };
+    reader.readAsDataURL(file);
+  };
+  inp.click();
+}
+
+// === Init ===
+async function init() {
+  try {
+    const me = await api('/api/auth/me');
+    currentUser = me;
+    updateUserUI();
+    await loadBoard();
+    route();
+    applyI18n();
+    initTimezoneSelect();
+    pollNotifications();
+    // Search
+    const searchEl = document.getElementById('search');
+    if (searchEl) {
+      searchEl.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => doSearch(this.value), 300);
+      });
+      searchEl.addEventListener('keydown', function(e) { if (e.key === 'Escape') { this.value = ''; doSearch(''); } });
+    }
+  } catch(e) {
+    window.location.href = '/login';
+  }
+}
+
+function updateUserUI() {
+  if (!currentUser) return;
+  const label = document.getElementById('current-user-label');
+  if (label) label.textContent = currentUser.username + ' (' + t(currentUser.role) + ')';
+  // Show admin sections
+  const colSec = document.getElementById('columns-section');
+  if (colSec) colSec.style.display = isAdmin() ? '' : 'none';
+  const userSec = document.getElementById('users-section');
+  if (userSec) userSec.style.display = isAdmin() ? '' : 'none';
+  // Show epic/tag add forms only for admin
+  const epicAdd = document.getElementById('epic-add-form');
+  if (epicAdd) epicAdd.style.display = isAdmin() ? '' : 'none';
+  const tagAdd = document.getElementById('tag-add-form');
+  if (tagAdd) tagAdd.style.display = isAdmin() ? '' : 'none';
+  // Telegram section
+  const tgSec = document.getElementById('telegram-section');
+  if (tgSec) tgSec.style.display = '';
+  // Personal toggle
+  const pt = document.getElementById('personal-toggle');
+  if (pt) pt.style.display = '';
+  pt.textContent = showPersonalOnly ? t('showAll') : t('showPersonal');
+  // Update notif count
+  if (currentUser.unread > 0) {
+    const nb = document.getElementById('notif-count');
+    if (nb) { nb.textContent = currentUser.unread; nb.classList.remove('hidden'); }
+  }
+}
+
+// === Sidebar ===
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+
+function renderSidebar() {
+  // Columns order (admin only)
+  if (isAdmin()) {
+    const list = document.getElementById('col-order-list');
+    if (list) {
+      list.innerHTML = state.columns.map((c, i) => `<div class="col-order-item">
+        <span>${esc(c.name)}</span>
+        <div class="col-order-btns">
+          ${i > 0 ? `<button onclick="moveColumnOrder(${i},-1)">&#9650;</button>` : ''}
+          ${i < state.columns.length-1 ? `<button onclick="moveColumnOrder(${i},1)">&#9660;</button>` : ''}
+          <button class="btn-icon btn-sm" onclick="renameColumn(${c.id},'${escAttr(c.name)}')" title="${t('edit')}">&#9998;</button>
+          <button class="btn-icon btn-sm" onclick="deleteColumn(${c.id})" title="${t('delete')}" style="color:var(--red)">&#10005;</button>
+        </div>
+      </div>`).join('');
+    }
+  }
+  // Epics
+  const epicList = document.getElementById('epic-list');
+  if (epicList) {
+    epicList.innerHTML = state.epics.map(e => `<div class="entity-item">
+      <span class="dot" style="background:${e.color}"></span>
+      <span style="cursor:pointer" onclick="navigateTo('/epic/${e.id}')">${esc(e.name)}</span>
+      ${isAdmin() ? `<button class="btn-icon btn-sm" onclick="deleteEpic(${e.id})" title="${t('delete')}" style="color:var(--red)">&#10005;</button>` : ''}
+    </div>`).join('');
+  }
+  // Tags
+  const tagList = document.getElementById('tag-list');
+  if (tagList) {
+    tagList.innerHTML = state.tags.map(tg => `<div class="entity-item">
+      <span class="dot" style="background:${tg.color}"></span>
+      <span>${esc(tg.name)}</span>
+      ${isAdmin() ? `<button class="btn-icon btn-sm" onclick="deleteTag(${tg.id})" title="${t('delete')}" style="color:var(--red)">&#10005;</button>` : ''}
+    </div>`).join('');
+  }
+  // Users (admin)
+  if (isAdmin()) {
+    const userList = document.getElementById('user-list');
+    if (userList) {
+      userList.innerHTML = state.users.map(u => `<div class="entity-item">
+        <span style="cursor:pointer" onclick="navigateTo('/user/${u.id}')">${esc(u.username)}</span>
+        <span style="font-size:.72rem;color:var(--fg3)">${t(u.role)}</span>
+        <div style="display:flex;gap:2px">
+          <button class="btn-icon btn-sm" onclick="changeUserRole(${u.id},'${u.role}')" title="${t('role')}">&#9881;</button>
+          <button class="btn-icon btn-sm" onclick="resetUserPassword(${u.id})" title="${t('resetPassword')}">&#128274;</button>
+          ${u.id !== currentUser.id ? `<button class="btn-icon btn-sm" onclick="deleteUser(${u.id})" title="${t('delete')}" style="color:var(--red)">&#10005;</button>` : ''}
+        </div>
+      </div>`).join('');
+    }
+  }
+  // Telegram
+  renderTelegramSection();
+}
+
+function renderTelegramSection() {
+  const el = document.getElementById('telegram-content');
+  if (!el) return;
+  let html = '';
+  if (isAdmin()) {
+    html += `<div style="margin-bottom:8px"><label style="font-size:.78rem;color:var(--fg2)">${t('telegramBotToken')}</label>
+      <div style="display:flex;gap:4px;margin-top:4px">
+        <input type="password" id="tg-token-input" style="flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-size:.82rem;outline:none">
+        <button class="btn btn-primary btn-sm" onclick="saveTelegramToken()">${t('saveTelegramToken')}</button>
+      </div></div>`;
+    // Load current token
+    api('/api/settings/telegram').then(r => { const inp = document.getElementById('tg-token-input'); if(inp && r.token) inp.value = r.token; }).catch(()=>{});
+  }
+  if (currentUser.telegram_id) {
+    html += `<div style="font-size:.82rem;color:var(--green);margin-bottom:4px">&#10004; ${t('telegramLinked')}</div>
+      <button class="btn btn-ghost btn-sm" onclick="unlinkTelegram()">${t('unlinkTelegram')}</button>`;
+  } else {
+    html += `<div style="font-size:.82rem;color:var(--fg3);margin-bottom:4px">${t('telegramNotLinked')}</div>
+      <button class="btn btn-ghost btn-sm" onclick="generateTelegramHash()">${t('generateHash')}</button>
+      <div id="tg-hash-display" style="margin-top:4px;font-size:.78rem;color:var(--fg3)"></div>`;
+  }
+  el.innerHTML = html;
+}
+
+async function saveTelegramToken() {
+  const inp = document.getElementById('tg-token-input');
+  if (!inp) return;
+  try { await api('/api/settings/telegram', 'POST', { token: inp.value }); alert('OK'); } catch(e) { alert(t('error') + ': ' + e.message); }
+}
+async function generateTelegramHash() {
+  try {
+    const r = await api('/api/user/telegram/link', 'POST');
+    const el = document.getElementById('tg-hash-display');
+    if (el) el.innerHTML = `<code style="user-select:all;font-size:.9rem;color:var(--accent2)">${r.hash}</code><br><span>${t('telegramHint')}</span>`;
+  } catch(e) { alert(t('error')); }
+}
+async function unlinkTelegram() {
+  try { await api('/api/user/telegram/unlink', 'POST'); currentUser.telegram_id = 0; renderTelegramSection(); } catch(e) { alert(t('error')); }
+}
+
+// === Board rendering ===
 function renderBoard() {
   const app = document.getElementById('app');
-  const filtered = filterTasks(state.tasks);
-
   let html = '<div class="board">';
   for (const col of state.columns) {
-    const colTasks = filtered.filter(t => t.column_id === col.id);
-    html += `<div class="column">
-      <div class="col-header">
-        <span class="col-title">${esc(col.name)} <span class="col-count">${colTasks.length}</span></span>
-      </div>
-      <div class="col-body" data-col="${col.id}"
-        ondragover="onDragOver(event)" ondrop="onDrop(event, ${col.id})" ondragleave="onDragLeave(event)">
-        ${colTasks.map(t => renderCard(t)).join('')}
-        <button class="add-task-btn" onclick="openCreateTask(${col.id})">+ Добавить задачу</button>
-      </div></div>`;
+    const colTasks = state.tasks.filter(t => t.column_id === col.id).sort((a,b) => a.position - b.position || a.id - b.id);
+    const filtered = filterTasks(colTasks);
+    html += `<div class="column" data-col="${col.id}" ondragover="onDragOver(event)" ondrop="onDrop(event, ${col.id})">
+      <div class="col-header"><span class="col-title">${esc(col.name)} <span class="col-count">${filtered.length}</span></span></div>
+      <div class="col-body">`;
+    for (const task of filtered) {
+      html += renderCard(task);
+    }
+    html += `<div class="drop-zone" ondragover="onDragOver(event)" ondrop="onDrop(event, ${col.id})"></div>`;
+    if (!isReadonly()) {
+      html += `<button class="add-task-btn" onclick="showCreateTask(${col.id})">${t('addTask')}</button>`;
+    }
+    html += '</div></div>';
   }
   html += '</div>';
   app.innerHTML = html;
 }
 
-function renderCard(t) {
-  const prioClass = t.priority > 0 ? `<div class="card-priority priority-${t.priority}"></div>` : '';
-  const epicColor = t.epic ? esc(t.epic.color) : '';
-  const epicTextColor = t.epic ? contrastColor(t.epic.color) : '';
-  const epic = t.epic ? `<span class="card-epic" style="background:${epicColor};color:${epicTextColor}" onclick="event.stopPropagation();navigateTo('/epic/${t.epic.id}')">${esc(t.epic.name)}</span>` : '';
-  const tags = (t.tags || []).map(tg => {
-    const tc = contrastColor(tg.color);
-    return `<span class="card-tag" style="background:${esc(tg.color)};color:${tc}">${esc(tg.name)}</span>`;
-  }).join('');
-  const comments = t.comments && t.comments.length ? `<span class="card-comments">&#128172; ${t.comments.length}</span>` : '';
-  const todos = countTodos(t.todo);
-  const todoHtml = todos ? `<span class="card-todo">&#9745; ${todos.done}/${todos.total}</span>` : '';
-  const linkHtml = t.project_url ? `<span class="card-link">&#128279;</span>` : '';
-  return `<div class="card" draggable="true" ondragstart="onDragStart(event,${t.id})" ondragend="onDragEnd(event)" onclick="navigateTo('/task/${t.id}')">
-    ${prioClass}
-    <div class="card-title">${esc(t.title)} <span class="card-id">#${t.id}</span></div>
-    <div class="card-meta">${epic}${tags}${todoHtml}${linkHtml}${comments}</div>
-  </div>`;
-}
-
-// --- Render Task Page ---
-async function renderTaskPage(taskId) {
-  const app = document.getElementById('app');
-
-  let t;
-  try {
-    t = await api(`/api/tasks/${taskId}`);
-  } catch {
-    app.innerHTML = '<div class="task-page"><h2>Задача не найдена</h2><p><a href="/" onclick="navigateTo(\'/\');return false;">Вернуться на доску</a></p></div>';
-    return;
-  }
-
-  const col = state.columns.find(c => c.id === t.column_id);
-  const prioLabels = ['—','Низкий','Средний','Высокий','Критический'];
-  const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
-
-  const epicHtml = t.epic
-    ? `<span class="card-epic" style="background:${esc(t.epic.color)};color:${contrastColor(t.epic.color)};cursor:pointer" onclick="navigateTo('/epic/${t.epic.id}')">${esc(t.epic.name)}</span>`
-    : '<span style="color:var(--fg3)">—</span>';
-
-  const tagsHtml = (t.tags||[]).length
-    ? (t.tags||[]).map(tg => `<span class="card-tag" style="background:${esc(tg.color)};color:${contrastColor(tg.color)}">${esc(tg.name)}</span>`).join(' ')
-    : '<span style="color:var(--fg3)">—</span>';
-
-  const prioHtml = t.priority > 0
-    ? `<span style="color:${prioColors[t.priority]};font-weight:600">${prioLabels[t.priority]}</span>`
-    : '<span style="color:var(--fg3)">—</span>';
-
-  const descRendered = renderMd(t.description);
-
-  // Project link
-  const projectLinkHtml = t.project_url
-    ? `<div class="task-info-item"><label>Проект</label><div class="value"><a class="project-link" href="${esc(t.project_url)}" target="_blank" rel="noopener">&#128279; ${esc(t.project_url)}</a></div></div>`
-    : '';
-
-  const comments = renderCommentsTree(t.comments||[], t.id);
-
-  // Build interactive todo list
-  const todoItems = parseTodoItems(t.todo);
-  const todoListHtml = todoItems.length > 0 ? `<div class="task-page-section">
-    <h3>TODO (${todoItems.filter(i=>i.done).length}/${todoItems.length})</h3>
-    <div class="todo-list" id="todo-list">
-      ${todoItems.map((item, idx) => `<div class="todo-item${item.done?' done':''}">
-        <input type="checkbox" ${item.done?'checked':''} onchange="toggleTodoItem(${t.id},${idx},this.checked)">
-        <span class="todo-text">${esc(item.label)}</span>
-        <button class="btn-icon" onclick="removeTodoItem(${t.id},${idx})">&#10005;</button>
-      </div>`).join('')}
-    </div>
-    <div class="todo-add">
-      <input type="text" id="todo-new-input" placeholder="Добавить пункт..." onkeydown="if(event.key==='Enter')addTodoItem(${t.id})">
-      <button class="btn btn-primary btn-sm" onclick="addTodoItem(${t.id})">+</button>
-    </div>
-  </div>` : `<div class="task-page-section">
-    <h3>TODO</h3>
-    <div class="todo-list" id="todo-list"></div>
-    <div class="todo-add">
-      <input type="text" id="todo-new-input" placeholder="Добавить пункт..." onkeydown="if(event.key==='Enter')addTodoItem(${t.id})">
-      <button class="btn btn-primary btn-sm" onclick="addTodoItem(${t.id})">+</button>
-    </div>
-  </div>`;
-
-  app.innerHTML = `<div class="task-page">
-    <div class="task-page-header">
-      <h2><span class="task-id-badge">#${t.id}</span> ${esc(t.title)}</h2>
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-sm" onclick="navigateTo('/')">&#8592; Доска</button>
-        <button class="btn btn-ghost btn-sm" onclick="openEditTask(${t.id})">Редактировать</button>
-      </div>
-    </div>
-
-    <div class="task-page-sidebar-info">
-      <div class="task-info-item"><label>Колонка</label><div class="value">${esc(col?.name || '?')}</div></div>
-      <div class="task-info-item"><label>Приоритет</label><div class="value">${prioHtml}</div></div>
-      <div class="task-info-item"><label>Эпик</label><div class="value">${epicHtml}</div></div>
-      <div class="task-info-item"><label>Теги</label><div class="value" style="display:flex;gap:4px;flex-wrap:wrap">${tagsHtml}</div></div>
-      ${projectLinkHtml}
-    </div>
-
-    ${(t.depends_on && t.depends_on.length) ? `<div class="task-page-sidebar-info">
-      <div class="task-info-item" style="width:100%"><label>Зависит от</label><div class="value" style="display:flex;flex-direction:column;gap:4px">
-        ${t.depends_on.map(d => {
-          const dc = state.columns.find(c => c.id === d.column_id);
-          return `<a href="/task/${d.id}" onclick="event.preventDefault();navigateTo('/task/${d.id}')" style="display:flex;align-items:center;gap:8px">
-            <span class="card-id">#${d.id}</span> ${esc(d.title)} <span class="epic-task-status" style="font-size:.7rem">${esc(dc?.name||'')}</span></a>`;
-        }).join('')}
-      </div></div>
-    </div>` : ''}
-    ${(t.dependents && t.dependents.length) ? `<div class="task-page-sidebar-info">
-      <div class="task-info-item" style="width:100%"><label>Блокирует</label><div class="value" style="display:flex;flex-direction:column;gap:4px">
-        ${t.dependents.map(d => {
-          const dc = state.columns.find(c => c.id === d.column_id);
-          return `<a href="/task/${d.id}" onclick="event.preventDefault();navigateTo('/task/${d.id}')" style="display:flex;align-items:center;gap:8px">
-            <span class="card-id">#${d.id}</span> ${esc(d.title)} <span class="epic-task-status" style="font-size:.7rem">${esc(dc?.name||'')}</span></a>`;
-        }).join('')}
-      </div></div>
-    </div>` : ''}
-
-    <div class="task-dates">
-      <span>Создана: ${fmtDate(t.created_at)}</span>
-      <span>Обновлена: ${fmtDate(t.updated_at)}</span>
-    </div>
-
-    <div class="task-page-body">
-      <div class="task-page-section">
-        <h3>Описание</h3>
-        <div class="md-content">${descRendered || ''}</div>
-      </div>
-
-      ${todoListHtml}
-
-      <div class="task-page-section">
-        <h3>Комментарии (${(t.comments||[]).length})</h3>
-        <div class="comments-list" style="max-height:none">${comments}</div>
-        <div class="comment-form" style="margin-top:12px">
-          ${insertMdToolbar('m-comment')}
-          <textarea id="m-comment" placeholder="Написать комментарий (markdown)... Ctrl+Enter для отправки" rows="3"></textarea>
-          <div class="comment-form-actions">
-            <span class="paste-hint">Ctrl+V картинка | Ctrl+Enter отправить</span>
-            <button class="btn btn-primary btn-sm" onclick="addCommentFromPage(${t.id})">Отправить</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>`;
-
-  // Setup comment textarea
-  const ta = document.getElementById('m-comment');
-  if (ta) {
-    setupPaste(ta);
-    ta.addEventListener('keydown', function(e) {
-      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); addCommentFromPage(t.id); }
-    });
-  }
-}
-
-// --- Interactive TODO ---
-// Helper: refresh task page without losing comment draft
-async function refreshTaskPage(taskId) {
-  const commentDraft = document.getElementById('m-comment')?.value || '';
-  state = await api('/api/board');
-  if (!state.columns) state.columns = [];
-  if (!state.tasks) state.tasks = [];
-  if (!state.epics) state.epics = [];
-  if (!state.tags) state.tags = [];
-  await renderTaskPage(taskId);
-  highlightCode();
-  const ta = document.getElementById('m-comment');
-  if (ta && commentDraft) ta.value = commentDraft;
-}
-
-async function toggleTodoItem(taskId, index, checked) {
-  const t = await api(`/api/tasks/${taskId}`);
-  const items = parseTodoItems(t.todo);
-  if (index >= 0 && index < items.length) {
-    items[index].done = checked;
-  }
-  await api(`/api/tasks/${taskId}`, 'PUT', {
-    title: t.title, description: t.description, todo: todoItemsToText(items),
-    project_url: t.project_url, column_id: t.column_id, epic_id: t.epic_id,
-    priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
-  });
-  await refreshTaskPage(taskId);
-}
-
-async function removeTodoItem(taskId, index) {
-  const t = await api(`/api/tasks/${taskId}`);
-  const items = parseTodoItems(t.todo);
-  items.splice(index, 1);
-  await api(`/api/tasks/${taskId}`, 'PUT', {
-    title: t.title, description: t.description, todo: todoItemsToText(items),
-    project_url: t.project_url, column_id: t.column_id, epic_id: t.epic_id,
-    priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
-  });
-  await refreshTaskPage(taskId);
-}
-
-async function addTodoItem(taskId) {
-  const input = document.getElementById('todo-new-input');
-  const label = input.value.trim();
-  if (!label) return;
-  const t = await api(`/api/tasks/${taskId}`);
-  const items = parseTodoItems(t.todo);
-  items.push({ done: false, label });
-  await api(`/api/tasks/${taskId}`, 'PUT', {
-    title: t.title, description: t.description, todo: todoItemsToText(items),
-    project_url: t.project_url, column_id: t.column_id, epic_id: t.epic_id,
-    priority: t.priority, tag_ids: (t.tags||[]).map(tg => tg.id)
-  });
-  await refreshTaskPage(taskId);
-}
-
-async function addCommentFromPage(taskId) {
-  const ta = document.getElementById('m-comment');
-  const text = ta.value.trim();
-  if (!text) return;
-  await api('/api/comments', 'POST', { task_id: taskId, text });
-  await loadBoard();
-}
-
-async function deleteCommentFromPage(commentId, taskId) {
-  await api(`/api/comments/${commentId}`, 'DELETE');
-  await loadBoard();
-}
-
-async function deleteTaskFromPage(id) {
-  if (!confirm('Удалить задачу?')) return;
-  await api(`/api/tasks/${id}`, 'DELETE');
-  navigateTo('/');
-  await loadBoard();
-}
-
-async function deleteTaskFromModal(id) {
-  if (!confirm('Удалить задачу?')) return;
-  await api(`/api/tasks/${id}`, 'DELETE');
-  closeModal();
-  navigateTo('/');
-  await loadBoard();
-}
-
-// --- Render Epic Page ---
-async function renderEpicPage(epicId) {
-  const app = document.getElementById('app');
-
-  let data;
-  try {
-    data = await api(`/api/epics/${epicId}`);
-  } catch {
-    app.innerHTML = '<div class="epic-page"><h2>Эпик не найден</h2><p><a href="/" onclick="navigateTo(\'/\');return false;">Вернуться на доску</a></p></div>';
-    return;
-  }
-
-  const epic = data.epic;
-  const tasks = data.tasks || [];
-  const tc = contrastColor(epic.color);
-  const p = epicProgress(epic.id);
-  const descHtml = renderMd(epic.description);
-  const colMap = {};
-  state.columns.forEach(c => { colMap[c.id] = c.name; });
-  const prioLabels = ['—','Низкий','Средний','Высокий','Критический'];
-  const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
-
-  // Sort: identify first (backlog) and last (done) columns
-  const lastCol = state.columns.length ? state.columns[state.columns.length - 1] : null;
-  const firstCol = state.columns.length ? state.columns[0] : null;
-
-  function getEpicSort(section) {
-    const raw = localStorage.getItem('kanban-epic-sort-' + section) || 'status-asc';
-    const [type, dir] = raw.includes('-') ? raw.split('-') : [raw, 'asc'];
-    return { type, dir, mul: dir === 'desc' ? -1 : 1 };
-  }
-
-  // Separate into: active (not backlog, not done), backlog, completed
-  const activeTasks = tasks.filter(t =>
-    (!lastCol || t.column_id !== lastCol.id) && (!firstCol || t.column_id !== firstCol.id));
-  const backlogTasks = tasks.filter(t => firstCol && t.column_id === firstCol.id);
-  const completedTasks = tasks.filter(t => lastCol && t.column_id === lastCol.id);
-
-  function sortEpicTasks(arr, section) {
-    const s = getEpicSort(section);
-    return [...arr].sort((a, b) => {
-      if (s.type === 'date') return s.mul * (new Date(b.created_at) - new Date(a.created_at));
-      const posA = state.columns.findIndex(c => c.id === a.column_id);
-      const posB = state.columns.findIndex(c => c.id === b.column_id);
-      return s.mul * (posA - posB);
-    });
-  }
-  const sortedActive = sortEpicTasks(activeTasks, 'active');
-  const sortedBacklog = sortEpicTasks(backlogTasks, 'backlog');
-  const sortedCompleted = sortEpicTasks(completedTasks, 'done');
-
-  function epicTaskRow(t) {
-    const colName = colMap[t.column_id] || '?';
-    const prioLabel = t.priority > 0 ? prioLabels[t.priority] : '';
-    const prioColor = t.priority > 0 ? prioColors[t.priority] : '';
-    const tags = (t.tags||[]).map(tg => {
-      const ttc = contrastColor(tg.color);
-      return `<span class="card-tag" style="background:${esc(tg.color)};color:${ttc}">${esc(tg.name)}</span>`;
-    }).join('');
-    return `<div class="epic-task-row" onclick="navigateTo('/task/${t.id}')">
-      <span class="epic-task-status">${esc(colName)}</span>
-      <span class="epic-task-title">${esc(t.title)} <span class="card-id">#${t.id}</span></span>
-      ${tags}
-      ${prioLabel ? `<span class="epic-task-prio" style="color:${prioColor}">${prioLabel}</span>` : ''}
-    </div>`;
-  }
-
-  const activeRows = sortedActive.map(epicTaskRow).join('');
-  const backlogRows = sortedBacklog.map(epicTaskRow).join('');
-  const completedRows = sortedCompleted.map(epicTaskRow).join('');
-
-  function sortBtns(section, label) {
-    const s = getEpicSort(section);
-    const sa = s.type==='status' ? (s.dir==='asc'?' ▲':' ▼') : '';
-    const da = s.type==='date' ? (s.dir==='asc'?' ▲':' ▼') : '';
-    return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <h3 style="font-size:.85rem;color:var(--fg3)">${label}</h3>
-      <div style="display:flex;gap:4px">
-        <button class="btn btn-sm ${s.type==='status'?'btn-primary':'btn-ghost'}" onclick="toggleEpicSort('status','${section}',${epic.id})">Статус${sa}</button>
-        <button class="btn btn-sm ${s.type==='date'?'btn-primary':'btn-ghost'}" onclick="toggleEpicSort('date','${section}',${epic.id})">Дата${da}</button>
-      </div>
-    </div>`;
-  }
-  const activeSort = getEpicSort('active');
-
-  app.innerHTML = `<div class="epic-page">
-    <div class="epic-page-header">
-      <h2>
-        <span class="card-epic" style="background:${esc(epic.color)};color:${tc};font-size:1rem;padding:4px 14px">${esc(epic.name)}</span>
-      </h2>
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-sm" onclick="navigateTo('/')">&#8592; Доска</button>
-        <button class="btn btn-primary btn-sm" onclick="openCreateTask(null,${epic.id})">+ Задача</button>
-        <button class="btn btn-ghost btn-sm" onclick="openEditEpic(${epic.id})">Редактировать</button>
-      </div>
-    </div>
-
-    <div style="margin-bottom:16px">
-      <div class="epic-progress" style="width:100%">
-        <div class="epic-progress-text">${p.done}/${p.total} задач выполнено (${p.pct}%)</div>
-        <div class="epic-progress-bar" style="height:8px"><div class="epic-progress-fill" style="width:${p.pct}%;background:${esc(epic.color)}"></div></div>
-      </div>
-    </div>
-
-    ${epic.description ? `<div class="task-page-section" style="margin-bottom:16px">
-      <h3>Описание</h3>
-      <div class="md-content">${descHtml}</div>
-    </div>` : ''}
-
-    <div class="task-page-section">
-      ${sortBtns('active', 'Активные (' + sortedActive.length + ')')}
-      <div class="epic-task-list">
-        ${activeRows || '<span style="color:var(--fg3);font-size:.85rem">Нет активных задач</span>'}
-      </div>
-      ${sortedBacklog.length ? `<div style="margin-top:16px">
-        ${sortBtns('backlog', esc(firstCol?.name||'Бэклог') + ' (' + sortedBacklog.length + ')')}
-        <div class="epic-task-list" style="opacity:.8">${backlogRows}</div>
-      </div>` : ''}
-      ${sortedCompleted.length ? `<div style="margin-top:16px">
-        ${sortBtns('done', esc(lastCol?.name||'Выполненные') + ' (' + sortedCompleted.length + ')')}
-        <div class="epic-task-list" style="opacity:.6">${completedRows}</div>
-      </div>` : ''}
-    </div>
-  </div>`;
-}
-
-async function openEditEpic(epicId) {
-  let data;
-  try { data = await api(`/api/epics/${epicId}`); } catch { return; }
-  const epic = data.epic;
-
-  showModal(`
-    <div class="modal-header"><h2>Редактировать эпик</h2><button class="btn-icon" onclick="closeModal()">&#10005;</button></div>
-    <div class="modal-body">
-      <div class="field"><label>Название</label><input id="m-epic-name" value="${escAttr(epic.name)}"></div>
-      <div class="field"><label>Цвет</label><input type="color" id="m-epic-color" value="${escAttr(epic.color)}"></div>
-      <div class="field">
-        <label>Описание (markdown)</label>
-        ${insertMdToolbar('m-epic-desc')}
-        <textarea id="m-epic-desc" rows="5">${esc(epic.description)}</textarea>
-      </div>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn btn-danger btn-sm" onclick="deleteEpicFromModal(${epic.id})">Удалить эпик</button>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
-        <button class="btn btn-primary" onclick="submitUpdateEpic(${epic.id})">Сохранить</button>
-      </div>
-    </div>`);
-}
-
-async function submitUpdateEpic(id) {
-  const name = document.getElementById('m-epic-name').value.trim();
-  const color = document.getElementById('m-epic-color').value;
-  const description = document.getElementById('m-epic-desc').value;
-  if (!name) return;
-  await api(`/api/epics/${id}`, 'PUT', { name, color, description });
-  closeModal();
-  await loadBoard();
-}
-
-// --- Render Sidebar ---
-function renderSidebar() {
-  // Theme buttons
-  const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
-  document.querySelectorAll('.theme-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.theme === currentTheme);
-  });
-
-  // Font size label
-  const fsLabel = document.getElementById('font-size-label');
-  if (fsLabel) fsLabel.textContent = getFontSize() + 'px';
-
-  // Column order with delete
-  document.getElementById('col-order-list').innerHTML = state.columns.map((c, i) =>
-    `<div class="col-order-item" data-id="${c.id}">
-      <span>${esc(c.name)}</span>
-      <div class="col-order-btns">
-        <button onclick="event.stopPropagation();moveColumnUp(${i})" ${i===0?'disabled':''} title="Вверх">&#9650;</button>
-        <button onclick="event.stopPropagation();moveColumnDown(${i})" ${i===state.columns.length-1?'disabled':''} title="Вниз">&#9660;</button>
-        <button onclick="event.stopPropagation();deleteColumn(${c.id})" title="Удалить" style="color:var(--red)">&#10005;</button>
-      </div>
-    </div>`).join('');
-
-  // Epics with progress
-  document.getElementById('epic-list').innerHTML = state.epics.map(e => {
-    const p = epicProgress(e.id);
-    return `<div class="entity-item" style="flex-wrap:wrap;cursor:pointer" onclick="navigateTo('/epic/${e.id}')">
-      <span class="dot" style="background:${esc(e.color)}"></span>
-      <span>${esc(e.name)}</span>
-      <button class="btn-icon" onclick="event.stopPropagation();openEditEpic(${e.id})" title="Редактировать">&#9998;</button>
-      ${p.total > 0 ? `<div class="epic-progress" style="width:100%">
-        <div class="epic-progress-text">${p.done}/${p.total} задач (${p.pct}%)</div>
-        <div class="epic-progress-bar"><div class="epic-progress-fill" style="width:${p.pct}%;background:${esc(e.color)}"></div></div>
-      </div>` : ''}
-    </div>`;
-  }).join('');
-
-  // Tags
-  document.getElementById('tag-list').innerHTML = state.tags.map(t =>
-    `<div class="entity-item">
-      <span class="dot" style="background:${esc(t.color)}"></span>
-      <span>${esc(t.name)}</span>
-      <button class="btn-icon" onclick="event.stopPropagation();deleteTag(${t.id})">&#10005;</button>
-    </div>`).join('');
-}
-
 function filterTasks(tasks) {
-  if (!searchMatchIds) return tasks;
-  return tasks.filter(t => searchMatchIds.has(t.id));
-}
-
-// --- Search ---
-async function performSearch(query) {
-  if (!query) {
-    searchMatchIds = null;
-    document.getElementById('search-results').classList.add('hidden');
-    if (currentView === 'board') renderBoard();
-    return;
+  let result = tasks;
+  if (showPersonalOnly && currentUser) {
+    result = result.filter(t => t.assignee_id === currentUser.id || (t.assignee && t.assignee.id === currentUser.id));
   }
-
-  // Validate regex if it looks like one
-  let isRegex = false;
-  try {
-    new RegExp(query);
-    isRegex = true;
-  } catch {
-    // invalid regex, use as plain text
+  if (searchMatchIds !== null) {
+    result = result.filter(t => searchMatchIds.includes(t.id));
   }
-
-  try {
-    const res = await api(`/api/search?q=${encodeURIComponent(query)}${isRegex?'&regex=1':''}`);
-    const ids = res.task_ids || [];
-    searchMatchIds = new Set(ids);
-
-    // Show search results dropdown
-    const container = document.getElementById('search-results');
-    if (ids.length === 0) {
-      container.innerHTML = '<div style="color:var(--fg3);font-size:.85rem">Ничего не найдено</div>';
-      container.classList.remove('hidden');
-    } else {
-      const matchedTasks = state.tasks.filter(t => searchMatchIds.has(t.id));
-      container.innerHTML = matchedTasks.slice(0, 20).map(t => {
-        const col = state.columns.find(c => c.id === t.column_id);
-        const epicBadge = t.epic ? `<span class="card-epic" style="background:${esc(t.epic.color)};color:${contrastColor(t.epic.color)};font-size:.7rem">${esc(t.epic.name)}</span>` : '';
-        return `<div class="search-result-item" onclick="closeSearch();navigateTo('/task/${t.id}')">
-          <span class="card-id">#${t.id}</span>
-          <span style="flex:1;font-weight:600">${esc(t.title)}</span>
-          ${epicBadge}
-          <span style="color:var(--fg3);font-size:.78rem">${esc(col?.name||'')}</span>
-        </div>`;
-      }).join('') + (ids.length > 20 ? `<div style="color:var(--fg3);font-size:.8rem;padding:4px">...и ещё ${ids.length - 20}</div>` : '');
-      container.classList.remove('hidden');
-    }
-
-    if (currentView === 'board') renderBoard();
-  } catch (e) {
-    const container = document.getElementById('search-results');
-    container.innerHTML = `<div style="color:var(--red);font-size:.85rem">Ошибка: ${esc(e.message)}</div>`;
-    container.classList.remove('hidden');
-  }
+  return result;
 }
 
-function closeSearch() {
-  searchMatchIds = null;
-  document.getElementById('search-results').classList.add('hidden');
-  document.getElementById('search').value = '';
-  if (currentView === 'board') renderBoard();
+function renderCard(task) {
+  const pClass = task.priority > 0 ? `<div class="card-priority priority-${task.priority}"></div>` : '';
+  const epicHtml = task.epic ? `<span class="card-epic" style="background:${task.epic.color};color:${contrastColor(task.epic.color)}" onclick="event.stopPropagation();navigateTo('/epic/${task.epic.id}')">${esc(task.epic.name)}</span>` : '';
+  const tagsHtml = (task.tags || []).map(tg => `<span class="card-tag" style="background:${tg.color};color:${contrastColor(tg.color)}">${esc(tg.name)}</span>`).join('');
+  const assigneeHtml = task.assignee ? `<span class="card-assignee">&#128100; ${esc(task.assignee.username)}</span>` : '';
+  const todoInfo = countTodos(task.todo);
+  const todoHtml = todoInfo ? `<span class="card-todo">&#9745; ${todoInfo.done}/${todoInfo.total}</span>` : '';
+  const linkHtml = task.project_url ? `<span class="card-link">&#128279;</span>` : '';
+  const commentsCount = (task.comments || []).length;
+  const commentsHtml = commentsCount > 0 ? `<span class="card-comments">&#128172; ${commentsCount}</span>` : '';
+
+  return `<div class="card" draggable="${isReadonly()?'false':'true'}" data-task="${task.id}"
+    onclick="navigateTo('/task/${task.id}')"
+    ondragstart="onDragStart(event, ${task.id})" ondragend="onDragEnd(event)">
+    ${pClass}
+    <div class="card-title">${esc(task.title)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="card-id">#${task.id}</span>
+      <div class="card-meta">${epicHtml}${tagsHtml}${assigneeHtml}${todoHtml}${linkHtml}${commentsHtml}</div>
+    </div>
+  </div>`;
 }
 
-// --- Column reorder ---
-async function moveColumnUp(index) {
-  if (index <= 0) return;
-  const ids = state.columns.map(c => c.id);
-  [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
-  await api('/api/columns/reorder', 'POST', { ids });
-  await loadBoard();
-}
-async function moveColumnDown(index) {
-  if (index >= state.columns.length - 1) return;
-  const ids = state.columns.map(c => c.id);
-  [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
-  await api('/api/columns/reorder', 'POST', { ids });
-  await loadBoard();
-}
-
-// --- Drag & Drop ---
-function onDragStart(e, taskId) {
-  draggedTaskId = taskId;
-  e.target.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-}
-function onDragEnd(e) {
-  e.target.classList.remove('dragging');
-  draggedTaskId = null;
-  document.querySelectorAll('.col-body').forEach(el => el.classList.remove('over'));
-}
-function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('over'); }
-function onDragLeave(e) { e.currentTarget.classList.remove('over'); }
+// === Drag & Drop ===
+function onDragStart(e, taskId) { draggedTaskId = taskId; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
+function onDragEnd(e) { e.target.classList.remove('dragging'); draggedTaskId = null; document.querySelectorAll('.drop-zone.over').forEach(z => z.classList.remove('over')); }
+function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; const dz = e.target.closest('.drop-zone'); if (dz) dz.classList.add('over'); }
 async function onDrop(e, colId) {
   e.preventDefault();
-  e.currentTarget.classList.remove('over');
+  document.querySelectorAll('.drop-zone.over').forEach(z => z.classList.remove('over'));
   if (!draggedTaskId) return;
-  await api('/api/tasks/move', 'POST', { task_id: draggedTaskId, column_id: colId, position: 0 });
-  await loadBoard();
+  const colBody = e.target.closest('.col-body');
+  const cards = colBody ? Array.from(colBody.querySelectorAll('.card')) : [];
+  let pos = cards.length;
+  const dropTarget = e.target.closest('.card');
+  if (dropTarget) {
+    const idx = cards.indexOf(dropTarget);
+    if (idx >= 0) pos = idx;
+  }
+  try {
+    await api('/api/tasks/move', 'POST', { task_id: draggedTaskId, column_id: colId, position: pos });
+    const task = state.tasks.find(t => t.id === draggedTaskId);
+    if (task) { task.column_id = colId; task.position = pos; }
+    renderBoard();
+  } catch(e) { console.error(e); }
+  draggedTaskId = null;
 }
 
-// --- Modals ---
-function showModal(html) {
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
-  overlay.innerHTML = `<div class="modal">${html}</div>`;
-  document.body.appendChild(overlay);
-  overlay.querySelectorAll('textarea').forEach(setupPaste);
-  const first = overlay.querySelector('input,textarea,select');
-  if (first) first.focus();
-  return overlay;
-}
-function closeModal() { document.querySelector('.modal-overlay')?.remove(); }
+// === Task Page ===
+async function renderTaskPage(taskId) {
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="task-page"><p>Loading...</p></div>';
+  let task;
+  try { task = await api('/api/tasks/' + taskId); } catch { app.innerHTML = `<div class="task-page"><p>${t('notFound')}</p><a href="/" onclick="navigateTo('/');return false;">${t('backToBoard')}</a></div>`; return; }
 
-function openCreateTask(colId, preselectedEpicId) {
-  const epicOpts = state.epics.map(e => `<option value="${e.id}" ${preselectedEpicId===e.id?'selected':''}>${esc(e.name)}</option>`).join('');
-  const tagChips = state.tags.map(t => {
-    const tc = contrastColor(t.color);
-    return `<span class="chip" data-id="${t.id}" style="background:${esc(t.color)};color:${tc}" onclick="this.classList.toggle('selected')">${esc(t.name)}</span>`;
-  }).join('');
-  const defaultCol = colId || (state.columns.length ? state.columns[0].id : 0);
-  const colOpts = state.columns.map(c => `<option value="${c.id}" ${c.id===defaultCol?'selected':''}>${esc(c.name)}</option>`).join('');
-  showModal(`
-    <div class="modal-header"><h2>Новая задача</h2><button class="btn-icon" onclick="closeModal()">&#10005;</button></div>
-    <div class="modal-body">
-      <div class="field"><label>Название</label><input id="m-title"></div>
-      <div class="field">
-        <label>Описание <span class="paste-hint">(markdown, вставка картинок)</span></label>
-        ${insertMdToolbar('m-desc')}
-        <textarea id="m-desc" placeholder="Markdown: **жирный**, ![alt](url)"></textarea>
+  // Check subscription
+  let subscribed = false;
+  try { const sr = await api(`/api/tasks/${taskId}/subscribed`); subscribed = sr.subscribed; } catch {}
+
+  const col = state.columns.find(c => c.id === task.column_id);
+  const prioLabels = ['none','low','medium','high','critical'];
+  const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
+
+  let html = `<div class="task-page">
+    <div class="task-page-header">
+      <h2><span class="task-id-badge">#${task.id}</span> ${esc(task.title)}</h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="navigateTo('/')">${t('back')}</button>
+        ${!isReadonly() ? `<button class="btn btn-ghost btn-sm" onclick="showEditTask(${task.id})">${t('editTask')}</button>` : ''}
+        ${!isReadonly() ? `<button class="btn btn-ghost btn-sm" onclick="toggleSubscription(${task.id}, ${subscribed})">${subscribed ? t('unsubscribe') : t('subscribe')}</button>` : ''}
+        ${!isReadonly() ? `<button class="btn btn-danger btn-sm" onclick="deleteTask(${task.id})">${t('deleteTask')}</button>` : ''}
       </div>
-      <div class="field">
-        <label>Ссылка на проект</label>
-        <input id="m-url" placeholder="https://github.com/...">
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Колонка</label><select id="m-col">${colOpts}</select></div>
-        <div class="field"><label>Приоритет</label>
-          <select id="m-prio"><option value="0">—</option><option value="1">Низкий</option><option value="2">Средний</option><option value="3">Высокий</option><option value="4">Критический</option></select>
-        </div>
-      </div>
-      <div class="field"><label>Эпик</label><select id="m-epic"><option value="">—</option>${epicOpts}</select></div>
-      <div class="field"><label>Теги</label><div class="checkbox-group" id="m-tags">${tagChips}</div></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
-      <button class="btn btn-primary" onclick="submitCreateTask()">Создать</button>
-    </div>`);
-}
+    <div class="task-page-body">
+      <div class="task-page-sidebar-info">
+        <div class="task-info-item"><label>${t('column')}</label><span class="value">${col ? esc(col.name) : '?'}</span></div>
+        <div class="task-info-item"><label>${t('priority')}</label><span class="value" style="color:${prioColors[task.priority] || ''}">${t(prioLabels[task.priority] || 'none')}</span></div>`;
+  if (task.epic) html += `<div class="task-info-item"><label>${t('epic')}</label><span class="value"><a href="/epic/${task.epic.id}" onclick="navigateTo('/epic/${task.epic.id}');return false;" style="color:${task.epic.color}">${esc(task.epic.name)}</a></span></div>`;
+  if (task.assignee) html += `<div class="task-info-item"><label>${t('assignee')}</label><span class="value"><a href="/user/${task.assignee.id}" onclick="navigateTo('/user/${task.assignee.id}');return false;">&#128100; ${esc(task.assignee.username)}</a></span></div>`;
+  if (subscribed) html += `<div class="task-info-item"><label>${t('notifications')}</label><span class="value" style="color:var(--green)">&#10004; ${t('subscribed')}</span></div>`;
+  html += `</div>
+      <div class="task-dates">
+        <span>${t('created')}: ${fmtDate(task.created_at)}</span>
+        <span>${t('updated')}: ${fmtDate(task.updated_at)}</span>
+      </div>`;
 
-async function submitCreateTask() {
-  const title = document.getElementById('m-title').value.trim();
-  if (!title) return;
-  const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
-  const epicVal = document.getElementById('m-epic').value;
-  await api('/api/tasks', 'POST', {
-    title, description: document.getElementById('m-desc').value,
-    todo: '',
-    project_url: autoPrefix(document.getElementById('m-url').value.trim()),
-    column_id: Number(document.getElementById('m-col').value),
-    priority: Number(document.getElementById('m-prio').value),
-    epic_id: epicVal ? Number(epicVal) : null, tag_ids: tagIds
-  });
-  closeModal();
-  await loadBoard();
-}
-
-// Edit task modal
-async function openEditTask(taskId) {
-  const t = await api(`/api/tasks/${taskId}`);
-  const epicOpts = state.epics.map(e => `<option value="${e.id}" ${t.epic_id===e.id?'selected':''}>${esc(e.name)}</option>`).join('');
-  const colOpts = state.columns.map(c => `<option value="${c.id}" ${t.column_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
-  const tagChips = state.tags.map(tg => {
-    const sel = (t.tags||[]).some(x=>x.id===tg.id)?'selected':'';
-    const tc = contrastColor(tg.color);
-    return `<span class="chip ${sel}" data-id="${tg.id}" style="background:${esc(tg.color)};color:${tc}" onclick="this.classList.toggle('selected')">${esc(tg.name)}</span>`;
-  }).join('');
-
-  showModal(`
-    <div class="modal-header"><h2>Редактировать #${t.id}</h2><button class="btn-icon" onclick="closeModal()">&#10005;</button></div>
-    <div class="modal-body">
-      <div class="field"><label>Название</label><input id="m-title" value="${escAttr(t.title)}"></div>
-      <div class="field">
-        <label>Описание <span class="paste-hint">(markdown, вставка картинок)</span></label>
-        ${insertMdToolbar('m-desc')}
-        <textarea id="m-desc">${esc(t.description)}</textarea>
-      </div>
-      <div class="field">
-        <label>Ссылка на проект</label>
-        <input id="m-url" value="${escAttr(t.project_url)}">
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Колонка</label><select id="m-col">${colOpts}</select></div>
-        <div class="field"><label>Приоритет</label>
-          <select id="m-prio">
-            <option value="0" ${t.priority===0?'selected':''}>—</option>
-            <option value="1" ${t.priority===1?'selected':''}>Низкий</option>
-            <option value="2" ${t.priority===2?'selected':''}>Средний</option>
-            <option value="3" ${t.priority===3?'selected':''}>Высокий</option>
-            <option value="4" ${t.priority===4?'selected':''}>Критический</option>
-          </select>
-        </div>
-      </div>
-      <div class="field"><label>Эпик</label><select id="m-epic"><option value="">—</option>${epicOpts}</select></div>
-      <div class="field"><label>Теги</label><div class="checkbox-group" id="m-tags">${tagChips}</div></div>
-      <div class="field"><label>Зависит от</label>
-        <input type="text" id="m-dep-search" placeholder="Поиск задачи..." style="margin-bottom:6px" oninput="filterDeps(this.value)">
-        <div class="checkbox-group" id="m-deps" style="max-height:150px;overflow-y:auto">${state.tasks.filter(x=>x.id!==t.id).map(x=>{
-        const sel=(t.depends_on||[]).some(d=>d.id===x.id)?'selected':'';
-        return `<span class="chip ${sel}" data-id="${x.id}" data-search="#${x.id} ${x.title.toLowerCase()}" style="background:var(--bg4);color:var(--fg)" onclick="this.classList.toggle('selected')">#${x.id} ${esc(x.title)}</span>`;
-      }).join('')}</div></div>
-    </div>
-    <div class="modal-footer" style="justify-content:space-between">
-      <button class="btn btn-danger btn-sm" onclick="deleteTaskFromModal(${t.id})">Удалить задачу</button>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
-        <button class="btn btn-primary" onclick="submitUpdateTask(${t.id})">Сохранить</button>
-      </div>
-    </div>`);
-}
-
-async function submitUpdateTask(id) {
-  const tagIds = [...document.querySelectorAll('#m-tags .chip.selected')].map(c => Number(c.dataset.id));
-  const depIds = [...document.querySelectorAll('#m-deps .chip.selected')].map(c => Number(c.dataset.id));
-  const epicVal = document.getElementById('m-epic').value;
-  // Preserve existing todo (edit only changes desc, not todo)
-  const existing = await api(`/api/tasks/${id}`);
-  await api(`/api/tasks/${id}`, 'PUT', {
-    title: document.getElementById('m-title').value.trim(),
-    description: document.getElementById('m-desc').value,
-    todo: existing.todo || '',
-    project_url: autoPrefix(document.getElementById('m-url').value.trim()),
-    column_id: Number(document.getElementById('m-col').value),
-    priority: Number(document.getElementById('m-prio').value),
-    epic_id: epicVal ? Number(epicVal) : null, tag_ids: tagIds,
-    depends_on_ids: depIds
-  });
-  closeModal();
-  await loadBoard();
-}
-
-// --- Columns ---
-async function addColumn() {
-  const input = document.getElementById('new-col-name');
-  const name = input.value.trim();
-  if (!name) return;
-  await api('/api/columns', 'POST', { Name: name });
-  input.value = '';
-  await loadBoard();
-}
-async function deleteColumn(id) {
-  const col = state.columns.find(c => c.id === id);
-  const tasks = state.tasks.filter(t => t.column_id === id);
-  if (tasks.length > 0) { alert('Сначала переместите задачи из колонки'); return; }
-  if (!confirm(`Удалить колонку "${col?.name}"?`)) return;
-  await api(`/api/columns/${id}`, 'DELETE');
-  await loadBoard();
-}
-
-// --- Epics / Tags ---
-async function addEpic() {
-  const name = document.getElementById('epic-name').value.trim();
-  if (!name) return;
-  const color = document.getElementById('epic-color').value;
-  await api('/api/epics', 'POST', { Name: name, Color: color });
-  document.getElementById('epic-name').value = '';
-  await loadBoard();
-}
-async function deleteEpic(id) {
-  const epic = state.epics.find(e => e.id === id);
-  const epicTasks = state.tasks.filter(t => t.epic_id === id);
-  if (!confirm(`Удалить эпик "${epic?.name}"? ${epicTasks.length > 0 ? epicTasks.length + ' задач будут отвязаны.' : ''}`)) return;
-  await api(`/api/epics/${id}`, 'DELETE');
-  await loadBoard();
-}
-async function deleteEpicFromModal(id) {
-  const epic = state.epics.find(e => e.id === id);
-  const epicTasks = state.tasks.filter(t => t.epic_id === id);
-  if (!confirm(`Удалить эпик "${epic?.name}"? ${epicTasks.length > 0 ? epicTasks.length + ' задач будут отвязаны.' : ''}`)) return;
-  await api(`/api/epics/${id}`, 'DELETE');
-  closeModal();
-  navigateTo('/');
-  await loadBoard();
-}
-function toggleEpicSort(sort, section, epicId) {
-  const key = 'kanban-epic-sort-' + section;
-  const current = localStorage.getItem(key) || 'status-asc';
-  const [curType, curDir] = current.includes('-') ? current.split('-') : [current, 'asc'];
-  let newDir = 'asc';
-  if (curType === sort) {
-    newDir = curDir === 'asc' ? 'desc' : 'asc';
+  // Project URL
+  if (task.project_url) {
+    const url = autoPrefix(task.project_url);
+    html += `<div><a class="project-link" href="${esc(url)}" target="_blank" rel="noopener">&#128279; ${esc(task.project_url)}</a></div>`;
   }
-  localStorage.setItem(key, sort + '-' + newDir);
-  renderEpicPage(epicId);
-}
-async function addTag() {
-  const name = document.getElementById('tag-name').value.trim();
-  if (!name) return;
-  const color = document.getElementById('tag-color').value;
-  await api('/api/tags', 'POST', { Name: name, Color: color });
-  document.getElementById('tag-name').value = '';
-  await loadBoard();
-}
-async function deleteTag(id) {
-  const tag = state.tags.find(t => t.id === id);
-  if (!confirm(`Удалить тег "${tag?.name}"?`)) return;
-  await api(`/api/tags/${id}`, 'DELETE');
-  await loadBoard();
-}
 
-function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+  // Description
+  html += `<div class="task-page-section"><h3>${t('description')}</h3><div class="md-content" data-empty="${t('noDescription')}">${renderMd(task.description)}</div></div>`;
 
-// --- Search input ---
-document.getElementById('search').addEventListener('input', e => {
-  const q = e.target.value.trim();
-  clearTimeout(searchTimeout);
-  if (!q) {
-    performSearch('');
-    return;
-  }
-  searchTimeout = setTimeout(() => performSearch(q), 300);
-});
-
-// Close search on Escape
-document.getElementById('search').addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    closeSearch();
-    e.target.blur();
-  }
-});
-
-// Close search results on click outside
-document.addEventListener('click', e => {
-  if (!e.target.closest('#search-results') && !e.target.closest('#search')) {
-    const sr = document.getElementById('search-results');
-    if (!sr.classList.contains('hidden')) {
-      sr.classList.add('hidden');
+  // TODO
+  if (task.todo) {
+    const items = parseTodoItems(task.todo);
+    if (items.length > 0) {
+      html += `<div class="task-page-section"><h3>${t('todo')}</h3><div class="todo-list">`;
+      items.forEach((item, i) => {
+        html += `<div class="todo-item ${item.done?'done':''}">
+          <input type="checkbox" ${item.done?'checked':''} onchange="toggleTodo(${task.id},${i},this.checked)" ${isReadonly()?'disabled':''}>
+          <span class="todo-text">${esc(item.label)}</span>
+          ${!isReadonly() ? `<button class="btn-icon" onclick="deleteTodoItem(${task.id},${i})">&#10005;</button>` : ''}
+        </div>`;
+      });
+      html += '</div>';
+      if (!isReadonly()) html += `<div class="todo-add"><input type="text" id="todo-new" placeholder="${t('addTodoItem')}" onkeydown="if(event.key==='Enter')addTodoItem(${task.id})"><button class="btn btn-primary btn-sm" onclick="addTodoItem(${task.id})">+</button></div>`;
+      html += '</div>';
     }
   }
-});
 
-// --- Helpers ---
-function filterDeps(query) {
-  const q = query.toLowerCase().trim();
-  document.querySelectorAll('#m-deps .chip').forEach(chip => {
-    const text = chip.dataset.search || '';
-    chip.style.display = (!q || text.includes(q) || chip.classList.contains('selected')) ? '' : 'none';
-  });
-}
-
-function autoPrefix(url) {
-  if (!url) return url;
-  url = url.trim();
-  if (url && !/^https?:\/\//i.test(url) && /^[a-zA-Z0-9]/.test(url) && url.includes('.')) {
-    return 'https://' + url;
+  // Dependencies
+  if (task.depends_on && task.depends_on.length > 0) {
+    html += `<div class="task-page-section"><h3>${t('dependsOn')}</h3><div>`;
+    task.depends_on.forEach(d => { html += `<a href="/task/${d.id}" onclick="navigateTo('/task/${d.id}');return false;" style="margin-right:8px">#${d.id} ${esc(d.title)}</a>`; });
+    html += '</div></div>';
   }
-  return url;
-}
-
-function esc(s) {
-  if (!s) return '';
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function escAttr(s) { return esc(s); }
-function fmtDate(s) {
-  if (!s) return '';
-  const d = new Date(s);
-  const tz = getTimezone();
-  try {
-    return d.toLocaleDateString('ru-RU', {timeZone: tz}) + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit', timeZone: tz});
-  } catch {
-    return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
+  if (task.dependents && task.dependents.length > 0) {
+    html += `<div class="task-page-section"><h3>${t('blocks')}</h3><div>`;
+    task.dependents.forEach(d => { html += `<a href="/task/${d.id}" onclick="navigateTo('/task/${d.id}');return false;" style="margin-right:8px">#${d.id} ${esc(d.title)}</a>`; });
+    html += '</div></div>';
   }
-}
 
-// --- Nested comments rendering ---
-function renderCommentsTree(comments, taskId) {
-  if (!comments || comments.length === 0) return '<span style="color:var(--fg3);font-size:.85rem">Нет комментариев</span>';
-  return comments.map(c => renderSingleComment(c, taskId)).join('');
-}
-
-function renderSingleComment(c, taskId) {
-  const edited = c.updated_at && c.created_at && c.updated_at !== c.created_at
-    && new Date(c.updated_at).getTime() > new Date(c.created_at).getTime() + 1000;
-  const editedLabel = edited ? '<span class="comment-edited">(ред.)</span>' : '';
-  const repliesHtml = (c.replies && c.replies.length > 0)
-    ? `<div class="comment-replies">${c.replies.map(r => renderSingleComment(r, taskId)).join('')}</div>`
-    : '';
-  return `<div class="comment" data-comment-id="${c.id}">
-    <div class="comment-text"><div class="md-content">${renderMd(c.text)}</div></div>
-    <div class="comment-time">
-      <span>${fmtDate(c.created_at)} ${editedLabel}</span>
-      <div class="comment-actions">
-        <button onclick="startReply(${c.id},${taskId})">Ответить</button>
-        <button onclick="startEditComment(${c.id},${taskId})">Ред.</button>
-        <button onclick="deleteCommentFromPage(${c.id},${taskId})">&#10005;</button>
+  // Comments
+  html += `<div class="task-page-section"><h3>${t('comments')} (${(task.comments||[]).length})</h3>`;
+  if (!isReadonly()) {
+    const draft = getCommentDraft(task.id);
+    html += `<div class="comment-form">
+      ${insertMdToolbar('comment-text')}
+      <textarea id="comment-text" placeholder="${t('writeComment')}" onkeydown="if(event.ctrlKey&&event.key==='Enter'){submitComment(${task.id});}">${esc(draft)}</textarea>
+      <div class="comment-form-actions">
+        <span class="paste-hint">${t('pasteHint')} &middot; ${t('ctrlEnter')}</span>
+        <button class="btn btn-primary btn-sm" onclick="submitComment(${task.id})">${t('send')}</button>
       </div>
-    </div>
-    <div id="reply-form-${c.id}"></div>
-    ${repliesHtml}
-  </div>`;
+    </div>`;
+  }
+  html += `<div class="comments-list" id="comments-list">`;
+  if (!task.comments || task.comments.length === 0) {
+    html += `<p style="color:var(--fg3);font-size:.85rem">${t('noComments')}</p>`;
+  } else {
+    html += renderComments(task.comments, task.id);
+  }
+  html += '</div></div></div></div>';
+  app.innerHTML = html;
+
+  // Setup paste for comment textarea
+  const ta = document.getElementById('comment-text');
+  if (ta) {
+    setupPaste(ta);
+    ta.addEventListener('input', () => saveCommentDraft(task.id, ta.value));
+  }
 }
 
-function startReply(commentId, taskId) {
-  const container = document.getElementById('reply-form-' + commentId);
-  if (!container) return;
-  if (container.innerHTML.trim()) { container.innerHTML = ''; return; }
-  container.innerHTML = `<div class="reply-form">
-    <textarea id="reply-text-${commentId}" placeholder="Ответ..." rows="2"></textarea>
-    <div style="display:flex;gap:6px;justify-content:flex-end">
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('reply-form-${commentId}').innerHTML=''">Отмена</button>
-      <button class="btn btn-primary btn-sm" onclick="submitReply(${commentId},${taskId})">Отправить</button>
+// === Comment draft preservation ===
+const commentDrafts = {};
+function getCommentDraft(taskId) { return commentDrafts[taskId] || ''; }
+function saveCommentDraft(taskId, text) { commentDrafts[taskId] = text; }
+function clearCommentDraft(taskId) { delete commentDrafts[taskId]; }
+
+// === Comment rendering with deep nesting ===
+function renderComments(comments, taskId, depth) {
+  if (!depth) depth = 0;
+  let html = '';
+  for (const c of comments) {
+    const authorName = c.author ? c.author.username : '?';
+    const isEdited = c.updated_at && new Date(c.updated_at).getFullYear() > 1 && c.created_at && (new Date(c.updated_at).getTime() - new Date(c.created_at).getTime() > 2000);
+    const editedHtml = isEdited ? ` <span class="comment-edited" title="${t('created')}: ${fmtDate(c.created_at)}&#10;${t('updated')}: ${fmtDate(c.updated_at)}">(${t('edited')})</span>` : '';
+    const canEdit = currentUser && c.author && c.author.id === currentUser.id;
+
+    html += `<div class="comment" id="comment-${c.id}">
+      <div class="comment-author"><a href="/user/${c.author?c.author.id:0}" onclick="navigateTo('/user/${c.author?c.author.id:0}');return false;">@${esc(authorName)}</a></div>
+      <div class="comment-text" id="comment-text-${c.id}"><div class="md-content">${renderMd(c.text)}</div></div>
+      <div class="comment-time">
+        <span>${fmtDate(c.created_at)}${editedHtml}</span>
+        <div class="comment-actions">
+          ${!isReadonly() ? `<button onclick="showReplyForm(${c.id},${taskId})">${t('reply')}</button>` : ''}
+          ${canEdit ? `<button onclick="showEditComment(${c.id},${taskId})">${t('edit')}</button>` : ''}
+          ${canEdit || isAdmin() ? `<button onclick="deleteComment(${c.id},${taskId})" style="color:var(--red)">${t('delete')}</button>` : ''}
+        </div>
+      </div>
+      <div id="reply-form-${c.id}"></div>`;
+    if (c.replies && c.replies.length > 0) {
+      html += `<div class="comment-replies">${renderComments(c.replies, taskId, depth+1)}</div>`;
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+function showReplyForm(commentId, taskId) {
+  const el = document.getElementById('reply-form-' + commentId);
+  if (!el) return;
+  if (el.innerHTML) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="reply-form">
+    ${insertMdToolbar('reply-text-'+commentId)}
+    <textarea id="reply-text-${commentId}" placeholder="${t('writeComment')}"></textarea>
+    <div style="display:flex;gap:4px;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('reply-form-${commentId}').innerHTML=''">${t('cancel')}</button>
+      <button class="btn btn-primary btn-sm" onclick="submitReply(${taskId},${commentId})">${t('send')}</button>
     </div>
   </div>`;
   const ta = document.getElementById('reply-text-' + commentId);
-  if (ta) {
-    ta.focus();
-    setupPaste(ta);
-    ta.addEventListener('keydown', function(e) {
-      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); submitReply(commentId, taskId); }
+  if (ta) { setupPaste(ta); ta.focus(); }
+}
+
+function showEditComment(commentId, taskId) {
+  const el = document.getElementById('comment-text-' + commentId);
+  if (!el) return;
+  const mdEl = el.querySelector('.md-content');
+  // Get original text from rendered markdown - we need the raw text
+  // Store original in data attr on first edit
+  if (!el.dataset.rawText) {
+    // Fetch the task again to get raw text
+    api('/api/tasks/' + taskId).then(task => {
+      const comment = findCommentById(task.comments, commentId);
+      if (!comment) return;
+      el.dataset.rawText = comment.text;
+      replaceWithEditForm(el, commentId, taskId, comment.text);
     });
+    return;
   }
-}
-
-async function submitReply(parentId, taskId) {
-  const ta = document.getElementById('reply-text-' + parentId);
-  const text = ta?.value.trim();
-  if (!text) return;
-  await api('/api/comments', 'POST', { task_id: taskId, text, parent_id: parentId });
-  await loadBoard();
-}
-
-function startEditComment(commentId, taskId) {
-  const commentEl = document.querySelector(`[data-comment-id="${commentId}"]`);
-  if (!commentEl) return;
-  const mdContent = commentEl.querySelector('.comment-text .md-content');
-  // Get current text from the md-content innerHTML won't work; need to fetch from API
-  fetchAndEditComment(commentId, taskId);
-}
-
-async function fetchAndEditComment(commentId, taskId) {
-  // Fetch the task to get comment text
-  const t = await api(`/api/tasks/${taskId}`);
-  const comment = findCommentById(t.comments || [], commentId);
-  if (!comment) return;
-
-  const commentEl = document.querySelector(`[data-comment-id="${commentId}"]`);
-  if (!commentEl) return;
-  const textDiv = commentEl.querySelector('.comment-text');
-  const originalHtml = textDiv.innerHTML;
-
-  textDiv.innerHTML = `<textarea id="edit-comment-${commentId}" style="width:100%;min-height:60px;background:var(--bg);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:.82rem;outline:none;resize:vertical">${esc(comment.text)}</textarea>
-    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:4px">
-      <button class="btn btn-ghost btn-sm" onclick="this.closest('.comment-text').innerHTML='${escAttr(originalHtml.replace(/'/g,"\\'").replace(/\n/g,""))}';loadBoard()">Отмена</button>
-      <button class="btn btn-primary btn-sm" onclick="submitEditComment(${commentId},${taskId})">Сохранить</button>
-    </div>`;
-  const ta = document.getElementById('edit-comment-' + commentId);
-  if (ta) {
-    ta.focus();
-    ta.addEventListener('keydown', function(e) {
-      if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); submitEditComment(commentId, taskId); }
-    });
-  }
+  replaceWithEditForm(el, commentId, taskId, el.dataset.rawText);
 }
 
 function findCommentById(comments, id) {
@@ -1619,119 +1173,574 @@ function findCommentById(comments, id) {
   return null;
 }
 
-async function submitEditComment(commentId, taskId) {
+function replaceWithEditForm(el, commentId, taskId, rawText) {
+  el.innerHTML = `<div class="reply-form">
+    ${insertMdToolbar('edit-comment-'+commentId)}
+    <textarea id="edit-comment-${commentId}" style="min-height:80px">${esc(rawText)}</textarea>
+    <div style="display:flex;gap:4px;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="renderTaskPage(${taskId})">${t('cancel')}</button>
+      <button class="btn btn-primary btn-sm" onclick="saveEditComment(${commentId},${taskId})">${t('save')}</button>
+    </div>
+  </div>`;
   const ta = document.getElementById('edit-comment-' + commentId);
-  const text = ta?.value.trim();
-  if (!text) return;
-  await api(`/api/comments/${commentId}`, 'PUT', { text });
-  await loadBoard();
+  if (ta) { setupPaste(ta); ta.focus(); }
 }
 
-// --- File attachment ---
-function triggerFileAttach(textareaId) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.onchange = async () => {
-    const file = input.files[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { alert('Файл слишком большой (макс 10МБ)'); return; }
-    const blockedExts = ['.exe','.bat','.cmd','.com','.msi','.scr','.pif','.vbs','.js','.html','.htm','.svg','.sh','.ps1'];
-    const ext = '.' + file.name.split('.').pop().toLowerCase();
-    if (blockedExts.includes(ext)) { alert('Этот тип файла не разрешён'); return; }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = reader.result.split(',')[1];
-      try {
-        const res = await api('/api/files', 'POST', { data: base64, filename: file.name, mime: file.type });
-        const ta = document.getElementById(textareaId);
-        if (ta) {
-          const pos = ta.selectionStart;
-          const before = ta.value.substring(0, pos);
-          const after = ta.value.substring(ta.selectionEnd);
-          const link = file.type.startsWith('image/')
-            ? `![${file.name}](${res.url})`
-            : `[${res.filename}](${res.url})`;
-          ta.value = before + link + after;
-          ta.focus();
-        }
-      } catch (e) { alert('Ошибка загрузки: ' + e.message); }
-    };
-    reader.readAsDataURL(file);
+async function submitComment(taskId) {
+  const ta = document.getElementById('comment-text');
+  if (!ta || !ta.value.trim()) return;
+  try {
+    await api('/api/comments', 'POST', { task_id: taskId, text: ta.value.trim() });
+    clearCommentDraft(taskId);
+    renderTaskPage(taskId);
+  } catch(e) { alert(t('error') + ': ' + e.message); }
+}
+
+async function submitReply(taskId, parentId) {
+  const ta = document.getElementById('reply-text-' + parentId);
+  if (!ta || !ta.value.trim()) return;
+  try {
+    await api('/api/comments', 'POST', { task_id: taskId, text: ta.value.trim(), parent_id: parentId });
+    renderTaskPage(taskId);
+  } catch(e) { alert(t('error') + ': ' + e.message); }
+}
+
+async function saveEditComment(commentId, taskId) {
+  const ta = document.getElementById('edit-comment-' + commentId);
+  if (!ta || !ta.value.trim()) return;
+  try {
+    await api('/api/comments/' + commentId, 'PUT', { text: ta.value.trim() });
+    renderTaskPage(taskId);
+  } catch(e) { alert(t('error') + ': ' + e.message); }
+}
+
+async function deleteComment(commentId, taskId) {
+  try { await api('/api/comments/' + commentId, 'DELETE'); renderTaskPage(taskId); } catch(e) { alert(t('error')); }
+}
+
+// === TODO items ===
+async function toggleTodo(taskId, index, checked) {
+  const task = await api('/api/tasks/' + taskId);
+  const items = parseTodoItems(task.todo);
+  if (items[index]) items[index].done = checked;
+  await api('/api/tasks/' + taskId, 'PUT', { ...taskToReq(task), todo: todoItemsToText(items) });
+  renderTaskPage(taskId);
+}
+async function addTodoItem(taskId) {
+  const inp = document.getElementById('todo-new');
+  if (!inp || !inp.value.trim()) return;
+  const task = await api('/api/tasks/' + taskId);
+  const items = parseTodoItems(task.todo);
+  items.push({ done: false, label: inp.value.trim() });
+  await api('/api/tasks/' + taskId, 'PUT', { ...taskToReq(task), todo: todoItemsToText(items) });
+  renderTaskPage(taskId);
+}
+async function deleteTodoItem(taskId, index) {
+  const task = await api('/api/tasks/' + taskId);
+  const items = parseTodoItems(task.todo);
+  items.splice(index, 1);
+  await api('/api/tasks/' + taskId, 'PUT', { ...taskToReq(task), todo: todoItemsToText(items) });
+  renderTaskPage(taskId);
+}
+
+function taskToReq(task) {
+  return {
+    title: task.title, description: task.description, todo: task.todo, project_url: task.project_url,
+    column_id: task.column_id, epic_id: task.epic_id, assignee_id: task.assignee_id,
+    priority: task.priority, tag_ids: (task.tags||[]).map(t=>t.id),
+    depends_on_ids: (task.depends_on||[]).map(d=>d.id)
   };
-  input.click();
 }
 
-// --- Timezone ---
-function getTimezone() {
-  return localStorage.getItem('kanban-timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-function setTimezone(tz) {
-  localStorage.setItem('kanban-timezone', tz);
-  if (currentView === 'task' && currentTaskId) renderTaskPage(currentTaskId);
-}
-function initTimezoneSelector() {
-  const sel = document.getElementById('tz-select');
-  if (!sel) return;
-  const common = [
-    'UTC','Europe/Moscow','Europe/London','Europe/Berlin','Europe/Paris',
-    'America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
-    'Asia/Tokyo','Asia/Shanghai','Asia/Kolkata','Asia/Dubai',
-    'Australia/Sydney','Pacific/Auckland'
-  ];
-  // Try to include browser's timezone
-  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const allTz = [...new Set([browserTz, ...common])].sort();
-  const currentTz = getTimezone();
-  sel.innerHTML = allTz.map(tz => `<option value="${tz}" ${tz===currentTz?'selected':''}>${tz}</option>`).join('');
+async function toggleSubscription(taskId, isSubscribed) {
+  try {
+    if (isSubscribed) { await api('/api/unsubscribe', 'POST', { task_id: taskId }); }
+    else { await api('/api/subscribe', 'POST', { task_id: taskId }); }
+    renderTaskPage(taskId);
+  } catch(e) { alert(t('error')); }
 }
 
-// --- Export / Import ---
+// === Epic Page ===
+async function renderEpicPage(epicId) {
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="epic-page"><p>Loading...</p></div>';
+  let data;
+  try { data = await api('/api/epics/' + epicId); } catch { app.innerHTML = `<div class="epic-page"><p>${t('notFound')}</p><a href="/" onclick="navigateTo('/');return false;">${t('backToBoard')}</a></div>`; return; }
+  const epic = data.epic;
+  const tasks = data.tasks || [];
+  const lastCol = state.columns.length ? state.columns[state.columns.length-1] : null;
+  const done = lastCol ? tasks.filter(t => t.column_id === lastCol.id).length : 0;
+  const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
+
+  let html = `<div class="epic-page">
+    <div class="epic-page-header">
+      <h2><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${epic.color};margin-right:6px;vertical-align:middle"></span>${esc(epic.name)}</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="navigateTo('/')">${t('back')}</button>
+        ${!isReadonly() ? `<button class="btn btn-ghost btn-sm" onclick="showEditEpic(${epic.id})">${t('editEpic')}</button>` : ''}
+      </div>
+    </div>`;
+  if (epic.description) {
+    html += `<div class="task-page-section" style="margin-bottom:16px"><div class="md-content">${renderMd(epic.description)}</div></div>`;
+  }
+  html += `<div class="epic-progress" style="margin-bottom:16px">
+      <span class="epic-progress-text">${done}/${tasks.length} ${t('tasksCompleted')} (${pct}%)</span>
+      <div class="epic-progress-bar"><div class="epic-progress-fill" style="width:${pct}%;background:${epic.color}"></div></div>
+    </div>
+    <div class="epic-task-list">`;
+  for (const task of tasks) {
+    const colName = state.columns.find(c => c.id === task.column_id);
+    const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
+    html += `<div class="epic-task-row" onclick="navigateTo('/task/${task.id}')">
+      <span class="card-id">#${task.id}</span>
+      <span class="epic-task-title">${esc(task.title)}</span>
+      <span class="epic-task-status">${colName ? esc(colName.name) : ''}</span>
+      ${task.priority > 0 ? `<span class="epic-task-prio" style="color:${prioColors[task.priority]}">P${task.priority}</span>` : ''}
+    </div>`;
+  }
+  if (tasks.length === 0) html += `<p style="color:var(--fg3)">${t('noActiveTasks')}</p>`;
+  html += '</div></div>';
+  app.innerHTML = html;
+}
+
+// === User Page ===
+async function renderUserPage(userId) {
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="user-page"><p>Loading...</p></div>';
+  let data;
+  try { data = await api('/api/user/activity/' + userId); } catch { app.innerHTML = `<div class="user-page"><p>${t('notFound')}</p><a href="/" onclick="navigateTo('/');return false;">${t('backToBoard')}</a></div>`; return; }
+  const user = data.user;
+  const activity = data.activity || [];
+
+  // Count tasks assigned to user
+  const assigned = state.tasks.filter(t => t.assignee_id === user.id || (t.assignee && t.assignee.id === user.id));
+
+  let html = `<div class="user-page">
+    <div class="user-page-header">
+      <h2>&#128100; ${esc(user.username)}</h2>
+      <div style="font-size:.82rem;color:var(--fg3);margin-top:4px">${t('role')}: ${t(user.role)} &middot; ${t('created')}: ${user.created_at}</div>
+    </div>`;
+
+  // Assigned tasks
+  if (assigned.length > 0) {
+    html += `<div class="task-page-section" style="margin-bottom:16px"><h3>${t('assignee')} (${assigned.length})</h3><div class="epic-task-list">`;
+    for (const task of assigned) {
+      const colName = state.columns.find(c => c.id === task.column_id);
+      html += `<div class="epic-task-row" onclick="navigateTo('/task/${task.id}')">
+        <span class="card-id">#${task.id}</span>
+        <span class="epic-task-title">${esc(task.title)}</span>
+        <span class="epic-task-status">${colName ? esc(colName.name) : ''}</span>
+      </div>`;
+    }
+    html += '</div></div>';
+  }
+
+  // Activity
+  html += `<div class="task-page-section"><h3>${t('activity')}</h3><div class="activity-list">`;
+  if (activity.length === 0) {
+    html += `<p style="color:var(--fg3);font-size:.85rem">${t('noActivity')}</p>`;
+  } else {
+    for (const a of activity) {
+      const taskLink = a.task_id ? `<a href="/task/${a.task_id}" onclick="navigateTo('/task/${a.task_id}');return false;">#${a.task_id}</a>` : '';
+      html += `<div class="activity-item">
+        <span class="activity-time">${fmtDate(a.created_at)}</span>
+        <span class="activity-action">${esc(a.action)} ${taskLink} ${a.details ? esc(a.details) : ''}</span>
+      </div>`;
+    }
+  }
+  html += '</div></div></div>';
+  app.innerHTML = html;
+}
+
+// === Notifications ===
+let notifOpen = false;
+function toggleNotifications() {
+  notifOpen = !notifOpen;
+  const dd = document.getElementById('notif-dropdown');
+  if (!dd) return;
+  if (notifOpen) { loadNotifications(); dd.classList.remove('hidden'); }
+  else { dd.classList.add('hidden'); }
+}
+
+async function loadNotifications() {
+  const dd = document.getElementById('notif-dropdown');
+  if (!dd) return;
+  try {
+    const notifs = await api('/api/notifications');
+    if (notifs.length === 0) {
+      dd.innerHTML = `<p style="color:var(--fg3);font-size:.85rem;text-align:center;padding:20px">${t('noNotifications')}</p>`;
+      return;
+    }
+    let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="font-weight:600;font-size:.9rem">${t('notifications')}</span>
+      <button class="btn btn-ghost btn-sm" onclick="markAllRead()">${t('markAllRead')}</button>
+    </div>`;
+    for (const n of notifs) {
+      html += `<div class="notif-item ${n.is_read?'':'unread'}" onclick="readNotification(${n.id}, ${n.task_id || 'null'})">
+        <div>${esc(n.text)}</div>
+        <div class="notif-time">${fmtDate(n.created_at)}</div>
+      </div>`;
+    }
+    dd.innerHTML = html;
+  } catch(e) { dd.innerHTML = `<p style="color:var(--red)">${t('error')}</p>`; }
+}
+
+async function readNotification(id, taskId) {
+  try { await api('/api/notifications/read', 'POST', { id }); } catch {}
+  if (taskId) { toggleNotifications(); navigateTo('/task/' + taskId); }
+  else { loadNotifications(); }
+  refreshNotifCount();
+}
+
+async function markAllRead() {
+  try { await api('/api/notifications/read-all', 'POST'); loadNotifications(); refreshNotifCount(); } catch {}
+}
+
+async function refreshNotifCount() {
+  try {
+    const me = await api('/api/auth/me');
+    currentUser = me;
+    const nb = document.getElementById('notif-count');
+    if (nb) {
+      if (me.unread > 0) { nb.textContent = me.unread; nb.classList.remove('hidden'); }
+      else { nb.classList.add('hidden'); }
+    }
+  } catch {}
+}
+
+function pollNotifications() {
+  setInterval(refreshNotifCount, 30000);
+}
+
+// Close notif dropdown on outside click
+document.addEventListener('click', function(e) {
+  if (notifOpen && !e.target.closest('#notif-dropdown') && !e.target.closest('#notif-btn')) {
+    notifOpen = false;
+    const dd = document.getElementById('notif-dropdown');
+    if (dd) dd.classList.add('hidden');
+  }
+});
+
+// === Search ===
+async function doSearch(query) {
+  searchQuery = query.trim();
+  const resultsEl = document.getElementById('search-results');
+  if (!searchQuery) {
+    searchMatchIds = null;
+    if (resultsEl) resultsEl.classList.add('hidden');
+    if (currentView === 'board') renderBoard();
+    return;
+  }
+  try {
+    const res = await api('/api/search?q=' + encodeURIComponent(searchQuery));
+    searchMatchIds = res.task_ids || [];
+    if (currentView === 'board') renderBoard();
+    // Show results dropdown
+    if (resultsEl) {
+      if (searchMatchIds.length === 0) {
+        resultsEl.innerHTML = `<p style="color:var(--fg3)">${t('nothingFound')}</p>`;
+      } else {
+        const matchTasks = searchMatchIds.slice(0, 20).map(id => state.tasks.find(t => t.id === id)).filter(Boolean);
+        resultsEl.innerHTML = matchTasks.map(t => `<div class="search-result-item" onclick="navigateTo('/task/${t.id}');document.getElementById('search').value='';doSearch('')">
+          <span class="card-id">#${t.id}</span><span>${esc(t.title)}</span>
+        </div>`).join('') + (searchMatchIds.length > 20 ? `<p style="color:var(--fg3);font-size:.82rem">${t('andMore')}</p>` : '');
+      }
+      resultsEl.classList.remove('hidden');
+    }
+  } catch { searchMatchIds = null; }
+}
+
+// Close search results on outside click
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#search') && !e.target.closest('#search-results')) {
+    const r = document.getElementById('search-results');
+    if (r) r.classList.add('hidden');
+  }
+});
+
+// === CRUD: Create/Edit Task ===
+function showCreateTask(colId) {
+  showTaskModal(null, colId);
+}
+function showEditTask(taskId) {
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task) { api('/api/tasks/' + taskId).then(t => showTaskModal(t, t.column_id)); return; }
+  api('/api/tasks/' + taskId).then(t => showTaskModal(t, t.column_id));
+}
+
+function showTaskModal(task, defaultColId) {
+  const isEdit = !!task;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+
+  const depOptions = state.tasks.filter(t => !task || t.id !== task.id).map(t => {
+    const sel = task && task.depends_on && task.depends_on.some(d => d.id === t.id) ? 'selected' : '';
+    return `<option value="${t.id}" ${sel}>#${t.id} ${esc(t.title)}</option>`;
+  }).join('');
+
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h2>${isEdit ? t('editTask') : t('newTask')}</h2><button class="btn-icon" onclick="this.closest('.modal-overlay').remove()">&#10005;</button></div>
+    <div class="modal-body">
+      <div class="field"><label>${t('title')}</label><input id="task-title" value="${isEdit ? escAttr(task.title) : ''}"></div>
+      <div class="field-row">
+        <div class="field"><label>${t('column')}</label><select id="task-col">${state.columns.map(c => `<option value="${c.id}" ${c.id===(isEdit?task.column_id:defaultColId)?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>${t('priority')}</label><select id="task-prio">
+          <option value="0" ${(!isEdit||task.priority===0)?'selected':''}>${t('none')}</option>
+          <option value="1" ${(isEdit&&task.priority===1)?'selected':''}>${t('low')}</option>
+          <option value="2" ${(isEdit&&task.priority===2)?'selected':''}>${t('medium')}</option>
+          <option value="3" ${(isEdit&&task.priority===3)?'selected':''}>${t('high')}</option>
+          <option value="4" ${(isEdit&&task.priority===4)?'selected':''}>${t('critical')}</option>
+        </select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>${t('epic')}</label><select id="task-epic">
+          <option value="">${t('none')}</option>
+          ${state.epics.map(e => `<option value="${e.id}" ${(isEdit&&task.epic_id===e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}
+        </select></div>
+        <div class="field"><label>${t('assignee')}</label><select id="task-assignee">
+          <option value="">${t('none')}</option>
+          ${state.users.map(u => `<option value="${u.id}" ${(isEdit&&task.assignee_id===u.id)?'selected':''}>${esc(u.username)}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="field"><label>${t('description')} <small style="color:var(--fg3)">(${t('markdown')})</small></label>
+        ${insertMdToolbar('task-desc')}
+        <textarea id="task-desc" rows="4">${isEdit ? esc(task.description) : ''}</textarea>
+      </div>
+      <div class="field"><label>${t('todo')}</label>
+        <textarea id="task-todo" rows="3" placeholder="- [ ] item">${isEdit ? esc(task.todo) : ''}</textarea>
+      </div>
+      <div class="field"><label>${t('projectUrl')}</label><input id="task-url" value="${isEdit ? escAttr(task.project_url) : ''}"></div>
+      <div class="field"><label>${t('tags')}</label>
+        <div class="checkbox-group">${state.tags.map(tg => {
+          const sel = isEdit && task.tags && task.tags.some(tt => tt.id === tg.id);
+          return `<span class="chip ${sel?'selected':''}" style="background:${tg.color};color:${contrastColor(tg.color)}" onclick="this.classList.toggle('selected')" data-tag-id="${tg.id}">${esc(tg.name)}</span>`;
+        }).join('')}</div>
+      </div>
+      <div class="field"><label>${t('dependsOn')}</label>
+        <select id="task-deps" multiple style="height:80px">${depOptions}</select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">${t('cancel')}</button>
+      <button class="btn btn-primary" onclick="saveTask(${isEdit ? task.id : 'null'}, this)">${isEdit ? t('save') : t('createTask')}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  // Setup paste for description textarea
+  const descTa = document.getElementById('task-desc');
+  if (descTa) setupPaste(descTa);
+  document.getElementById('task-title').focus();
+}
+
+async function saveTask(taskId, btn) {
+  btn.disabled = true;
+  const title = document.getElementById('task-title').value.trim();
+  const colId = parseInt(document.getElementById('task-col').value);
+  const priority = parseInt(document.getElementById('task-prio').value);
+  const epicVal = document.getElementById('task-epic').value;
+  const assigneeVal = document.getElementById('task-assignee').value;
+  const desc = document.getElementById('task-desc').value;
+  const todo = document.getElementById('task-todo').value;
+  const url = document.getElementById('task-url').value.trim();
+  const tagIds = Array.from(document.querySelectorAll('.chip.selected[data-tag-id]')).map(el => parseInt(el.dataset.tagId));
+  const depsEl = document.getElementById('task-deps');
+  const depIds = Array.from(depsEl.selectedOptions).map(o => parseInt(o.value));
+
+  if (!title || !colId) { btn.disabled = false; alert(t('error')); return; }
+
+  const body = {
+    title, description: desc, todo, project_url: url, column_id: colId,
+    epic_id: epicVal ? parseInt(epicVal) : null,
+    assignee_id: assigneeVal ? parseInt(assigneeVal) : null,
+    priority, tag_ids: tagIds, depends_on_ids: depIds
+  };
+
+  try {
+    if (taskId) {
+      await api('/api/tasks/' + taskId, 'PUT', body);
+    } else {
+      const res = await api('/api/tasks', 'POST', body);
+      taskId = res.id;
+    }
+    document.querySelector('.modal-overlay').remove();
+    await loadBoard();
+    if (currentView === 'task') renderTaskPage(taskId);
+    else renderBoard();
+  } catch(e) { btn.disabled = false; alert(t('error') + ': ' + e.message); }
+}
+
+async function deleteTask(taskId) {
+  if (!confirm(t('deleteConfirm'))) return;
+  try { await api('/api/tasks/' + taskId, 'DELETE'); await loadBoard(); navigateTo('/'); } catch(e) { alert(t('error')); }
+}
+
+// === CRUD: Columns ===
+async function addColumn() {
+  const inp = document.getElementById('new-col-name');
+  if (!inp || !inp.value.trim()) return;
+  try { await api('/api/columns', 'POST', { Name: inp.value.trim() }); inp.value = ''; await loadBoard(); } catch(e) { alert(t('error')); }
+}
+async function renameColumn(id, oldName) {
+  const name = prompt(t('title'), oldName);
+  if (!name || name === oldName) return;
+  try { await api('/api/columns/' + id, 'PUT', { Name: name }); await loadBoard(); } catch(e) { alert(t('error')); }
+}
+async function deleteColumn(id) {
+  const colTasks = state.tasks.filter(t => t.column_id === id);
+  if (colTasks.length > 0) { alert(t('moveTasksFirst')); return; }
+  if (!confirm(t('confirmDeleteCol') + '?')) return;
+  try { await api('/api/columns/' + id, 'DELETE'); await loadBoard(); } catch(e) { alert(t('error')); }
+}
+async function moveColumnOrder(index, dir) {
+  const ids = state.columns.map(c => c.id);
+  const swapIdx = index + dir;
+  if (swapIdx < 0 || swapIdx >= ids.length) return;
+  [ids[index], ids[swapIdx]] = [ids[swapIdx], ids[index]];
+  try { await api('/api/columns/reorder', 'POST', { ids }); await loadBoard(); } catch(e) { alert(t('error')); }
+}
+
+// === CRUD: Epics ===
+async function addEpic() {
+  const nameEl = document.getElementById('epic-name');
+  const colorEl = document.getElementById('epic-color');
+  if (!nameEl || !nameEl.value.trim()) return;
+  try { await api('/api/epics', 'POST', { Name: nameEl.value.trim(), Color: colorEl.value }); nameEl.value = ''; await loadBoard(); } catch(e) { alert(t('error')); }
+}
+async function deleteEpic(id) {
+  const cnt = state.tasks.filter(t => t.epic_id === id).length;
+  if (!confirm(t('confirmDeleteEpic') + '? ' + cnt + ' ' + t('tasksWillUnlink'))) return;
+  try { await api('/api/epics/' + id, 'DELETE'); await loadBoard(); } catch(e) { alert(t('error')); }
+}
+function showEditEpic(epicId) {
+  const epic = state.epics.find(e => e.id === epicId);
+  if (!epic) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h2>${t('editEpic')}</h2><button class="btn-icon" onclick="this.closest('.modal-overlay').remove()">&#10005;</button></div>
+    <div class="modal-body">
+      <div class="field"><label>${t('title')}</label><input id="epic-edit-name" value="${escAttr(epic.name)}"></div>
+      <div class="field"><label>Color</label><input type="color" id="epic-edit-color" value="${epic.color}"></div>
+      <div class="field"><label>${t('description')}</label>
+        ${insertMdToolbar('epic-edit-desc')}
+        <textarea id="epic-edit-desc" rows="4">${esc(epic.description || '')}</textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">${t('cancel')}</button>
+      <button class="btn btn-primary" onclick="saveEpicEdit(${epicId})">${t('save')}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+async function saveEpicEdit(epicId) {
+  const name = document.getElementById('epic-edit-name').value.trim();
+  const color = document.getElementById('epic-edit-color').value;
+  const desc = document.getElementById('epic-edit-desc').value;
+  if (!name) return;
+  try { await api('/api/epics/' + epicId, 'PUT', { name, color, description: desc }); document.querySelector('.modal-overlay').remove(); await loadBoard(); renderEpicPage(epicId); } catch(e) { alert(t('error')); }
+}
+
+// === CRUD: Tags ===
+async function addTag() {
+  const nameEl = document.getElementById('tag-name');
+  const colorEl = document.getElementById('tag-color');
+  if (!nameEl || !nameEl.value.trim()) return;
+  try { await api('/api/tags', 'POST', { Name: nameEl.value.trim(), Color: colorEl.value }); nameEl.value = ''; await loadBoard(); } catch(e) { alert(t('error')); }
+}
+async function deleteTag(id) {
+  if (!confirm(t('confirmDeleteTag') + '?')) return;
+  try { await api('/api/tags/' + id, 'DELETE'); await loadBoard(); } catch(e) { alert(t('error')); }
+}
+
+// === CRUD: Users ===
+async function addUser() {
+  const nameEl = document.getElementById('new-user-name');
+  const passEl = document.getElementById('new-user-pass');
+  const roleEl = document.getElementById('new-user-role');
+  if (!nameEl || !passEl || !nameEl.value.trim() || passEl.value.length < 6) { alert(t('userRequired')); return; }
+  try {
+    await api('/api/users', 'POST', { username: nameEl.value.trim(), password: passEl.value, role: roleEl.value });
+    nameEl.value = ''; passEl.value = '';
+    await loadBoard();
+  } catch(e) { alert(t('error') + ': ' + e.message); }
+}
+async function deleteUser(id) {
+  if (!confirm(t('confirmDeleteUser') + '?')) return;
+  try { await api('/api/users/' + id, 'DELETE'); await loadBoard(); } catch(e) { alert(t('error') + ': ' + e.message); }
+}
+async function changeUserRole(id, currentRole) {
+  const roles = ['admin','regular','readonly'];
+  const nextIdx = (roles.indexOf(currentRole) + 1) % roles.length;
+  const newRole = roles[nextIdx];
+  try { await api('/api/users/' + id, 'PUT', { role: newRole }); await loadBoard(); } catch(e) { alert(t('error')); }
+}
+async function resetUserPassword(id) {
+  const pw = prompt(t('newPassword'));
+  if (!pw || pw.length < 6) { if (pw !== null) alert(t('userRequired')); return; }
+  try { await api('/api/users/' + id, 'PUT', { password: pw }); alert('OK'); } catch(e) { alert(t('error')); }
+}
+
+// === Own password change ===
+async function changeOwnPassword() {
+  const pw = prompt(t('newPassword'));
+  if (!pw || pw.length < 6) { if (pw !== null) alert(t('userRequired')); return; }
+  try { await api('/api/user/password', 'POST', { password: pw }); alert(t('passwordChanged')); } catch(e) { alert(t('error')); }
+}
+
+// === Export / Import ===
 async function exportBoard() {
   try {
-    const resp = await fetch('/api/export');
-    if (!resp.ok) throw new Error(await resp.text());
-    const blob = await resp.blob();
+    const r = await fetch('/api/export');
+    if (!r.ok) throw new Error(await r.text());
+    const blob = await r.blob();
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'kanban-export.json';
-    a.click();
+    const a = document.createElement('a'); a.href = url; a.download = 'kanban-export.json'; a.click();
     URL.revokeObjectURL(url);
-  } catch (e) { alert('Ошибка экспорта: ' + e.message); }
+  } catch(e) { alert(t('exportError')); }
 }
-
 async function importBoard(input) {
   const file = input.files[0];
   if (!file) return;
-  if (!confirm('Импорт заменит ВСЕ данные. Продолжить?')) { input.value = ''; return; }
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const data = JSON.parse(reader.result);
-      await api('/api/import', 'POST', data);
-      input.value = '';
-      await loadBoard();
-      alert('Импорт выполнен успешно');
-    } catch (e) { alert('Ошибка импорта: ' + e.message); }
-  };
-  reader.readAsText(file);
+  if (!confirm(t('importConfirm'))) { input.value = ''; return; }
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    await api('/api/import', 'POST', data);
+    input.value = '';
+    alert(t('importDone'));
+    await loadBoard();
+  } catch(e) { alert(t('importError') + ': ' + e.message); }
 }
 
-// --- Syntax highlighting after render ---
-function highlightCode() {
-  if (typeof hljs !== 'undefined') {
-    document.querySelectorAll('.md-content pre code').forEach(block => {
-      if (!block.dataset.highlighted) {
-        hljs.highlightElement(block);
-        block.dataset.highlighted = 'true';
-      }
-    });
+// === Logout ===
+async function logout() {
+  try { await api('/api/auth/logout', 'POST'); } catch {}
+  window.location.href = '/login';
+}
+
+// === Close sidebar on outside click ===
+document.addEventListener('click', function(e) {
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar && sidebar.classList.contains('open') && !e.target.closest('.sidebar') && !e.target.closest('[onclick*="toggleSidebar"]')) {
+    sidebar.classList.remove('open');
   }
-}
+});
 
-// --- Init ---
-initTimezoneSelector();
-loadBoard().then(() => route());
+// === Keyboard shortcuts ===
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const modal = document.querySelector('.modal-overlay');
+    if (modal) modal.remove();
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && sidebar.classList.contains('open')) sidebar.classList.remove('open');
+  }
+});
+
+// === Start ===
+init();
 </script>
 </body>
 </html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kanban — Вход</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f1117;--bg2:#181a24;--bg3:#1e2030;--bg4:#262840;--fg:#c8cad8;--fg2:#8b8fa8;--fg3:#5c6078;--accent:#7c6ff7;--accent2:#a78bfa;--red:#ef4444;--radius:6px;--radius-lg:10px}
+html{font-size:14px}
+body{font-family:'Source Sans 3',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-card{background:var(--bg2);border-radius:var(--radius-lg);padding:40px;width:380px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.login-card h1{font-size:1.4rem;text-align:center;margin-bottom:8px;color:var(--accent2);font-family:'JetBrains Mono',monospace;letter-spacing:-.02em}
+.login-card .subtitle{text-align:center;color:var(--fg3);font-size:.85rem;margin-bottom:28px}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:16px}
+.field label{font-size:.8rem;color:var(--fg2);font-weight:600}
+.field input{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:10px 12px;color:var(--fg);font-family:inherit;font-size:.9rem;outline:none;transition:border .15s}
+.field input:focus{border-color:var(--accent)}
+.btn{display:block;width:100%;padding:10px;border:none;border-radius:var(--radius);cursor:pointer;font-size:.9rem;font-family:inherit;font-weight:600;transition:all .15s;background:var(--accent);color:#fff;margin-top:8px}
+.btn:hover{background:var(--accent2)}
+.error{color:var(--red);font-size:.82rem;text-align:center;margin-top:12px;min-height:1.2em}
+.setup-note{text-align:center;color:var(--fg3);font-size:.78rem;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="login-card">
+  <h1>&#x2B21; kanban</h1>
+  <div class="subtitle" id="subtitle">Вход в систему</div>
+
+  <div id="login-form">
+    <div class="field">
+      <label for="username">Имя пользователя</label>
+      <input type="text" id="username" autocomplete="username" autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Пароль</label>
+      <input type="password" id="password" autocomplete="current-password">
+    </div>
+    <div id="password-confirm-field" class="field" style="display:none">
+      <label for="password2">Подтверждение пароля</label>
+      <input type="password" id="password2" autocomplete="new-password">
+    </div>
+    <button class="btn" id="submit-btn" onclick="submit()">Войти</button>
+    <div class="error" id="error"></div>
+    <div class="setup-note" id="setup-note" style="display:none">
+      Первый запуск — создайте учётную запись администратора
+    </div>
+  </div>
+</div>
+
+<script>
+let isSetup = false;
+
+async function checkSetup() {
+  try {
+    const r = await fetch('/api/auth/me');
+    if (r.ok) { location.href = '/'; return; }
+  } catch {}
+
+  try {
+    const r = await fetch('/api/board');
+    if (r.status === 401) {
+      const text = await r.text();
+      if (text.trim() === 'setup required') {
+        isSetup = true;
+        document.getElementById('subtitle').textContent = 'Создание администратора';
+        document.getElementById('submit-btn').textContent = 'Создать и войти';
+        document.getElementById('setup-note').style.display = '';
+        document.getElementById('password-confirm-field').style.display = '';
+        document.getElementById('password').autocomplete = 'new-password';
+      }
+    }
+  } catch {}
+}
+
+async function submit() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const errorEl = document.getElementById('error');
+  errorEl.textContent = '';
+
+  if (!username || !password) {
+    errorEl.textContent = 'Введите имя пользователя и пароль';
+    return;
+  }
+
+  if (isSetup) {
+    const password2 = document.getElementById('password2').value;
+    if (password !== password2) {
+      errorEl.textContent = 'Пароли не совпадают';
+      return;
+    }
+    if (password.length < 6) {
+      errorEl.textContent = 'Пароль минимум 6 символов';
+      return;
+    }
+    try {
+      const r = await fetch('/api/auth/setup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username, password})
+      });
+      if (!r.ok) {
+        errorEl.textContent = await r.text();
+        return;
+      }
+      location.href = '/';
+    } catch (e) {
+      errorEl.textContent = 'Ошибка: ' + e.message;
+    }
+  } else {
+    try {
+      const r = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username, password})
+      });
+      if (!r.ok) {
+        errorEl.textContent = 'Неверное имя пользователя или пароль';
+        return;
+      }
+      location.href = '/';
+    } catch (e) {
+      errorEl.textContent = 'Ошибка: ' + e.message;
+    }
+  }
+}
+
+// Enter to submit
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') submit();
+});
+
+checkSetup();
+</script>
+</body>
+</html>

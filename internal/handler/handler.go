@@ -14,6 +14,8 @@ import (
 	"strings"
 )
 
+const sessionCookie = "kanban_session"
+
 // allowed MIME types for image uploads
 var allowedImageMIME = map[string]bool{
 	"image/png":     true,
@@ -51,11 +53,13 @@ type Handler struct {
 	store   *db.Store
 	mux     *http.ServeMux
 	verbose bool
+	tgBot   *TelegramBot
 }
 
 func New(store *db.Store) *Handler {
 	h := &Handler{store: store, mux: http.NewServeMux()}
 	h.routes()
+	h.initTelegramBot()
 	return h
 }
 
@@ -75,11 +79,94 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data:")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data:")
+
+	// Public paths: login page, login API, static assets, setup
+	path := r.URL.Path
+	if path == "/login" || path == "/api/auth/login" || path == "/api/auth/setup" ||
+		strings.HasPrefix(path, "/static/") {
+		h.mux.ServeHTTP(w, r)
+		return
+	}
+
+	// Check if any users exist — if not, redirect to setup
+	cnt, _ := h.store.UserCount()
+	if cnt == 0 {
+		if path == "/" || strings.HasPrefix(path, "/api/") {
+			if strings.HasPrefix(path, "/api/") {
+				http.Error(w, "setup required", http.StatusUnauthorized)
+			} else {
+				http.Redirect(w, r, "/login", http.StatusFound)
+			}
+			return
+		}
+	}
+
+	// Check session cookie
+	cookie, err := r.Cookie(sessionCookie)
+	if err != nil || cookie.Value == "" {
+		if strings.HasPrefix(path, "/api/") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		} else {
+			http.Redirect(w, r, "/login", http.StatusFound)
+		}
+		return
+	}
+
+	user, err := h.store.ValidateSession(cookie.Value)
+	if err != nil {
+		// Invalid/expired session
+		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
+		if strings.HasPrefix(path, "/api/") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		} else {
+			http.Redirect(w, r, "/login", http.StatusFound)
+		}
+		return
+	}
+
+	// Read-only user check: block write operations
+	if user.Role == "readonly" && r.Method != http.MethodGet {
+		// Allow logout and own-profile endpoints
+		if path != "/api/auth/logout" &&
+			path != "/api/notifications/read" &&
+			path != "/api/notifications/read-all" &&
+			!strings.HasPrefix(path, "/api/user/") {
+			http.Error(w, "read-only access", http.StatusForbidden)
+			return
+		}
+	}
+
+	// Store user in request context
+	_ = user
 	h.mux.ServeHTTP(w, r)
 }
 
+func (h *Handler) currentUser(r *http.Request) *model.User {
+	cookie, err := r.Cookie(sessionCookie)
+	if err != nil {
+		return nil
+	}
+	user, err := h.store.ValidateSession(cookie.Value)
+	if err != nil {
+		return nil
+	}
+	return user
+}
+
 func (h *Handler) routes() {
+	// Auth routes (public)
+	h.mux.HandleFunc("/api/auth/login", h.handleLogin)
+	h.mux.HandleFunc("/api/auth/logout", h.handleLogout)
+	h.mux.HandleFunc("/api/auth/setup", h.handleSetup)
+	h.mux.HandleFunc("/api/auth/me", h.handleAuthMe)
+	h.mux.HandleFunc("/login", h.handleLoginPage)
+
+	// User management (admin only)
+	h.mux.HandleFunc("/api/users", h.handleUsers)
+	h.mux.HandleFunc("/api/users/", h.handleUser)
+
+	// Board routes
 	h.mux.HandleFunc("/api/columns/reorder", h.handleColumnsReorder)
 	h.mux.HandleFunc("/api/columns", h.handleColumns)
 	h.mux.HandleFunc("/api/columns/", h.handleColumn)
@@ -100,12 +187,31 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/export", h.handleExport)
 	h.mux.HandleFunc("/api/import", h.handleImport)
 	h.mux.HandleFunc("/api/board", h.handleBoard)
+
+	// Notifications
+	h.mux.HandleFunc("/api/notifications", h.handleNotifications)
+	h.mux.HandleFunc("/api/notifications/read", h.handleNotificationRead)
+	h.mux.HandleFunc("/api/notifications/read-all", h.handleNotificationReadAll)
+
+	// Task subscriptions
+	h.mux.HandleFunc("/api/subscribe", h.handleSubscribe)
+	h.mux.HandleFunc("/api/unsubscribe", h.handleUnsubscribe)
+
+	// User profile & activity
+	h.mux.HandleFunc("/api/user/activity/", h.handleUserActivity)
+	h.mux.HandleFunc("/api/user/telegram/link", h.handleTelegramLink)
+	h.mux.HandleFunc("/api/user/telegram/unlink", h.handleTelegramUnlink)
+	h.mux.HandleFunc("/api/user/password", h.handleChangeOwnPassword)
+
+	// Admin settings
+	h.mux.HandleFunc("/api/settings/telegram", h.handleTelegramSettings)
+
 	h.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	h.mux.HandleFunc("/", h.handleIndex)
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") {
+	if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") || strings.HasPrefix(r.URL.Path, "/user/") {
 		http.ServeFile(w, r, "web/templates/index.html")
 		return
 	}
@@ -141,7 +247,11 @@ func (h *Handler) handleBoard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", 500)
 		return
 	}
-	jsonResp(w, map[string]any{"columns": cols, "tasks": tasks, "epics": epics, "tags": tags})
+	users, err := h.store.ListUsers()
+	if err != nil {
+		users = []model.User{}
+	}
+	jsonResp(w, map[string]any{"columns": cols, "tasks": tasks, "epics": epics, "tags": tags, "users": users})
 }
 
 // --- Columns ---
@@ -511,6 +621,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonResp(w, tasks)
 	case http.MethodPost:
+		user := h.currentUser(r)
 		var req struct {
 			Title        string  `json:"title"`
 			Description  string  `json:"description"`
@@ -518,6 +629,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			ProjectURL   string  `json:"project_url"`
 			ColumnID     int64   `json:"column_id"`
 			EpicID       *int64  `json:"epic_id"`
+			AssigneeID   *int64  `json:"assignee_id"`
 			Priority     int     `json:"priority"`
 			TagIDs       []int64 `json:"tag_ids"`
 			DependsOnIDs []int64 `json:"depends_on_ids"`
@@ -530,7 +642,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "title and column_id required", 400)
 			return
 		}
-		id, err := h.store.CreateTask(req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.Priority, req.TagIDs)
+		id, err := h.store.CreateTask(req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.AssigneeID, req.Priority, req.TagIDs)
 		if err != nil {
 			h.logf("create task: %v", err)
 			http.Error(w, err.Error(), 500)
@@ -544,6 +656,20 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "created but failed to fetch", 500)
 			return
 		}
+		// Log activity
+		if user != nil {
+			h.store.LogActivity(user.ID, "create_task", &id, req.Title)
+		}
+		// Notify assignee
+		if req.AssigneeID != nil && user != nil && *req.AssigneeID != user.ID {
+			text := fmt.Sprintf("@%s назначил(а) вас исполнителем задачи #%d: %s", user.Username, id, req.Title)
+			h.store.CreateNotification(*req.AssigneeID, "assigned", text, &id)
+			h.sendTelegramNotification(*req.AssigneeID, text)
+		}
+		// Process mentions in description
+		if user != nil {
+			h.processMentions(req.Description, user, &id, req.Title)
+		}
 		jsonResp(w, task)
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -551,6 +677,19 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
+	// Handle subscription sub-routes
+	path := r.URL.Path
+	if strings.HasSuffix(path, "/subscribe") {
+		taskID := extractID(strings.TrimSuffix(path, "/subscribe"), "/api/tasks/")
+		h.handleTaskSubscribe(w, r, taskID)
+		return
+	}
+	if strings.HasSuffix(path, "/subscribed") {
+		taskID := extractID(strings.TrimSuffix(path, "/subscribed"), "/api/tasks/")
+		h.handleTaskSubscribed(w, r, taskID)
+		return
+	}
+
 	id := extractID(r.URL.Path, "/api/tasks/")
 	if id == 0 {
 		http.Error(w, "bad id", 400)
@@ -565,6 +704,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonResp(w, task)
 	case http.MethodPut:
+		user := h.currentUser(r)
 		var req struct {
 			Title        string  `json:"title"`
 			Description  string  `json:"description"`
@@ -572,6 +712,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			ProjectURL   string  `json:"project_url"`
 			ColumnID     int64   `json:"column_id"`
 			EpicID       *int64  `json:"epic_id"`
+			AssigneeID   *int64  `json:"assignee_id"`
 			Priority     int     `json:"priority"`
 			TagIDs       []int64 `json:"tag_ids"`
 			DependsOnIDs []int64 `json:"depends_on_ids"`
@@ -580,7 +721,11 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request", 400)
 			return
 		}
-		if err := h.store.UpdateTask(id, req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.Priority, req.TagIDs); err != nil {
+
+		// Get old task for comparison
+		oldTask, _ := h.store.GetTask(id)
+
+		if err := h.store.UpdateTask(id, req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.AssigneeID, req.Priority, req.TagIDs); err != nil {
 			h.logf("UpdateTask(%d) error: %v", id, err)
 			http.Error(w, err.Error(), 500)
 			return
@@ -591,8 +736,32 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "updated but failed to fetch", 500)
 			return
 		}
+
+		if user != nil {
+			h.store.LogActivity(user.ID, "edit_task", &id, req.Title)
+
+			// Notify new assignee
+			if req.AssigneeID != nil && *req.AssigneeID != user.ID {
+				if oldTask == nil || oldTask.AssigneeID == nil || *oldTask.AssigneeID != *req.AssigneeID {
+					text := fmt.Sprintf("@%s назначил(а) вас исполнителем задачи #%d: %s", user.Username, id, req.Title)
+					h.store.CreateNotification(*req.AssigneeID, "assigned", text, &id)
+					h.sendTelegramNotification(*req.AssigneeID, text)
+				}
+			}
+
+			// Notify subscribers about edit
+			h.notifySubscribers(id, user.ID, fmt.Sprintf("@%s обновил(а) задачу #%d: %s", user.Username, id, req.Title))
+
+			// Process mentions in description
+			h.processMentions(req.Description, user, &id, req.Title)
+		}
+
 		jsonResp(w, task)
 	case http.MethodDelete:
+		user := h.currentUser(r)
+		if user != nil {
+			h.store.LogActivity(user.ID, "delete_task", &id, "")
+		}
 		if err := h.store.DeleteTask(id); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -625,6 +794,15 @@ func (h *Handler) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+	user := h.currentUser(r)
+	if user != nil {
+		h.store.LogActivity(user.ID, "move_task", &req.TaskID, "")
+		// Notify subscribers
+		task, _ := h.store.GetTask(req.TaskID)
+		if task != nil {
+			h.notifySubscribers(req.TaskID, user.ID, fmt.Sprintf("@%s переместил(а) задачу #%d: %s", user.Username, req.TaskID, task.Title))
+		}
+	}
 	jsonResp(w, map[string]string{"status": "ok"})
 }
 
@@ -634,6 +812,7 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
+	user := h.currentUser(r)
 	var req struct {
 		TaskID   int64  `json:"task_id"`
 		Text     string `json:"text"`
@@ -647,11 +826,31 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "task_id and text required", 400)
 		return
 	}
-	id, err := h.store.AddComment(req.TaskID, req.Text, req.ParentID)
+	var authorID *int64
+	if user != nil {
+		authorID = &user.ID
+	}
+	id, err := h.store.AddComment(req.TaskID, req.Text, req.ParentID, authorID)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+
+	if user != nil {
+		h.store.LogActivity(user.ID, "comment", &req.TaskID, "")
+
+		// Notify subscribers about comment
+		task, _ := h.store.GetTask(req.TaskID)
+		if task != nil {
+			h.notifySubscribers(req.TaskID, user.ID, fmt.Sprintf("@%s оставил(а) комментарий к задаче #%d: %s", user.Username, req.TaskID, task.Title))
+		}
+
+		// Process mentions in comment
+		if task != nil {
+			h.processMentions(req.Text, user, &req.TaskID, task.Title)
+		}
+	}
+
 	jsonResp(w, map[string]int64{"id": id})
 }
 
@@ -673,6 +872,17 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 		if err := h.store.UpdateComment(id, req.Text); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
+		}
+		// Process mentions in edited comment
+		user := h.currentUser(r)
+		if user != nil {
+			taskID, err := h.store.GetCommentTaskID(id)
+			if err == nil {
+				task, _ := h.store.GetTask(taskID)
+				if task != nil {
+					h.processMentions(req.Text, user, &taskID, task.Title)
+				}
+			}
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
@@ -755,6 +965,522 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+// --- Auth ---
+func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	cnt, _ := h.store.UserCount()
+	if cnt > 0 {
+		http.Error(w, "setup already completed", 400)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if req.Username == "" || len(req.Password) < 6 {
+		http.Error(w, "username required, password min 6 chars", 400)
+		return
+	}
+	id, err := h.store.CreateUser(req.Username, req.Password, "admin")
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	token, err := h.store.CreateSession(id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   30 * 24 * 3600,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	jsonResp(w, map[string]any{"status": "ok", "user_id": id})
+}
+
+func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	user, err := h.store.AuthenticateUser(req.Username, req.Password)
+	if err != nil {
+		http.Error(w, "invalid credentials", 401)
+		return
+	}
+	token, err := h.store.CreateSession(user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   30 * 24 * 3600,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	jsonResp(w, map[string]any{"status": "ok", "user": user})
+}
+
+func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	cookie, err := r.Cookie(sessionCookie)
+	if err == nil {
+		h.store.DeleteSession(cookie.Value)
+	}
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleAuthMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	// Get full user info with telegram
+	fullUser, err := h.store.GetUser(user.ID)
+	if err != nil {
+		jsonResp(w, user)
+		return
+	}
+	unread := h.store.UnreadNotificationCount(user.ID)
+	jsonResp(w, map[string]any{
+		"id":          fullUser.ID,
+		"username":    fullUser.Username,
+		"role":        fullUser.Role,
+		"is_admin":    fullUser.IsAdmin,
+		"created_at":  fullUser.CreatedAt,
+		"telegram_id": fullUser.TelegramID,
+		"link_hash":   fullUser.LinkHash,
+		"unread":      unread,
+	})
+}
+
+func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/templates/login.html")
+}
+
+// --- User management (admin only) ---
+func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		users, err := h.store.ListUsers()
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		jsonResp(w, users)
+	case http.MethodPost:
+		if user.Role != "admin" {
+			http.Error(w, "forbidden", 403)
+			return
+		}
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Role     string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if req.Username == "" || len(req.Password) < 6 {
+			http.Error(w, "username required, password min 6 chars", 400)
+			return
+		}
+		if req.Role == "" {
+			req.Role = "regular"
+		}
+		if req.Role != "admin" && req.Role != "regular" && req.Role != "readonly" {
+			http.Error(w, "invalid role", 400)
+			return
+		}
+		id, err := h.store.CreateUser(req.Username, req.Password, req.Role)
+		if err != nil {
+			http.Error(w, "user exists or error: "+err.Error(), 409)
+			return
+		}
+		jsonResp(w, map[string]int64{"id": id})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
+	user := h.currentUser(r)
+	if user == nil || user.Role != "admin" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	id := extractID(r.URL.Path, "/api/users/")
+	if id == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
+	switch r.Method {
+	case http.MethodDelete:
+		// Cannot delete yourself
+		if id == user.ID {
+			http.Error(w, "cannot delete yourself", 400)
+			return
+		}
+		if err := h.store.DeleteUser(id); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		jsonResp(w, map[string]string{"status": "ok"})
+	case http.MethodPut:
+		var req struct {
+			Password string `json:"password"`
+			Role     string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if req.Password != "" {
+			if len(req.Password) < 6 {
+				http.Error(w, "password min 6 chars", 400)
+				return
+			}
+			if err := h.store.UpdateUserPassword(id, req.Password); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+		}
+		if req.Role != "" {
+			if req.Role != "admin" && req.Role != "regular" && req.Role != "readonly" {
+				http.Error(w, "invalid role", 400)
+				return
+			}
+			if err := h.store.UpdateUserRole(id, req.Role); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+		}
+		jsonResp(w, map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+// --- Notifications ---
+func (h *Handler) handleNotifications(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	notifs, err := h.store.ListNotifications(user.ID, 50)
+	if err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	jsonResp(w, notifs)
+}
+
+func (h *Handler) handleNotificationRead(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	var req struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	h.store.MarkNotificationRead(req.ID, user.ID)
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleNotificationReadAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	h.store.MarkAllNotificationsRead(user.ID)
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+// --- Task Subscriptions ---
+func (h *Handler) handleSubscribe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	var req struct {
+		TaskID int64 `json:"task_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TaskID == 0 {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	h.store.SubscribeToTask(req.TaskID, user.ID)
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	var req struct {
+		TaskID int64 `json:"task_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TaskID == 0 {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	h.store.UnsubscribeFromTask(req.TaskID, user.ID)
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleTaskSubscribe(w http.ResponseWriter, r *http.Request, taskID int64) {
+	if taskID == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	if r.Method == http.MethodPost {
+		h.store.SubscribeToTask(taskID, user.ID)
+		jsonResp(w, map[string]string{"status": "ok"})
+		return
+	}
+	if r.Method == http.MethodDelete {
+		h.store.UnsubscribeFromTask(taskID, user.ID)
+		jsonResp(w, map[string]string{"status": "ok"})
+		return
+	}
+	http.Error(w, "method not allowed", 405)
+}
+
+func (h *Handler) handleTaskSubscribed(w http.ResponseWriter, r *http.Request, taskID int64) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	subscribed := h.store.IsSubscribed(taskID, user.ID)
+	jsonResp(w, map[string]bool{"subscribed": subscribed})
+}
+
+// --- User Profile & Activity ---
+func (h *Handler) handleUserActivity(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	id := extractID(r.URL.Path, "/api/user/activity/")
+	if id == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
+	user, err := h.store.GetUser(id)
+	if err != nil {
+		http.Error(w, "user not found", 404)
+		return
+	}
+	activity, err := h.store.UserActivity(id, 100)
+	if err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	jsonResp(w, map[string]any{"user": user, "activity": activity})
+}
+
+// --- Telegram Integration ---
+func (h *Handler) handleTelegramLink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	hash, err := h.store.GenerateLinkHash(user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	jsonResp(w, map[string]string{"hash": hash})
+}
+
+func (h *Handler) handleTelegramUnlink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	h.store.UnlinkTelegram(user.ID)
+	h.store.ClearLinkHash(user.ID)
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if len(req.Password) < 6 {
+		http.Error(w, "password min 6 chars", 400)
+		return
+	}
+	if err := h.store.UpdateUserPassword(user.ID, req.Password); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleTelegramSettings(w http.ResponseWriter, r *http.Request) {
+	user := h.currentUser(r)
+	if user == nil || user.Role != "admin" {
+		http.Error(w, "forbidden", 403)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		token := h.store.GetSetting("telegram_bot_token")
+		jsonResp(w, map[string]string{"token": token})
+	case http.MethodPost:
+		var req struct {
+			Token string `json:"token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if err := h.store.SetSetting("telegram_bot_token", req.Token); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		// Restart telegram bot
+		h.initTelegramBot()
+		jsonResp(w, map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+// --- Mention Processing ---
+var mentionRegex = regexp.MustCompile(`@(\w+)`)
+
+func (h *Handler) processMentions(text string, author *model.User, taskID *int64, taskTitle string) {
+	matches := mentionRegex.FindAllStringSubmatch(text, -1)
+	seen := map[string]bool{}
+	for _, m := range matches {
+		username := m[1]
+		if seen[username] || (author != nil && username == author.Username) {
+			continue
+		}
+		seen[username] = true
+		mentioned, err := h.store.GetUserByUsername(username)
+		if err != nil {
+			continue
+		}
+		notifText := fmt.Sprintf("@%s упомянул(а) вас в задаче #%d: %s", author.Username, *taskID, taskTitle)
+		h.store.CreateNotification(mentioned.ID, "mention", notifText, taskID)
+		h.sendTelegramNotification(mentioned.ID, notifText)
+	}
+}
+
+func (h *Handler) notifySubscribers(taskID int64, excludeUserID int64, text string) {
+	subscribers := h.store.TaskSubscribers(taskID)
+	for _, sub := range subscribers {
+		if sub.ID == excludeUserID {
+			continue
+		}
+		h.store.CreateNotification(sub.ID, "subscribed", text, &taskID)
+		h.sendTelegramNotification(sub.ID, text)
+	}
 }
 
 // helpers
