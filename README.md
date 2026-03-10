@@ -55,15 +55,21 @@ On first launch you will be prompted to create an admin account.
 
 ## Commands
 
-| Command               | Description                 |
-|-----------------------|-----------------------------|
-| `./kanban.sh build`   | Build container image       |
-| `./kanban.sh run`     | Start container             |
-| `./kanban.sh stop`    | Stop container              |
-| `./kanban.sh restart` | Restart container           |
-| `./kanban.sh logs`    | View logs                   |
-| `./kanban.sh backup`  | Backup DB to ./backups/     |
-| `./kanban.sh status`  | Container status            |
+| Command               | Description                          |
+|-----------------------|--------------------------------------|
+| `./kanban.sh build`   | Build container image                |
+| `./kanban.sh run`     | Start container                      |
+| `./kanban.sh stop`    | Stop container                       |
+| `./kanban.sh restart` | Restart container                    |
+| `./kanban.sh logs`    | View logs                            |
+| `./kanban.sh backup`  | Backup DB to ./backups/              |
+| `./kanban.sh status`  | Container status                     |
+| `./kanban.sh systemd` | Install systemd quadlet unit files   |
+
+Set `KANBAN_PORT` to change the listen port (default `8080`):
+```bash
+KANBAN_PORT=9090 ./kanban.sh run
+```
 
 ## Authentication & Roles
 
@@ -118,10 +124,16 @@ openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
 
 ## Systemd (Quadlet)
 
-For auto-start via systemd quadlet, copy `deploy/kanban.container`
-and `deploy/kanban-data.volume` to `~/.config/containers/systemd/` and run:
+For auto-start via systemd quadlet:
 
 ```bash
+# Install unit files (default port 8080)
+./kanban.sh systemd
+
+# Or with a custom port
+KANBAN_PORT=9090 ./kanban.sh systemd
+
+# Then enable and start
 systemctl --user daemon-reload
 systemctl --user start kanban
 systemctl --user enable kanban

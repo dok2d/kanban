@@ -55,15 +55,21 @@
 
 ## Команды
 
-| Команда               | Описание                    |
-|-----------------------|-----------------------------|
-| `./kanban.sh build`   | Собрать образ контейнера    |
-| `./kanban.sh run`     | Запустить контейнер         |
-| `./kanban.sh stop`    | Остановить                  |
-| `./kanban.sh restart` | Перезапустить               |
-| `./kanban.sh logs`    | Логи                        |
-| `./kanban.sh backup`  | Бэкап БД в ./backups/       |
-| `./kanban.sh status`  | Статус контейнера           |
+| Команда               | Описание                              |
+|-----------------------|---------------------------------------|
+| `./kanban.sh build`   | Собрать образ контейнера              |
+| `./kanban.sh run`     | Запустить контейнер                   |
+| `./kanban.sh stop`    | Остановить                            |
+| `./kanban.sh restart` | Перезапустить                         |
+| `./kanban.sh logs`    | Логи                                  |
+| `./kanban.sh backup`  | Бэкап БД в ./backups/                 |
+| `./kanban.sh status`  | Статус контейнера                     |
+| `./kanban.sh systemd` | Установить systemd quadlet unit-файлы |
+
+Переменная `KANBAN_PORT` задаёт порт (по умолчанию `8080`):
+```bash
+KANBAN_PORT=9090 ./kanban.sh run
+```
 
 ## Авторизация и роли
 
@@ -118,10 +124,16 @@ openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
 
 ## Systemd (Quadlet)
 
-Для автозапуска через systemd quadlet — скопировать `deploy/kanban.container`
-и `deploy/kanban-data.volume` в `~/.config/containers/systemd/` и выполнить:
+Для автозапуска через systemd quadlet:
 
 ```bash
+# Установить unit-файлы (по умолчанию порт 8080)
+./kanban.sh systemd
+
+# Или с другим портом
+KANBAN_PORT=9090 ./kanban.sh systemd
+
+# Затем включить и запустить
 systemctl --user daemon-reload
 systemctl --user start kanban
 systemctl --user enable kanban
