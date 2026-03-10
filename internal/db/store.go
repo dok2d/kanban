@@ -888,13 +888,123 @@ func (s *Store) ExportAll() (*model.ExportData, error) {
 	for _, t := range tasks {
 		allComments = append(allComments, s.flatComments(t.ID)...)
 	}
+
+	// Export users with password hashes for full restore
+	users := s.exportUsers()
+
+	// Export app settings
+	settings := s.exportSettings()
+
+	// Export task dependencies
+	deps := s.exportDependencies()
+
+	// Export task subscriptions
+	subs := s.exportSubscriptions()
+
+	// Export files and images
+	files := s.exportFiles("files")
+	images := s.exportFiles("images")
+
 	return &model.ExportData{
-		Columns:  cols,
-		Epics:    epics,
-		Tags:     tags,
-		Tasks:    tasks,
-		Comments: allComments,
+		Columns:       cols,
+		Epics:         epics,
+		Tags:          tags,
+		Tasks:         tasks,
+		Comments:      allComments,
+		Users:         users,
+		Settings:      settings,
+		Dependencies:  deps,
+		Subscriptions: subs,
+		Files:         files,
+		Images:        images,
 	}, nil
+}
+
+func (s *Store) exportUsers() []model.ExportUser {
+	rows, err := s.db.Query("SELECT id,username,password_hash,role,is_admin,telegram_chat_id FROM users ORDER BY id")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var users []model.ExportUser
+	for rows.Next() {
+		var u model.ExportUser
+		var admin int
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &admin, &u.TelegramID); err != nil {
+			continue
+		}
+		u.IsAdmin = admin == 1
+		users = append(users, u)
+	}
+	return users
+}
+
+func (s *Store) exportSettings() []model.ExportSetting {
+	rows, err := s.db.Query("SELECT key,value FROM app_settings")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var settings []model.ExportSetting
+	for rows.Next() {
+		var st model.ExportSetting
+		if err := rows.Scan(&st.Key, &st.Value); err != nil {
+			continue
+		}
+		settings = append(settings, st)
+	}
+	return settings
+}
+
+func (s *Store) exportDependencies() []model.ExportDependency {
+	rows, err := s.db.Query("SELECT task_id,depends_on_id FROM task_dependencies")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var deps []model.ExportDependency
+	for rows.Next() {
+		var d model.ExportDependency
+		if err := rows.Scan(&d.TaskID, &d.DependsOnID); err != nil {
+			continue
+		}
+		deps = append(deps, d)
+	}
+	return deps
+}
+
+func (s *Store) exportSubscriptions() []model.ExportSubscription {
+	rows, err := s.db.Query("SELECT task_id,user_id FROM task_subscriptions")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var subs []model.ExportSubscription
+	for rows.Next() {
+		var sub model.ExportSubscription
+		if err := rows.Scan(&sub.TaskID, &sub.UserID); err != nil {
+			continue
+		}
+		subs = append(subs, sub)
+	}
+	return subs
+}
+
+func (s *Store) exportFiles(table string) []model.ExportFile {
+	rows, err := s.db.Query(fmt.Sprintf("SELECT id,filename,mime,data FROM %s", table))
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var files []model.ExportFile
+	for rows.Next() {
+		var f model.ExportFile
+		if err := rows.Scan(&f.ID, &f.Filename, &f.Mime, &f.Data); err != nil {
+			continue
+		}
+		files = append(files, f)
+	}
+	return files
 }
 
 func (s *Store) flatComments(taskID int64) []model.Comment {
@@ -1215,7 +1325,7 @@ func (s *Store) UnlinkTelegram(userID int64) error {
 // --- Password Reset ---
 
 func (s *Store) SetResetCode(userID int64, code string) error {
-	expires := time.Now().Add(10 * time.Minute).Format("2006-01-02 15:04:05")
+	expires := time.Now().UTC().Add(10 * time.Minute).Format("2006-01-02 15:04:05")
 	_, err := s.db.Exec("UPDATE users SET reset_code=?, reset_code_expires=? WHERE id=?", code, expires, userID)
 	return err
 }
@@ -1236,7 +1346,7 @@ func (s *Store) ValidateResetCode(username, code string) (*model.User, error) {
 	}
 	if expiresStr.Valid {
 		expires, _ := time.Parse("2006-01-02 15:04:05", expiresStr.String)
-		if time.Now().After(expires) {
+		if time.Now().UTC().After(expires) {
 			return nil, fmt.Errorf("code expired")
 		}
 	}
@@ -1400,9 +1510,35 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 	defer tx.Rollback()
 
 	// Clear existing data
-	for _, tbl := range []string{"comments", "task_tags", "tasks", "tags", "epics", "columns"} {
+	for _, tbl := range []string{"task_subscriptions", "task_dependencies", "comments", "task_tags", "tasks", "tags", "epics", "columns"} {
 		if _, err := tx.Exec("DELETE FROM " + tbl); err != nil {
 			return fmt.Errorf("clear %s: %w", tbl, err)
+		}
+	}
+
+	// Import users if present (for full restore)
+	if len(data.Users) > 0 {
+		tx.Exec("DELETE FROM sessions")
+		tx.Exec("DELETE FROM notifications")
+		tx.Exec("DELETE FROM activity_log")
+		tx.Exec("DELETE FROM users")
+		for _, u := range data.Users {
+			admin := 0
+			if u.IsAdmin {
+				admin = 1
+			}
+			if _, err := tx.Exec("INSERT INTO users(id,username,password_hash,role,is_admin,telegram_chat_id) VALUES(?,?,?,?,?,?)",
+				u.ID, u.Username, u.PasswordHash, u.Role, admin, u.TelegramID); err != nil {
+				return fmt.Errorf("import user: %w", err)
+			}
+		}
+	}
+
+	// Import settings if present
+	if len(data.Settings) > 0 {
+		tx.Exec("DELETE FROM app_settings")
+		for _, st := range data.Settings {
+			tx.Exec("INSERT OR REPLACE INTO app_settings(key,value) VALUES(?,?)", st.Key, st.Value)
 		}
 	}
 
@@ -1426,9 +1562,9 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 	}
 	// Import tasks
 	for _, t := range data.Tasks {
-		if _, err := tx.Exec(`INSERT INTO tasks(id,title,description,todo,project_url,column_id,epic_id,position,priority,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-			t.ID, t.Title, t.Description, t.Todo, t.ProjectURL, t.ColumnID, t.EpicID, t.Position, t.Priority,
+		if _, err := tx.Exec(`INSERT INTO tasks(id,title,description,todo,project_url,column_id,epic_id,assignee_id,position,priority,deadline,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			t.ID, t.Title, t.Description, t.Todo, t.ProjectURL, t.ColumnID, t.EpicID, t.AssigneeID, t.Position, t.Priority, t.Deadline,
 			t.CreatedAt.Format("2006-01-02 15:04:05"), t.UpdatedAt.Format("2006-01-02 15:04:05")); err != nil {
 			return fmt.Errorf("import task: %w", err)
 		}
@@ -1438,10 +1574,37 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 	}
 	// Import comments
 	for _, c := range data.Comments {
-		if _, err := tx.Exec("INSERT INTO comments(id,task_id,parent_id,text,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-			c.ID, c.TaskID, c.ParentID, c.Text,
+		authorID := c.AuthorID
+		if _, err := tx.Exec("INSERT INTO comments(id,task_id,parent_id,author_id,text,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+			c.ID, c.TaskID, c.ParentID, authorID, c.Text,
 			c.CreatedAt.Format("2006-01-02 15:04:05"), c.UpdatedAt.Format("2006-01-02 15:04:05")); err != nil {
 			return fmt.Errorf("import comment: %w", err)
+		}
+	}
+
+	// Import dependencies
+	for _, d := range data.Dependencies {
+		tx.Exec("INSERT OR IGNORE INTO task_dependencies(task_id,depends_on_id) VALUES(?,?)", d.TaskID, d.DependsOnID)
+	}
+
+	// Import subscriptions
+	for _, sub := range data.Subscriptions {
+		tx.Exec("INSERT OR IGNORE INTO task_subscriptions(task_id,user_id) VALUES(?,?)", sub.TaskID, sub.UserID)
+	}
+
+	// Import files
+	if len(data.Files) > 0 {
+		tx.Exec("DELETE FROM files")
+		for _, f := range data.Files {
+			tx.Exec("INSERT INTO files(id,filename,data,mime,size) VALUES(?,?,?,?,?)", f.ID, f.Filename, f.Data, f.Mime, len(f.Data))
+		}
+	}
+
+	// Import images
+	if len(data.Images) > 0 {
+		tx.Exec("DELETE FROM images")
+		for _, f := range data.Images {
+			tx.Exec("INSERT INTO images(id,filename,data,mime,size) VALUES(?,?,?,?,?)", f.ID, f.Filename, f.Data, f.Mime, len(f.Data))
 		}
 	}
 

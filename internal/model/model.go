@@ -115,11 +115,53 @@ type ActivityEntry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// ExportUser contains user data for export (password hash included for full restore)
+type ExportUser struct {
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
+	Role         string `json:"role"`
+	IsAdmin      bool   `json:"is_admin"`
+	TelegramID   int64  `json:"telegram_id,omitempty"`
+}
+
+// ExportSetting stores app settings for export
+type ExportSetting struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// ExportDependency stores task dependency for export
+type ExportDependency struct {
+	TaskID      int64 `json:"task_id"`
+	DependsOnID int64 `json:"depends_on_id"`
+}
+
+// ExportSubscription stores task subscription for export
+type ExportSubscription struct {
+	TaskID int64 `json:"task_id"`
+	UserID int64 `json:"user_id"`
+}
+
+// ExportFile stores file/image data for export
+type ExportFile struct {
+	ID       int64  `json:"id"`
+	Filename string `json:"filename"`
+	Mime     string `json:"mime"`
+	Data     []byte `json:"data"`
+}
+
 // ExportData is the full board export structure
 type ExportData struct {
-	Columns  []Column  `json:"columns"`
-	Epics    []Epic    `json:"epics"`
-	Tags     []Tag     `json:"tags"`
-	Tasks    []Task    `json:"tasks"`
-	Comments []Comment `json:"comments"`
+	Columns       []Column             `json:"columns"`
+	Epics         []Epic               `json:"epics"`
+	Tags          []Tag                `json:"tags"`
+	Tasks         []Task               `json:"tasks"`
+	Comments      []Comment            `json:"comments"`
+	Users         []ExportUser         `json:"users,omitempty"`
+	Settings      []ExportSetting      `json:"settings,omitempty"`
+	Dependencies  []ExportDependency   `json:"dependencies,omitempty"`
+	Subscriptions []ExportSubscription `json:"subscriptions,omitempty"`
+	Files         []ExportFile         `json:"files,omitempty"`
+	Images        []ExportFile         `json:"images,omitempty"`
 }

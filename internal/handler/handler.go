@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const sessionCookie = "kanban_session"
@@ -62,6 +63,7 @@ func New(store *db.Store) *Handler {
 	h := &Handler{store: store, mux: http.NewServeMux()}
 	h.routes()
 	h.initTelegramBot()
+	go h.runBackupScheduler()
 	return h
 }
 
@@ -211,6 +213,7 @@ func (h *Handler) routes() {
 	// Admin settings
 	h.mux.HandleFunc("/api/settings/telegram", h.handleTelegramSettings)
 	h.mux.HandleFunc("/api/settings/telegram/status", h.handleTelegramStatus)
+	h.mux.HandleFunc("/api/settings/timezone", h.handleTimezoneSettings)
 
 	h.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	h.mux.HandleFunc("/", h.handleIndex)
@@ -979,6 +982,11 @@ func (h *Handler) handleExport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
+	user := h.currentUser(r)
+	if user == nil || !user.IsAdmin {
+		http.Error(w, "admin only", 403)
+		return
+	}
 	data, err := h.store.ExportAll()
 	if err != nil {
 		h.logf("export error: %v", err)
@@ -993,6 +1001,11 @@ func (h *Handler) handleExport(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", 405)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil || !user.IsAdmin {
+		http.Error(w, "admin only", 403)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024) // 50MB max import
@@ -1190,6 +1203,7 @@ func (h *Handler) handleResetConfirm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", 400)
 		return
 	}
+	req.Code = strings.TrimSpace(req.Code)
 	if req.Username == "" || req.Code == "" || len(req.NewPassword) < 6 {
 		http.Error(w, "username, code, and new_password (min 6) required", 400)
 		return
@@ -1681,6 +1695,109 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "…"
+}
+
+func (h *Handler) handleTimezoneSettings(w http.ResponseWriter, r *http.Request) {
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		tz := h.store.GetSetting("admin_timezone")
+		if tz == "" {
+			tz = "UTC"
+		}
+		jsonResp(w, map[string]string{"timezone": tz})
+	case http.MethodPost:
+		if !user.IsAdmin {
+			http.Error(w, "admin only", 403)
+			return
+		}
+		var req struct {
+			Timezone string `json:"timezone"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if err := h.store.SetSetting("admin_timezone", req.Timezone); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		jsonResp(w, map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+// runBackupScheduler sends daily backup dump to admin via Telegram at 18:00 admin's timezone
+func (h *Handler) runBackupScheduler() {
+	for {
+		now := time.Now().UTC()
+		adminTZ := h.store.GetSetting("admin_timezone")
+		if adminTZ == "" {
+			adminTZ = "UTC"
+		}
+		loc, err := time.LoadLocation(adminTZ)
+		if err != nil {
+			loc = time.UTC
+		}
+
+		nowLocal := now.In(loc)
+		// Next 18:00 in admin timezone
+		next := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 18, 0, 0, 0, loc)
+		if nowLocal.After(next) {
+			next = next.Add(24 * time.Hour)
+		}
+		sleepDuration := next.Sub(now.In(loc))
+		if sleepDuration < 0 {
+			sleepDuration = time.Minute
+		}
+
+		time.Sleep(sleepDuration)
+
+		h.sendDailyBackup()
+	}
+}
+
+func (h *Handler) sendDailyBackup() {
+	token := h.store.GetSetting("telegram_bot_token")
+	if token == "" {
+		return
+	}
+
+	// Find admin users with telegram linked
+	users, _ := h.store.ListUsers()
+	var adminChatIDs []int64
+	for _, u := range users {
+		if u.IsAdmin && u.TelegramID > 0 {
+			adminChatIDs = append(adminChatIDs, u.TelegramID)
+		}
+	}
+	if len(adminChatIDs) == 0 {
+		return
+	}
+
+	// Generate export
+	data, err := h.store.ExportAll()
+	if err != nil {
+		log.Printf("[backup] export error: %v", err)
+		return
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		log.Printf("[backup] marshal error: %v", err)
+		return
+	}
+
+	filename := fmt.Sprintf("kanban-backup-%s.json", time.Now().UTC().Format("2006-01-02"))
+	for _, chatID := range adminChatIDs {
+		h.sendTelegramDocument(token, chatID, filename, jsonData, "📦 Ежедневный бэкап Kanban")
+	}
+	log.Printf("[backup] sent daily backup to %d admin(s)", len(adminChatIDs))
 }
 
 // helpers

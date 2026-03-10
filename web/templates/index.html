@@ -442,7 +442,7 @@ a{color:var(--accent2);text-decoration:none}
     <h3 data-i18n="timezone"></h3>
     <select class="tz-select" id="tz-select" onchange="setTimezone(this.value)"></select>
   </div>
-  <div class="sidebar-section">
+  <div class="sidebar-section" id="export-import-section" style="display:none">
     <h3 data-i18n="exportImport"></h3>
     <div class="export-import-btns">
       <button class="btn btn-ghost btn-sm" onclick="exportBoard()">&#128229; Export JSON</button>
@@ -575,7 +575,14 @@ function fmtDate(s) {
   const d = new Date(s);
   const tz = getTimezone();
   const loc = langLocale();
-  try { return d.toLocaleDateString(loc, {timeZone: tz}) + ' ' + d.toLocaleTimeString(loc, {hour:'2-digit',minute:'2-digit',hour12:false, timeZone: tz}); }
+  try {
+    if (currentLang === 'ru') {
+      const parts = {};
+      new Intl.DateTimeFormat('ru-RU', {timeZone: tz, year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d).forEach(p => parts[p.type] = p.value);
+      return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+    }
+    return d.toLocaleDateString(loc, {timeZone: tz}) + ' ' + d.toLocaleTimeString(loc, {hour:'2-digit',minute:'2-digit',hour12:false, timeZone: tz});
+  }
   catch { return d.toLocaleDateString(loc) + ' ' + d.toLocaleTimeString(loc, {hour:'2-digit',minute:'2-digit',hour12:false}); }
 }
 function autoPrefix(url) {
@@ -776,7 +783,11 @@ function togglePersonalView() {
 
 // === Timezone ===
 function getTimezone() { return localStorage.getItem('kanban-tz') || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
-function setTimezone(tz) { localStorage.setItem('kanban-tz', tz); renderCurrentView(); }
+function setTimezone(tz) {
+  localStorage.setItem('kanban-tz', tz);
+  if (isAdmin()) { api('/api/settings/timezone', 'POST', { timezone: tz }).catch(()=>{}); }
+  renderCurrentView();
+}
 function initTimezoneSelect() {
   const sel = document.getElementById('tz-select');
   if (!sel) return;
@@ -855,6 +866,9 @@ function updateUserUI() {
   if (epicAdd) epicAdd.style.display = isAdmin() ? '' : 'none';
   const tagAdd = document.getElementById('tag-add-form');
   if (tagAdd) tagAdd.style.display = isAdmin() ? '' : 'none';
+  // Export/Import section - admin only
+  const eiSec = document.getElementById('export-import-section');
+  if (eiSec) eiSec.style.display = isAdmin() ? '' : 'none';
   // Telegram section: always for admin, only if configured for others
   const tgSec = document.getElementById('telegram-section');
   if (tgSec) {
@@ -961,9 +975,6 @@ function renderTelegramSection() {
     html += `<div style="font-size:.82rem;color:var(--fg3);margin-bottom:4px">${t('telegramNotLinked')}</div>
       <button class="btn btn-ghost btn-sm" onclick="generateTelegramHash()">${t('generateHash')}</button>
       <div id="tg-hash-display" style="margin-top:4px;font-size:.78rem;color:var(--fg3)"></div>`;
-    if (botUsername) {
-      html += `<div style="margin-top:4px;font-size:.78rem;color:var(--fg3)">${t('telegramHint')}: <a href="https://t.me/${botUsername.replace(/^@/,'')}" target="_blank" rel="noopener" style="color:var(--accent2)">@${esc(botUsername.replace(/^@/,''))}</a></div>`;
-    }
   }
   el.innerHTML = html;
 }
@@ -978,7 +989,12 @@ async function generateTelegramHash() {
   try {
     const r = await api('/api/user/telegram/link', 'POST');
     const el = document.getElementById('tg-hash-display');
-    if (el) el.innerHTML = `<code style="user-select:all;font-size:.9rem;color:var(--accent2)">${r.hash}</code><br><span>${t('telegramHint')}</span>`;
+    if (el) {
+      const botUsername = currentUser.telegram_bot_username;
+      let botLink = '';
+      if (botUsername) botLink = `<br><span>${t('telegramHint')}: <a href="https://t.me/${botUsername.replace(/^@/,'')}" target="_blank" rel="noopener" style="color:var(--accent2)">@${esc(botUsername.replace(/^@/,''))}</a></span>`;
+      el.innerHTML = `<code style="user-select:all;font-size:.9rem;color:var(--accent2)">${r.hash}</code>${botLink}`;
+    }
   } catch(e) { alert(t('error')); }
 }
 async function unlinkTelegram() {
@@ -1078,6 +1094,8 @@ async function onDrop(e, colId) {
   e.preventDefault();
   document.querySelectorAll('.drop-zone.over').forEach(z => z.classList.remove('over'));
   if (!draggedTaskId) return;
+  const taskId = draggedTaskId;
+  draggedTaskId = null;
   const colBody = e.target.closest('.col-body');
   const cards = colBody ? Array.from(colBody.querySelectorAll('.card')) : [];
   let pos = cards.length;
@@ -1087,12 +1105,38 @@ async function onDrop(e, colId) {
     if (idx >= 0) pos = idx;
   }
   try {
-    await api('/api/tasks/move', 'POST', { task_id: draggedTaskId, column_id: colId, position: pos });
-    const task = state.tasks.find(t => t.id === draggedTaskId);
+    await api('/api/tasks/move', 'POST', { task_id: taskId, column_id: colId, position: pos });
+    // Update state
+    const task = state.tasks.find(t => t.id === taskId);
+    const oldColId = task ? task.column_id : null;
     if (task) { task.column_id = colId; task.position = pos; }
-    renderBoard();
+    // Surgical DOM update: move the card element
+    const draggedCard = document.querySelector(`.card[data-task="${taskId}"]`);
+    if (draggedCard && colBody) {
+      const dropZone = colBody.querySelector('.drop-zone');
+      const targetCards = Array.from(colBody.querySelectorAll('.card'));
+      if (pos < targetCards.length) {
+        colBody.insertBefore(draggedCard, targetCards[pos]);
+      } else if (dropZone) {
+        colBody.insertBefore(draggedCard, dropZone);
+      } else {
+        colBody.appendChild(draggedCard);
+      }
+      // Update column counts
+      updateColCount(oldColId);
+      updateColCount(colId);
+    } else {
+      renderBoard();
+    }
   } catch(e) { console.error(e); }
-  draggedTaskId = null;
+}
+function updateColCount(colId) {
+  if (!colId) return;
+  const colEl = document.querySelector(`.column[data-col="${colId}"]`);
+  if (!colEl) return;
+  const cnt = colEl.querySelectorAll('.card').length;
+  const badge = colEl.querySelector('.col-count');
+  if (badge) badge.textContent = cnt;
 }
 
 // === Task Page ===
@@ -1451,6 +1495,13 @@ function sortEpicTasks(tasks, mode) {
   return sorted;
 }
 
+async function moveEpicTask(taskId, colId, epicId) {
+  try {
+    await api('/api/tasks/move', 'POST', { task_id: taskId, column_id: colId, position: 9999 });
+    renderEpicPage(epicId);
+  } catch(e) { alert(t('error')); }
+}
+
 // === Epic Page ===
 async function renderEpicPage(epicId) {
   const app = document.getElementById('app');
@@ -1481,10 +1532,15 @@ async function renderEpicPage(epicId) {
 
   function renderEpicTaskRow(task) {
     const colName = state.columns.find(c => c.id === task.column_id);
+    let colSelect = '';
+    if (!isReadonly() && state.columns.length > 1) {
+      const opts = state.columns.map(c => `<option value="${c.id}" ${c.id === task.column_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+      colSelect = `<select class="epic-task-col-select" onclick="event.stopPropagation()" onchange="event.stopPropagation();moveEpicTask(${task.id},+this.value,${epicId})" style="background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:2px 6px;color:var(--fg);font-size:.78rem;cursor:pointer">${opts}</select>`;
+    }
     return `<div class="epic-task-row" onclick="navigateTo('/task/${task.id}')">
       <span class="card-id">#${task.id}</span>
       <span class="epic-task-title">${esc(task.title)}</span>
-      <span class="epic-task-status">${colName ? esc(colName.name) : ''}</span>
+      ${colSelect || `<span class="epic-task-status">${colName ? esc(colName.name) : ''}</span>`}
       ${task.priority > 0 ? `<span class="epic-task-prio" style="color:${prioColors[task.priority]}">P${task.priority}</span>` : ''}
     </div>`;
   }
@@ -1514,21 +1570,6 @@ async function renderEpicPage(epicId) {
       <div class="epic-progress-bar"><div class="epic-progress-fill" style="width:${pct}%;background:${epic.color}"></div></div>
     </div>`;
 
-  // Backlog section (collapsible)
-  if (backlogTasks.length > 0) {
-    const sortedBacklog = sortEpicTasks(backlogTasks, epicBacklogSort);
-    html += `<div class="task-page-section" style="margin-bottom:16px;opacity:.7">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <h3 style="margin:0">${t('backlog')} (${backlogTasks.length})</h3>
-        <div style="display:flex;gap:6px;align-items:center">
-          <span style="font-size:.78rem;color:var(--fg3)">${t('sortBy')}:</span>
-          ${renderSortSelect('kanban-epic-backlog-sort', epicBacklogSort)}
-        </div>
-      </div>
-      <div class="epic-task-list">${sortedBacklog.map(renderEpicTaskRow).join('')}</div>
-    </div>`;
-  }
-
   // Active tasks section
   html += `<div style="margin-bottom:8px;display:flex;gap:6px;align-items:center;justify-content:space-between">
       <h3 style="margin:0">${t('active')} (${activeTasks.length})</h3>
@@ -1544,6 +1585,21 @@ async function renderEpicPage(epicId) {
   }
   if (activeTasks.length === 0) html += `<p style="color:var(--fg3)">${t('noActiveTasks')}</p>`;
   html += '</div>';
+
+  // Backlog section (after active)
+  if (backlogTasks.length > 0) {
+    const sortedBacklog = sortEpicTasks(backlogTasks, epicBacklogSort);
+    html += `<div class="task-page-section" style="margin-top:16px;opacity:.7">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="margin:0">${t('backlog')} (${backlogTasks.length})</h3>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:.78rem;color:var(--fg3)">${t('sortBy')}:</span>
+          ${renderSortSelect('kanban-epic-backlog-sort', epicBacklogSort)}
+        </div>
+      </div>
+      <div class="epic-task-list">${sortedBacklog.map(renderEpicTaskRow).join('')}</div>
+    </div>`;
+  }
 
   // Done section (at the bottom)
   if (doneTasks.length > 0) {
