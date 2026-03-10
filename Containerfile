@@ -21,7 +21,7 @@ RUN curl -sL "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;6
       fname=$(echo "$url" | sed 's|.*/||'); \
       curl -sL "$url" -o "/assets/fonts/$fname"; \
     done && \
-    sed 's|url(https://[^)]*\([^/)]*\))|url(/static/fonts/\1)|g' /tmp/fonts.css > /assets/css/fonts.css
+    sed -E 's|url\(https?://[^)]*/(.[^/)]+)\)|url(/static/fonts/\1)|g' /tmp/fonts.css > /assets/css/fonts.css
 
 # ---- Build stage ----
 FROM docker.io/library/golang:1.22-bookworm AS builder

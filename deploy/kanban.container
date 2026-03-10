@@ -7,19 +7,18 @@ Wants=network-online.target
 Image=localhost/kanban:latest
 ContainerName=kanban
 PublishPort=127.0.0.1:8080:8080
-Volume=kanban-data:/data:Z
+Volume=kanban-data.volume:/data:Z
 
 # Security hardening
 NoNewPrivileges=true
 ReadOnly=true
-# /data needs to be writable for SQLite
+ReadOnlyTmpfs=true
+# /data writable for SQLite, /tmp for runtime
 Tmpfs=/tmp:rw,noexec,nosuid,size=64m
 DropCapability=ALL
-SeccompProfile=/usr/share/containers/seccomp.json
 
 # Resource limits
-MemoryMax=256M
-CPUQuota=50%
+PodmanArgs=--memory=256m --cpus=0.5
 
 [Service]
 Restart=always
