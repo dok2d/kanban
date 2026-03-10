@@ -38,6 +38,7 @@ type Task struct {
 	AssigneeID  *int64    `json:"assignee_id"`
 	Position    int       `json:"position"`
 	Priority    int       `json:"priority"` // 0=none,1=low,2=med,3=high,4=critical
+	Deadline    string    `json:"deadline"`  // ISO datetime or empty
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	Tags        []Tag     `json:"tags"`

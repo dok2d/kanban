@@ -2,7 +2,7 @@
 
 [Русская версия](README.RUS.md)
 
-Minimalist self-hosted Kanban board with epics, tags, comments, authentication, and drag-and-drop.
+Minimalist self-hosted Kanban board with epics, tags, comments, notifications, Telegram integration, and drag-and-drop.
 
 ## Stack
 
@@ -14,22 +14,28 @@ Minimalist self-hosted Kanban board with epics, tags, comments, authentication, 
 ## Features
 
 - Kanban board with drag-and-drop cards between columns
-- Create / edit / delete tasks
+- Create / edit / delete tasks with inline editing
 - Priorities (none, low, medium, high, critical)
+- Optional deadline with visual indicator on cards
 - Epics with color coding and progress tracking
 - Tags (multiple per task)
-- Nested comments with replies
-- Task dependencies (depends on / blocks)
+- Nested comments with replies (Markdown, @mentions)
+- Task dependencies with search/filter (depends on / blocks)
 - Markdown descriptions with syntax highlighting
-- Interactive TODO lists on tasks
+- Interactive TODO checklists on tasks
 - File attachments and image paste (Ctrl+V)
 - Search across tasks, comments, tags, and epics (plaintext / regex)
 - Column management (create, reorder, delete)
+- Three roles: Admin, User, Read-only
+- Notification system (in-app + Telegram)
+- Task subscriptions for update tracking
+- Telegram bot integration for push notifications
+- User activity feed with detailed change history
 - 8 themes (dark, light, ocean, forest, nord, dracula, solarized, spacedust)
+- 10 languages (Russian, English, Chinese, Spanish, French, German, Portuguese, Japanese, Korean, Arabic)
 - Adjustable font size
 - Timezone selector
 - Export / import board as JSON
-- Authentication with user management (admin panel)
 - All static assets served locally (no external CDN)
 - Mobile responsive
 
@@ -59,15 +65,34 @@ On first launch you will be prompted to create an admin account.
 | `./kanban.sh backup`  | Backup DB to ./backups/     |
 | `./kanban.sh status`  | Container status            |
 
-## Authentication
+## Authentication & Roles
 
-The application requires authentication. On first launch, create an admin account via the setup page. Admins can:
+The application requires authentication. On first launch, create an admin account via the setup page.
 
-- Create and delete users
-- Reset user passwords
-- All users have full board access
+Three roles are available:
+- **Admin** — full access: manage users, columns, epics, tags, Telegram bot settings
+- **User** — create/edit/delete tasks, comment, subscribe to notifications
+- **Read-only** — view board and tasks, receive notifications
 
-Sessions are cookie-based (30-day expiry) with PBKDF2-HMAC-SHA256 password hashing.
+Sessions are cookie-based (90-day expiry) with PBKDF2-HMAC-SHA256 password hashing.
+
+Password recovery is available for users with linked Telegram — a 6-digit code is sent to the bot.
+
+## Telegram Integration
+
+Admins can configure a Telegram bot for push notifications:
+
+1. Create a bot via [@BotFather](https://t.me/BotFather) and get the token
+2. In Settings → Telegram, enter the bot token and bot username
+3. Users link their accounts by sending a hash code to the bot
+
+Notifications are sent for: task assignments, @mentions, comments on subscribed tasks, and task updates.
+
+Bot commands:
+- `/tasks` — list your assigned tasks
+- `/task N` — view task #N details and recent comments
+- `/comment N text` — add a comment to task #N
+- `/help` — show available commands
 
 ## Container Security
 
@@ -94,7 +119,7 @@ openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
 ## Systemd (Quadlet)
 
 For auto-start via systemd quadlet, copy `deploy/kanban.container`
-to `~/.config/containers/systemd/` and run:
+and `deploy/kanban-data.volume` to `~/.config/containers/systemd/` and run:
 
 ```bash
 systemctl --user daemon-reload
@@ -110,14 +135,18 @@ kanban/
 ├── internal/
 │   ├── auth/auth.go           # PBKDF2 password hashing & tokens
 │   ├── db/store.go            # SQLite storage + migrations
-│   ├── handler/handler.go     # HTTP handlers (REST API)
+│   ├── handler/
+│   │   ├── handler.go         # HTTP handlers (REST API)
+│   │   └── telegram.go        # Telegram bot integration
 │   └── model/model.go         # data models
 ├── web/
+│   ├── static/                # JS, CSS, fonts (downloaded at build)
 │   └── templates/
 │       ├── index.html         # SPA frontend
 │       └── login.html         # login / setup page
 ├── deploy/
 │   ├── kanban.container       # Quadlet unit
+│   ├── kanban-data.volume     # Quadlet volume
 │   └── nginx-kanban.conf      # Nginx config
 ├── Containerfile              # multi-stage build (assets + Go + runtime)
 ├── kanban.sh                  # management script
@@ -136,6 +165,8 @@ All endpoints return JSON. Authentication required (session cookie).
 | POST   | /api/auth/login   | Login                    |
 | POST   | /api/auth/logout  | Logout                   |
 | GET    | /api/auth/me      | Current user info        |
+| POST   | /api/auth/reset-request | Request password reset (via Telegram) |
+| POST   | /api/auth/reset-confirm | Confirm reset with code |
 
 ### Users (admin only)
 
@@ -143,7 +174,7 @@ All endpoints return JSON. Authentication required (session cookie).
 |--------|-------------------|--------------------------|
 | GET    | /api/users        | List users               |
 | POST   | /api/users        | Create user              |
-| PUT    | /api/users/:id    | Update user password     |
+| PUT    | /api/users/:id    | Update user role/password|
 | DELETE | /api/users/:id    | Delete user              |
 
 ### Board
@@ -157,6 +188,31 @@ All endpoints return JSON. Authentication required (session cookie).
 | PUT    | /api/tasks/:id      | Update task                            |
 | DELETE | /api/tasks/:id      | Delete task                            |
 | POST   | /api/tasks/move     | Move task between columns              |
+
+### Notifications & Subscriptions
+
+| Method | Path                       | Description               |
+|--------|----------------------------|---------------------------|
+| GET    | /api/notifications         | User notifications        |
+| POST   | /api/notifications/read    | Mark notification read    |
+| POST   | /api/notifications/read-all| Mark all read             |
+| POST   | /api/subscribe             | Subscribe to task         |
+| POST   | /api/unsubscribe           | Unsubscribe from task     |
+
+### Telegram
+
+| Method | Path                          | Description                |
+|--------|-------------------------------|----------------------------|
+| GET    | /api/settings/telegram        | Get bot settings (admin)   |
+| POST   | /api/settings/telegram        | Set bot token/username     |
+| GET    | /api/settings/telegram/status | Check if bot configured    |
+| POST   | /api/user/telegram/link       | Generate link hash         |
+| POST   | /api/user/telegram/unlink     | Unlink Telegram            |
+
+### Other
+
+| Method | Path                | Description                            |
+|--------|---------------------|----------------------------------------|
 | GET    | /api/columns        | List columns                           |
 | POST   | /api/columns        | Create column                          |
 | PUT    | /api/columns/:id    | Update column                          |
@@ -180,3 +236,5 @@ All endpoints return JSON. Authentication required (session cookie).
 | GET    | /api/files/:id      | Download file                          |
 | GET    | /api/export         | Export board as JSON                   |
 | POST   | /api/import         | Import board from JSON                 |
+| GET    | /api/user/activity/:id | User activity feed                  |
+| POST   | /api/user/password  | Change own password                    |

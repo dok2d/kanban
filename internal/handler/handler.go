@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"kanban/internal/db"
 	"kanban/internal/model"
 	"log"
+	"math/big"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -84,6 +86,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Public paths: login page, login API, static assets, setup
 	path := r.URL.Path
 	if path == "/login" || path == "/api/auth/login" || path == "/api/auth/setup" ||
+		path == "/api/auth/reset-request" || path == "/api/auth/reset-confirm" ||
 		strings.HasPrefix(path, "/static/") {
 		h.mux.ServeHTTP(w, r)
 		return
@@ -160,6 +163,8 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/auth/logout", h.handleLogout)
 	h.mux.HandleFunc("/api/auth/setup", h.handleSetup)
 	h.mux.HandleFunc("/api/auth/me", h.handleAuthMe)
+	h.mux.HandleFunc("/api/auth/reset-request", h.handleResetRequest)
+	h.mux.HandleFunc("/api/auth/reset-confirm", h.handleResetConfirm)
 	h.mux.HandleFunc("/login", h.handleLoginPage)
 
 	// User management (admin only)
@@ -205,6 +210,7 @@ func (h *Handler) routes() {
 
 	// Admin settings
 	h.mux.HandleFunc("/api/settings/telegram", h.handleTelegramSettings)
+	h.mux.HandleFunc("/api/settings/telegram/status", h.handleTelegramStatus)
 
 	h.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	h.mux.HandleFunc("/", h.handleIndex)
@@ -300,6 +306,16 @@ func (h *Handler) handleColumn(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
+		// Protect first (Backlog) and last (Done) columns from deletion
+		cols, err := h.store.ListColumns()
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		if len(cols) > 0 && (cols[0].ID == id || cols[len(cols)-1].ID == id) {
+			http.Error(w, "cannot delete Backlog or Done column", 403)
+			return
+		}
 		if err := h.store.DeleteColumn(id); err != nil {
 			h.logf("DeleteColumn(%d) failed: %v", id, err)
 			http.Error(w, err.Error(), 500)
@@ -631,6 +647,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			EpicID       *int64  `json:"epic_id"`
 			AssigneeID   *int64  `json:"assignee_id"`
 			Priority     int     `json:"priority"`
+			Deadline     string  `json:"deadline"`
 			TagIDs       []int64 `json:"tag_ids"`
 			DependsOnIDs []int64 `json:"depends_on_ids"`
 		}
@@ -642,7 +659,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "title and column_id required", 400)
 			return
 		}
-		id, err := h.store.CreateTask(req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.AssigneeID, req.Priority, req.TagIDs)
+		id, err := h.store.CreateTask(req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.AssigneeID, req.Priority, req.TagIDs, req.Deadline)
 		if err != nil {
 			h.logf("create task: %v", err)
 			http.Error(w, err.Error(), 500)
@@ -714,6 +731,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			EpicID       *int64  `json:"epic_id"`
 			AssigneeID   *int64  `json:"assignee_id"`
 			Priority     int     `json:"priority"`
+			Deadline     string  `json:"deadline"`
 			TagIDs       []int64 `json:"tag_ids"`
 			DependsOnIDs []int64 `json:"depends_on_ids"`
 		}
@@ -725,7 +743,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 		// Get old task for comparison
 		oldTask, _ := h.store.GetTask(id)
 
-		if err := h.store.UpdateTask(id, req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.AssigneeID, req.Priority, req.TagIDs); err != nil {
+		if err := h.store.UpdateTask(id, req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.AssigneeID, req.Priority, req.TagIDs, req.Deadline); err != nil {
 			h.logf("UpdateTask(%d) error: %v", id, err)
 			http.Error(w, err.Error(), 500)
 			return
@@ -738,7 +756,14 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if user != nil {
-			h.store.LogActivity(user.ID, "edit_task", &id, req.Title)
+			// Build detailed change description
+			changes := h.describeTaskChanges(oldTask, task)
+			shortText := fmt.Sprintf("@%s обновил(а) задачу #%d: %s", user.Username, id, req.Title)
+			detailedText := shortText
+			if changes != "" {
+				detailedText = shortText + "\n" + changes
+			}
+			h.store.LogActivity(user.ID, "edit_task", &id, truncate(detailedText, 1000))
 
 			// Notify new assignee
 			if req.AssigneeID != nil && *req.AssigneeID != user.ID {
@@ -749,8 +774,11 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Notify subscribers about edit
-			h.notifySubscribers(id, user.ID, fmt.Sprintf("@%s обновил(а) задачу #%d: %s", user.Username, id, req.Title))
+			// Notify subscribers about edit with details
+			h.notifySubscribers(id, user.ID, truncate(shortText, 200))
+			if changes != "" {
+				h.sendSubscribersTelegram(id, user.ID, truncate(detailedText, 500))
+			}
 
 			// Process mentions in description
 			h.processMentions(req.Description, user, &id, req.Title)
@@ -796,11 +824,21 @@ func (h *Handler) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 	}
 	user := h.currentUser(r)
 	if user != nil {
-		h.store.LogActivity(user.ID, "move_task", &req.TaskID, "")
 		// Notify subscribers
 		task, _ := h.store.GetTask(req.TaskID)
+		cols, _ := h.store.ListColumns()
+		colName := ""
+		for _, c := range cols {
+			if c.ID == req.ColumnID {
+				colName = c.Name
+				break
+			}
+		}
+		details := colName
+		h.store.LogActivity(user.ID, "move_task", &req.TaskID, details)
 		if task != nil {
-			h.notifySubscribers(req.TaskID, user.ID, fmt.Sprintf("@%s переместил(а) задачу #%d: %s", user.Username, req.TaskID, task.Title))
+			shortText := fmt.Sprintf("@%s переместил(а) задачу #%d: %s → %s", user.Username, req.TaskID, task.Title, colName)
+			h.notifySubscribers(req.TaskID, user.ID, truncate(shortText, 200))
 		}
 	}
 	jsonResp(w, map[string]string{"status": "ok"})
@@ -837,12 +875,16 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user != nil {
-		h.store.LogActivity(user.ID, "comment", &req.TaskID, "")
+		commentPreview := truncate(req.Text, 200)
+		h.store.LogActivity(user.ID, "comment", &req.TaskID, commentPreview)
 
 		// Notify subscribers about comment
 		task, _ := h.store.GetTask(req.TaskID)
 		if task != nil {
-			h.notifySubscribers(req.TaskID, user.ID, fmt.Sprintf("@%s оставил(а) комментарий к задаче #%d: %s", user.Username, req.TaskID, task.Title))
+			shortText := fmt.Sprintf("@%s оставил(а) комментарий к задаче #%d: %s", user.Username, req.TaskID, task.Title)
+			h.notifySubscribers(req.TaskID, user.ID, shortText)
+			detailedText := shortText + "\n> " + truncate(req.Text, 300)
+			h.sendSubscribersTelegram(req.TaskID, user.ID, detailedText)
 		}
 
 		// Process mentions in comment
@@ -1004,7 +1046,7 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   30 * 24 * 3600,
+		MaxAge:   90 * 24 * 3600,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -1038,7 +1080,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   30 * 24 * 3600,
+		MaxAge:   90 * 24 * 3600,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -1075,20 +1117,94 @@ func (h *Handler) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	unread := h.store.UnreadNotificationCount(user.ID)
+	tgConfigured := h.store.GetSetting("telegram_bot_token") != ""
+	tgBotUsername := h.store.GetSetting("telegram_bot_username")
 	jsonResp(w, map[string]any{
-		"id":          fullUser.ID,
-		"username":    fullUser.Username,
-		"role":        fullUser.Role,
-		"is_admin":    fullUser.IsAdmin,
-		"created_at":  fullUser.CreatedAt,
-		"telegram_id": fullUser.TelegramID,
-		"link_hash":   fullUser.LinkHash,
-		"unread":      unread,
+		"id":                   fullUser.ID,
+		"username":             fullUser.Username,
+		"role":                 fullUser.Role,
+		"is_admin":             fullUser.IsAdmin,
+		"created_at":           fullUser.CreatedAt,
+		"telegram_id":          fullUser.TelegramID,
+		"link_hash":            fullUser.LinkHash,
+		"unread":               unread,
+		"telegram_configured":  tgConfigured,
+		"telegram_bot_username": tgBotUsername,
 	})
 }
 
 func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "web/templates/login.html")
+}
+
+func (h *Handler) handleResetRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" {
+		http.Error(w, "username required", 400)
+		return
+	}
+	user, err := h.store.GetUserByUsername(req.Username)
+	if err != nil {
+		// Don't reveal whether user exists
+		jsonResp(w, map[string]string{"status": "ok"})
+		return
+	}
+	if user.TelegramID == 0 {
+		// Don't reveal whether user has Telegram linked
+		jsonResp(w, map[string]string{"status": "ok"})
+		return
+	}
+	// Generate 6-digit code using crypto/rand
+	n, err2 := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err2 != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	code := fmt.Sprintf("%06d", n.Int64())
+	if err := h.store.SetResetCode(user.ID, code); err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	// Send code via Telegram
+	h.sendTelegramNotification(user.ID, fmt.Sprintf("Код восстановления пароля: %s\nДействителен 10 минут.", code))
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleResetConfirm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Username    string `json:"username"`
+		Code        string `json:"code"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	if req.Username == "" || req.Code == "" || len(req.NewPassword) < 6 {
+		http.Error(w, "username, code, and new_password (min 6) required", 400)
+		return
+	}
+	user, err := h.store.ValidateResetCode(req.Username, req.Code)
+	if err != nil {
+		http.Error(w, "invalid or expired code", 400)
+		return
+	}
+	if err := h.store.UpdateUserPassword(user.ID, req.NewPassword); err != nil {
+		http.Error(w, "internal error", 500)
+		return
+	}
+	h.store.ClearResetCode(user.ID)
+	jsonResp(w, map[string]string{"status": "ok"})
 }
 
 // --- User management (admin only) ---
@@ -1429,10 +1545,12 @@ func (h *Handler) handleTelegramSettings(w http.ResponseWriter, r *http.Request)
 	switch r.Method {
 	case http.MethodGet:
 		token := h.store.GetSetting("telegram_bot_token")
-		jsonResp(w, map[string]string{"token": token})
+		botUsername := h.store.GetSetting("telegram_bot_username")
+		jsonResp(w, map[string]string{"token": token, "bot_username": botUsername})
 	case http.MethodPost:
 		var req struct {
-			Token string `json:"token"`
+			Token       string `json:"token"`
+			BotUsername string `json:"bot_username"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", 400)
@@ -1442,12 +1560,29 @@ func (h *Handler) handleTelegramSettings(w http.ResponseWriter, r *http.Request)
 			http.Error(w, err.Error(), 500)
 			return
 		}
+		if err := h.store.SetSetting("telegram_bot_username", req.BotUsername); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 		// Restart telegram bot
 		h.initTelegramBot()
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
 		http.Error(w, "method not allowed", 405)
 	}
+}
+
+func (h *Handler) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	token := h.store.GetSetting("telegram_bot_token")
+	botUsername := h.store.GetSetting("telegram_bot_username")
+	jsonResp(w, map[string]any{
+		"configured":   token != "",
+		"bot_username": botUsername,
+	})
 }
 
 // --- Mention Processing ---
@@ -1479,8 +1614,73 @@ func (h *Handler) notifySubscribers(taskID int64, excludeUserID int64, text stri
 			continue
 		}
 		h.store.CreateNotification(sub.ID, "subscribed", text, &taskID)
+	}
+}
+
+func (h *Handler) sendSubscribersTelegram(taskID int64, excludeUserID int64, text string) {
+	subscribers := h.store.TaskSubscribers(taskID)
+	for _, sub := range subscribers {
+		if sub.ID == excludeUserID {
+			continue
+		}
 		h.sendTelegramNotification(sub.ID, text)
 	}
+}
+
+func (h *Handler) describeTaskChanges(oldTask, newTask *model.Task) string {
+	if oldTask == nil || newTask == nil {
+		return ""
+	}
+	var parts []string
+	if oldTask.Title != newTask.Title {
+		parts = append(parts, fmt.Sprintf("Название: %s → %s", truncate(oldTask.Title, 60), truncate(newTask.Title, 60)))
+	}
+	if oldTask.ColumnID != newTask.ColumnID {
+		parts = append(parts, "Колонка изменена")
+	}
+	if oldTask.Priority != newTask.Priority {
+		pnames := []string{"—", "Низкий", "Средний", "Высокий", "Критический"}
+		oP, nP := oldTask.Priority, newTask.Priority
+		if oP >= 0 && oP < len(pnames) && nP >= 0 && nP < len(pnames) {
+			parts = append(parts, fmt.Sprintf("Приоритет: %s → %s", pnames[oP], pnames[nP]))
+		}
+	}
+	oldAssignee := ""
+	newAssignee := ""
+	if oldTask.Assignee != nil {
+		oldAssignee = oldTask.Assignee.Username
+	}
+	if newTask.Assignee != nil {
+		newAssignee = newTask.Assignee.Username
+	}
+	if oldAssignee != newAssignee {
+		if newAssignee == "" {
+			parts = append(parts, "Исполнитель снят")
+		} else {
+			parts = append(parts, fmt.Sprintf("Исполнитель: @%s", newAssignee))
+		}
+	}
+	if oldTask.Deadline != newTask.Deadline {
+		if newTask.Deadline == "" {
+			parts = append(parts, "Дедлайн снят")
+		} else {
+			parts = append(parts, fmt.Sprintf("Дедлайн: %s", newTask.Deadline))
+		}
+	}
+	if oldTask.Description != newTask.Description {
+		parts = append(parts, "Описание изменено")
+	}
+	if oldTask.Todo != newTask.Todo {
+		parts = append(parts, "Чеклист обновлён")
+	}
+	return strings.Join(parts, "\n")
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "…"
 }
 
 // helpers
