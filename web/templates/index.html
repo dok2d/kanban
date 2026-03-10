@@ -990,10 +990,7 @@ async function generateTelegramHash() {
     const r = await api('/api/user/telegram/link', 'POST');
     const el = document.getElementById('tg-hash-display');
     if (el) {
-      const botUsername = currentUser.telegram_bot_username;
-      let botLink = '';
-      if (botUsername) botLink = `<br><span>${t('telegramHint')}: <a href="https://t.me/${botUsername.replace(/^@/,'')}" target="_blank" rel="noopener" style="color:var(--accent2)">@${esc(botUsername.replace(/^@/,''))}</a></span>`;
-      el.innerHTML = `<code style="user-select:all;font-size:.9rem;color:var(--accent2)">${r.hash}</code>${botLink}`;
+      el.innerHTML = `<code style="user-select:all;font-size:.9rem;color:var(--accent2)">${r.hash}</code>`;
     }
   } catch(e) { alert(t('error')); }
 }
@@ -1540,8 +1537,8 @@ async function renderEpicPage(epicId) {
     return `<div class="epic-task-row" onclick="navigateTo('/task/${task.id}')">
       <span class="card-id">#${task.id}</span>
       <span class="epic-task-title">${esc(task.title)}</span>
-      ${colSelect || `<span class="epic-task-status">${colName ? esc(colName.name) : ''}</span>`}
       ${task.priority > 0 ? `<span class="epic-task-prio" style="color:${prioColors[task.priority]}">P${task.priority}</span>` : ''}
+      ${colSelect || `<span class="epic-task-status">${colName ? esc(colName.name) : ''}</span>`}
     </div>`;
   }
 

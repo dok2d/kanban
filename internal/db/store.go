@@ -16,6 +16,22 @@ type Store struct {
 	verbose bool
 }
 
+// parseTime tries multiple date formats that SQLite/go-sqlite3 may return.
+func parseTime(s string) time.Time {
+	for _, layout := range []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05",
+		time.RFC3339,
+		time.RFC3339Nano,
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 func (s *Store) SetVerbose(v bool) { s.verbose = v }
 
 func (s *Store) logf(format string, args ...any) {
@@ -362,8 +378,8 @@ func (s *Store) EpicTasks(epicID int64) ([]model.Task, error) {
 			&t.ColumnID, &eid, &aid, &t.Position, &t.Priority, &t.Deadline, &ca, &ua); err != nil {
 			return nil, fmt.Errorf("scan epic task: %w", err)
 		}
-		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
-		t.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+		t.CreatedAt = parseTime(ca)
+		t.UpdatedAt = parseTime(ua)
 		if eid.Valid {
 			t.EpicID = &eid.Int64
 		}
@@ -469,8 +485,8 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 			&assigneeID, &assigneeName); err != nil {
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
-		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
-		t.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+		t.CreatedAt = parseTime(ca)
+		t.UpdatedAt = parseTime(ua)
 		if eid.Valid {
 			t.EpicID = &eid.Int64
 			t.Epic = &model.Epic{ID: eid.Int64, Name: epicName.String, Color: epicColor.String}
@@ -513,8 +529,8 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
-	t.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+	t.CreatedAt = parseTime(ca)
+	t.UpdatedAt = parseTime(ua)
 	if eid.Valid {
 		t.EpicID = &eid.Int64
 		var e model.Epic
@@ -757,9 +773,9 @@ func (s *Store) taskCommentsTree(taskID int64) []model.Comment {
 			s.logf("taskCommentsTree scan error: %v", err)
 			continue
 		}
-		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
+		c.CreatedAt = parseTime(ca)
 		if ua != "" {
-			c.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+			c.UpdatedAt = parseTime(ua)
 		}
 		if pid != 0 {
 			c.ParentID = &pid
@@ -1021,8 +1037,8 @@ func (s *Store) flatComments(taskID int64) []model.Comment {
 		if err := rows.Scan(&c.ID, &c.TaskID, &pid, &c.Text, &ca, &ua); err != nil {
 			continue
 		}
-		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
-		c.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", ua)
+		c.CreatedAt = parseTime(ca)
+		c.UpdatedAt = parseTime(ua)
 		if pid != 0 {
 			c.ParentID = &pid
 		}
@@ -1345,7 +1361,7 @@ func (s *Store) ValidateResetCode(username, code string) (*model.User, error) {
 		return nil, fmt.Errorf("invalid code")
 	}
 	if expiresStr.Valid {
-		expires, _ := time.Parse("2006-01-02 15:04:05", expiresStr.String)
+		expires := parseTime(expiresStr.String)
 		if time.Now().UTC().After(expires) {
 			return nil, fmt.Errorf("code expired")
 		}
@@ -1387,7 +1403,7 @@ func (s *Store) ListNotifications(userID int64, limit int) ([]model.Notification
 		if err := rows.Scan(&n.ID, &n.UserID, &n.Type, &n.Text, &taskID, &isRead, &ca); err != nil {
 			continue
 		}
-		n.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
+		n.CreatedAt = parseTime(ca)
 		n.IsRead = isRead == 1
 		if taskID.Valid {
 			n.TaskID = &taskID.Int64
@@ -1477,7 +1493,7 @@ func (s *Store) UserActivity(userID int64, limit int) ([]model.ActivityEntry, er
 		if err := rows.Scan(&e.ID, &e.UserID, &e.Action, &taskID, &e.Details, &ca); err != nil {
 			continue
 		}
-		e.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", ca)
+		e.CreatedAt = parseTime(ca)
 		if taskID.Valid {
 			e.TaskID = &taskID.Int64
 		}
