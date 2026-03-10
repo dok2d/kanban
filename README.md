@@ -209,6 +209,13 @@ All endpoints return JSON. Authentication required (session cookie).
 | POST   | /api/user/telegram/link       | Generate link hash         |
 | POST   | /api/user/telegram/unlink     | Unlink Telegram            |
 
+### Settings
+
+| Method | Path                    | Description                |
+|--------|-------------------------|----------------------------|
+| GET    | /api/settings/timezone  | Get server timezone        |
+| POST   | /api/settings/timezone  | Set server timezone        |
+
 ### Other
 
 | Method | Path                | Description                            |
