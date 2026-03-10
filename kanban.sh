@@ -2,10 +2,9 @@
 set -euo pipefail
 
 IMAGE="localhost/kanban:latest"
-CONTAINER="kanban"
-VOLUME="kanban-data"
 
 # Настройки (переопределяются переменными окружения или флагами)
+CONTAINER="${KANBAN_NAME:-kanban}"
 HOST="${KANBAN_HOST:-kanban.local}"
 PORT="${KANBAN_PORT:-}"
 TLS="${KANBAN_TLS:-yes}"
@@ -16,15 +15,18 @@ SSL_KEY="${KANBAN_SSL_KEY:-/etc/nginx/ssl/kanban.key}"
 parse_flags() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --host)   HOST="$2";     shift 2 ;;
-            --port)   PORT="$2";     shift 2 ;;
-            --tls)    TLS="yes";     shift   ;;
-            --no-tls) TLS="no";      shift   ;;
-            --cert)   SSL_CERT="$2"; shift 2 ;;
-            --key)    SSL_KEY="$2";  shift 2 ;;
+            --name)   CONTAINER="$2"; shift 2 ;;
+            --host)   HOST="$2";      shift 2 ;;
+            --port)   PORT="$2";      shift 2 ;;
+            --tls)    TLS="yes";      shift   ;;
+            --no-tls) TLS="no";       shift   ;;
+            --cert)   SSL_CERT="$2";  shift 2 ;;
+            --key)    SSL_KEY="$2";   shift 2 ;;
             *) break ;;
         esac
     done
+    # Производные от CONTAINER
+    VOLUME="${CONTAINER}-data"
     # Порт по умолчанию: 443 (TLS) или 80 (HTTP)
     if [[ -z "$PORT" ]]; then
         [[ "$TLS" == "yes" ]] && PORT=443 || PORT=80
@@ -46,21 +48,22 @@ usage() {
   deploy   Установить systemd + nginx конфиг
 
 Флаги (для run и deploy):
-  --host <FQDN|IP>  Имя хоста / IP     (по умолчанию kanban.local)
-  --port <порт>      Порт               (по умолчанию 443/TLS или 80/HTTP)
-  --tls              Включить TLS       (по умолчанию)
-  --no-tls           Без TLS — только HTTP
-  --cert <путь>      Путь к сертификату (по умолчанию /etc/nginx/ssl/kanban.crt)
-  --key  <путь>      Путь к ключу       (по умолчанию /etc/nginx/ssl/kanban.key)
+  --name <имя>       Имя инстанса        (по умолчанию kanban)
+  --host <FQDN|IP>   Имя хоста / IP      (по умолчанию kanban.local)
+  --port <порт>       Порт               (по умолчанию 443/TLS или 80/HTTP)
+  --tls               Включить TLS       (по умолчанию)
+  --no-tls            Без TLS — только HTTP
+  --cert <путь>       Путь к сертификату (по умолчанию /etc/nginx/ssl/kanban.crt)
+  --key  <путь>       Путь к ключу       (по умолчанию /etc/nginx/ssl/kanban.key)
 
 Переменные окружения (альтернатива флагам):
-  KANBAN_HOST, KANBAN_PORT, KANBAN_TLS, KANBAN_SSL_CERT, KANBAN_SSL_KEY
+  KANBAN_NAME, KANBAN_HOST, KANBAN_PORT, KANBAN_TLS, KANBAN_SSL_CERT, KANBAN_SSL_KEY
 
 Примеры:
   ./kanban.sh run --port 9090
   ./kanban.sh deploy --host kanban.example.com --port 9090 --tls
-  ./kanban.sh deploy --host 10.0.0.5 --no-tls
-  ./kanban.sh deploy --host kanban.local --port 8443 --tls
+  ./kanban.sh deploy --name kanban-work --host work.local --port 8080 --no-tls
+  ./kanban.sh deploy --name kanban-home --host home.local --port 9090 --no-tls
 HELP
     exit 1
 }
@@ -75,7 +78,7 @@ cmd_build() {
 cmd_run() {
     podman volume exists "$VOLUME" 2>/dev/null || podman volume create "$VOLUME"
 
-    echo "==> Запуск контейнера на порту ${PORT}..."
+    echo "==> Запуск ${CONTAINER} на порту ${PORT}..."
     podman run -d \
         --name "$CONTAINER" \
         --replace \
@@ -93,11 +96,11 @@ cmd_run() {
         --health-start-period 5s \
         "$IMAGE"
 
-    echo "==> Канбан запущен: http://127.0.0.1:${PORT}"
+    echo "==> ${CONTAINER} запущен: http://127.0.0.1:${PORT}"
 }
 
 cmd_stop() {
-    echo "==> Остановка..."
+    echo "==> Остановка ${CONTAINER}..."
     podman stop "$CONTAINER" 2>/dev/null || true
     podman rm "$CONTAINER" 2>/dev/null || true
 }
@@ -116,8 +119,8 @@ cmd_backup() {
     mkdir -p "$BACKUP_DIR"
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     MOUNT=$(podman volume inspect "$VOLUME" --format '{{.Mountpoint}}')
-    cp "${MOUNT}/kanban.db" "${BACKUP_DIR}/kanban_${TIMESTAMP}.db"
-    echo "==> Бэкап: ${BACKUP_DIR}/kanban_${TIMESTAMP}.db"
+    cp "${MOUNT}/kanban.db" "${BACKUP_DIR}/${CONTAINER}_${TIMESTAMP}.db"
+    echo "==> Бэкап: ${BACKUP_DIR}/${CONTAINER}_${TIMESTAMP}.db"
 }
 
 cmd_status() {
@@ -128,9 +131,9 @@ generate_systemd() {
     local target_dir="${HOME}/.config/containers/systemd"
     mkdir -p "$target_dir"
 
-    cat > "${target_dir}/kanban.container" <<UNIT
+    cat > "${target_dir}/${CONTAINER}.container" <<UNIT
 [Unit]
-Description=Kanban Board
+Description=Kanban Board (${CONTAINER})
 After=network-online.target
 Wants=network-online.target
 
@@ -138,7 +141,7 @@ Wants=network-online.target
 Image=${IMAGE}
 ContainerName=${CONTAINER}
 PublishPort=127.0.0.1:${PORT}:8080
-Volume=kanban-data.volume:/data:Z
+Volume=${VOLUME}.volume:/data:Z
 
 # Security hardening
 NoNewPrivileges=true
@@ -159,10 +162,12 @@ TimeoutStartSec=30
 WantedBy=default.target
 UNIT
 
-    cp deploy/kanban-data.volume "${target_dir}/kanban-data.volume"
+    cat > "${target_dir}/${VOLUME}.volume" <<UNIT
+[Volume]
+UNIT
 
-    echo "  ${target_dir}/kanban.container (контейнер 127.0.0.1:${PORT})"
-    echo "  ${target_dir}/kanban-data.volume"
+    echo "  ${target_dir}/${CONTAINER}.container (контейнер 127.0.0.1:${PORT})"
+    echo "  ${target_dir}/${VOLUME}.volume"
 }
 
 generate_nginx() {
@@ -253,6 +258,7 @@ NGINX
 
 cmd_deploy() {
     echo "==> Конфигурация:"
+    echo "    Имя:       ${CONTAINER}"
     echo "    Хост:      ${HOST}"
     echo "    Порт:      ${PORT}"
     echo "    TLS:       ${TLS}"
@@ -266,7 +272,7 @@ cmd_deploy() {
     generate_systemd
 
     # --- nginx ---
-    local nginx_conf="deploy/nginx-kanban-generated.conf"
+    local nginx_conf="deploy/${CONTAINER}-nginx.conf"
     generate_nginx > "$nginx_conf"
     echo ""
     echo "==> Nginx конфиг сгенерирован: ${nginx_conf}"
@@ -278,10 +284,10 @@ cmd_deploy() {
     if [[ -d "$nginx_dir" ]]; then
         echo ""
         echo "==> Установка nginx конфига (требуется sudo)..."
-        if sudo cp "$nginx_conf" "${nginx_dir}/kanban.conf"; then
-            sudo ln -sf "${nginx_dir}/kanban.conf" "${nginx_enabled}/kanban.conf" 2>/dev/null || true
-            echo "  ${nginx_dir}/kanban.conf"
-            [[ -d "$nginx_enabled" ]] && echo "  ${nginx_enabled}/kanban.conf -> symlink"
+        if sudo cp "$nginx_conf" "${nginx_dir}/${CONTAINER}.conf"; then
+            sudo ln -sf "${nginx_dir}/${CONTAINER}.conf" "${nginx_enabled}/${CONTAINER}.conf" 2>/dev/null || true
+            echo "  ${nginx_dir}/${CONTAINER}.conf"
+            [[ -d "$nginx_enabled" ]] && echo "  ${nginx_enabled}/${CONTAINER}.conf -> symlink"
 
             if [[ "$TLS" == "yes" ]] && [[ ! -f "$SSL_CERT" ]]; then
                 echo ""
@@ -307,7 +313,7 @@ cmd_deploy() {
     echo "==> Запуск сервиса:"
     echo "  loginctl enable-linger \$(whoami)   # автостарт после ребута"
     echo "  systemctl --user daemon-reload"
-    echo "  systemctl --user start kanban"
+    echo "  systemctl --user start ${CONTAINER}"
     echo ""
     if [[ "$TLS" == "yes" ]]; then
         echo "==> Канбан будет доступен: https://${HOST}$([ "$PORT" != "443" ] && echo ":${PORT}")"
