@@ -31,15 +31,6 @@ parse_flags() {
     fi
 }
 
-# Внутренний порт контейнера (loopback, для nginx proxy_pass)
-backend_port() {
-    if [[ "$PORT" == "8080" ]]; then
-        echo 18080
-    else
-        echo 8080
-    fi
-}
-
 usage() {
     cat <<'HELP'
 Использование: ./kanban.sh <команда> [флаги]
@@ -134,7 +125,6 @@ cmd_status() {
 }
 
 generate_systemd() {
-    local bp="$1"
     local target_dir="${HOME}/.config/containers/systemd"
     mkdir -p "$target_dir"
 
@@ -147,7 +137,7 @@ Wants=network-online.target
 [Container]
 Image=${IMAGE}
 ContainerName=${CONTAINER}
-PublishPort=127.0.0.1:${bp}:8080
+PublishPort=127.0.0.1:${PORT}:8080
 Volume=kanban-data.volume:/data:Z
 
 # Security hardening
@@ -171,19 +161,17 @@ UNIT
 
     cp deploy/kanban-data.volume "${target_dir}/kanban-data.volume"
 
-    echo "  ${target_dir}/kanban.container (контейнер 127.0.0.1:${bp})"
+    echo "  ${target_dir}/kanban.container (контейнер 127.0.0.1:${PORT})"
     echo "  ${target_dir}/kanban-data.volume"
 }
 
 generate_nginx() {
-    local bp="$1"
-
     if [[ "$TLS" == "yes" ]]; then
         # HTTP → HTTPS редирект (только для стандартных портов)
         if [[ "$PORT" == "443" ]]; then
             cat <<NGINX
 server {
-    listen 80;
+    listen ${HOST}:80;
     server_name ${HOST};
     return 301 https://\$host\$request_uri;
 }
@@ -192,7 +180,7 @@ NGINX
         fi
         cat <<NGINX
 server {
-    listen ${PORT} ssl http2;
+    listen ${HOST}:${PORT} ssl http2;
     server_name ${HOST};
 
     ssl_certificate     ${SSL_CERT};
@@ -208,7 +196,7 @@ server {
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
 
     location / {
-        proxy_pass http://127.0.0.1:${bp};
+        proxy_pass http://127.0.0.1:${PORT};
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -231,7 +219,7 @@ NGINX
     else
         cat <<NGINX
 server {
-    listen ${PORT};
+    listen ${HOST}:${PORT};
     server_name ${HOST};
 
     add_header X-Content-Type-Options "nosniff" always;
@@ -240,7 +228,7 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     location / {
-        proxy_pass http://127.0.0.1:${bp};
+        proxy_pass http://127.0.0.1:${PORT};
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -264,24 +252,22 @@ NGINX
 }
 
 cmd_deploy() {
-    local bp
-    bp=$(backend_port)
-
     echo "==> Конфигурация:"
-    echo "    Хост:     ${HOST}"
-    echo "    Порт:     ${PORT}"
-    echo "    TLS:      ${TLS}"
-    echo "    Бэкенд:   127.0.0.1:${bp}"
-    [[ "$TLS" == "yes" ]] && echo "    Серт:     ${SSL_CERT}" && echo "    Ключ:     ${SSL_KEY}"
+    echo "    Хост:      ${HOST}"
+    echo "    Порт:      ${PORT}"
+    echo "    TLS:       ${TLS}"
+    echo "    Контейнер: 127.0.0.1:${PORT}"
+    echo "    Nginx:     ${HOST}:${PORT}"
+    [[ "$TLS" == "yes" ]] && echo "    Серт:      ${SSL_CERT}" && echo "    Ключ:      ${SSL_KEY}"
     echo ""
 
     # --- systemd ---
     echo "==> Установка systemd unit-файлов..."
-    generate_systemd "$bp"
+    generate_systemd
 
     # --- nginx ---
     local nginx_conf="deploy/nginx-kanban-generated.conf"
-    generate_nginx "$bp" > "$nginx_conf"
+    generate_nginx > "$nginx_conf"
     echo ""
     echo "==> Nginx конфиг сгенерирован: ${nginx_conf}"
 
