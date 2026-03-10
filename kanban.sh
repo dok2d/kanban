@@ -4,26 +4,59 @@ set -euo pipefail
 IMAGE="localhost/kanban:latest"
 CONTAINER="kanban"
 VOLUME="kanban-data"
+
+# Настройки (переопределяются переменными окружения или флагами)
+HOST="${KANBAN_HOST:-kanban.local}"
 PORT="${KANBAN_PORT:-8080}"
+TLS="${KANBAN_TLS:-yes}"
+SSL_CERT="${KANBAN_SSL_CERT:-/etc/nginx/ssl/kanban.crt}"
+SSL_KEY="${KANBAN_SSL_KEY:-/etc/nginx/ssl/kanban.key}"
+
+# Парсинг флагов
+parse_flags() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --host)   HOST="$2";     shift 2 ;;
+            --port)   PORT="$2";     shift 2 ;;
+            --tls)    TLS="yes";     shift   ;;
+            --no-tls) TLS="no";      shift   ;;
+            --cert)   SSL_CERT="$2"; shift 2 ;;
+            --key)    SSL_KEY="$2";  shift 2 ;;
+            *) break ;;
+        esac
+    done
+}
 
 usage() {
-    echo "Использование: $0 {build|run|stop|restart|logs|backup|status|systemd}"
-    echo ""
-    echo "  build    Собрать образ контейнера"
-    echo "  run      Запустить контейнер"
-    echo "  stop     Остановить контейнер"
-    echo "  restart  Перезапустить контейнер"
-    echo "  logs     Логи контейнера"
-    echo "  backup   Бэкап БД в ./backups/"
-    echo "  status   Статус контейнера"
-    echo "  systemd  Установить systemd quadlet unit-файлы"
-    echo ""
-    echo "Переменные окружения:"
-    echo "  KANBAN_PORT  Порт (по умолчанию 8080)"
-    echo ""
-    echo "Примеры:"
-    echo "  KANBAN_PORT=9090 $0 run"
-    echo "  KANBAN_PORT=9090 $0 systemd"
+    cat <<'HELP'
+Использование: ./kanban.sh <команда> [флаги]
+
+Команды:
+  build    Собрать образ контейнера
+  run      Запустить контейнер
+  stop     Остановить контейнер
+  restart  Перезапустить контейнер
+  logs     Логи контейнера
+  backup   Бэкап БД в ./backups/
+  status   Статус контейнера
+  deploy   Установить systemd + nginx конфиг
+
+Флаги (для run и deploy):
+  --host <FQDN|IP>  Имя хоста / IP     (по умолчанию kanban.local)
+  --port <порт>      Порт контейнера    (по умолчанию 8080)
+  --tls              Включить TLS       (по умолчанию)
+  --no-tls           Без TLS — только HTTP
+  --cert <путь>      Путь к сертификату (по умолчанию /etc/nginx/ssl/kanban.crt)
+  --key  <путь>      Путь к ключу       (по умолчанию /etc/nginx/ssl/kanban.key)
+
+Переменные окружения (альтернатива флагам):
+  KANBAN_HOST, KANBAN_PORT, KANBAN_TLS, KANBAN_SSL_CERT, KANBAN_SSL_KEY
+
+Примеры:
+  ./kanban.sh run --host 192.168.1.10 --port 9090
+  ./kanban.sh deploy --host kanban.example.com --port 9090 --tls
+  ./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
+HELP
     exit 1
 }
 
@@ -35,7 +68,6 @@ cmd_build() {
 }
 
 cmd_run() {
-    # Создать volume если нет
     podman volume exists "$VOLUME" 2>/dev/null || podman volume create "$VOLUME"
 
     echo "==> Запуск контейнера на порту ${PORT}..."
@@ -87,11 +119,10 @@ cmd_status() {
     podman ps -a --filter "name=$CONTAINER" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 }
 
-cmd_systemd() {
+generate_systemd() {
     local target_dir="${HOME}/.config/containers/systemd"
     mkdir -p "$target_dir"
 
-    # Генерируем kanban.container с нужным портом
     cat > "${target_dir}/kanban.container" <<UNIT
 [Unit]
 Description=Kanban Board
@@ -108,7 +139,6 @@ Volume=kanban-data.volume:/data:Z
 NoNewPrivileges=true
 ReadOnly=true
 ReadOnlyTmpfs=true
-# /data writable for SQLite, /tmp for runtime
 Tmpfs=/tmp:rw,noexec,nosuid,size=64m
 DropCapability=ALL
 
@@ -124,20 +154,165 @@ TimeoutStartSec=30
 WantedBy=default.target
 UNIT
 
-    # Копируем volume unit
     cp deploy/kanban-data.volume "${target_dir}/kanban-data.volume"
 
-    echo "==> Установлено в ${target_dir}/"
-    echo "    kanban.container (порт ${PORT})"
-    echo "    kanban-data.volume"
+    echo "  ${target_dir}/kanban.container (порт ${PORT})"
+    echo "  ${target_dir}/kanban-data.volume"
+}
+
+generate_nginx() {
+    local nginx_dir="/etc/nginx/sites-available"
+    local conf="${nginx_dir}/kanban"
+
+    if [[ "$TLS" == "yes" ]]; then
+        cat <<NGINX
+server {
+    listen 80;
+    server_name ${HOST};
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${HOST};
+
+    ssl_certificate     ${SSL_CERT};
+    ssl_certificate_key ${SSL_KEY};
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers on;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-XSS-Protection "0" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:${PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+
+    location ~ /\\. {
+        deny all;
+        return 404;
+    }
+
+    client_max_body_size 2m;
+}
+NGINX
+    else
+        cat <<NGINX
+server {
+    listen 80;
+    server_name ${HOST};
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-XSS-Protection "0" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:${PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+    }
+
+    location ~ /\\. {
+        deny all;
+        return 404;
+    }
+
+    client_max_body_size 2m;
+}
+NGINX
+    fi
+}
+
+cmd_deploy() {
+    echo "==> Конфигурация:"
+    echo "    Хост:  ${HOST}"
+    echo "    Порт:  ${PORT}"
+    echo "    TLS:   ${TLS}"
+    [[ "$TLS" == "yes" ]] && echo "    Серт:  ${SSL_CERT}" && echo "    Ключ:  ${SSL_KEY}"
     echo ""
-    echo "Далее выполните:"
+
+    # --- systemd ---
+    echo "==> Установка systemd unit-файлов..."
+    generate_systemd
+
+    # --- nginx ---
+    local nginx_conf="deploy/nginx-kanban-generated.conf"
+    generate_nginx > "$nginx_conf"
+    echo ""
+    echo "==> Nginx конфиг сгенерирован: ${nginx_conf}"
+
+    # Пробуем установить в nginx (нужен sudo)
+    local nginx_dir="/etc/nginx/sites-available"
+    local nginx_enabled="/etc/nginx/sites-enabled"
+
+    if [[ -d "$nginx_dir" ]]; then
+        echo ""
+        echo "==> Установка nginx конфига (требуется sudo)..."
+        if sudo cp "$nginx_conf" "${nginx_dir}/kanban"; then
+            sudo ln -sf "${nginx_dir}/kanban" "${nginx_enabled}/kanban" 2>/dev/null || true
+            echo "  ${nginx_dir}/kanban"
+            [[ -d "$nginx_enabled" ]] && echo "  ${nginx_enabled}/kanban -> symlink"
+
+            if [[ "$TLS" == "yes" ]] && [[ ! -f "$SSL_CERT" ]]; then
+                echo ""
+                echo "==> Сертификат не найден. Создать self-signed:"
+                echo "  sudo mkdir -p $(dirname "$SSL_CERT")"
+                echo "  sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \\"
+                echo "    -keyout ${SSL_KEY} \\"
+                echo "    -out ${SSL_CERT} \\"
+                echo "    -subj \"/CN=${HOST}\""
+            fi
+
+            echo ""
+            echo "==> Далее выполните:"
+            echo "  sudo nginx -t && sudo systemctl reload nginx"
+        else
+            echo "  [!] Не удалось скопировать (нет sudo?). Конфиг в ${nginx_conf}"
+        fi
+    else
+        echo "  [!] ${nginx_dir} не найден. Скопируйте вручную: ${nginx_conf}"
+    fi
+
+    echo ""
+    echo "==> Запуск сервиса:"
     echo "  systemctl --user daemon-reload"
     echo "  systemctl --user start kanban"
     echo "  systemctl --user enable kanban"
+    echo ""
+    if [[ "$TLS" == "yes" ]]; then
+        echo "==> Канбан будет доступен: https://${HOST}"
+    else
+        echo "==> Канбан будет доступен: http://${HOST}"
+    fi
 }
 
-case "${1:-}" in
+# --- main ---
+CMD="${1:-}"
+shift || true
+parse_flags "$@"
+
+case "$CMD" in
     build)   cmd_build   ;;
     run)     cmd_run     ;;
     stop)    cmd_stop    ;;
@@ -145,6 +320,6 @@ case "${1:-}" in
     logs)    cmd_logs    ;;
     backup)  cmd_backup  ;;
     status)  cmd_status  ;;
-    systemd) cmd_systemd ;;
+    deploy)  cmd_deploy  ;;
     *)       usage       ;;
 esac

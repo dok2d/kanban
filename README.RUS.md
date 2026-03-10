@@ -64,11 +64,30 @@
 | `./kanban.sh logs`    | Логи                                  |
 | `./kanban.sh backup`  | Бэкап БД в ./backups/                 |
 | `./kanban.sh status`  | Статус контейнера                     |
-| `./kanban.sh systemd` | Установить systemd quadlet unit-файлы |
+| `./kanban.sh deploy`  | Установить systemd + nginx конфиг     |
 
-Переменная `KANBAN_PORT` задаёт порт (по умолчанию `8080`):
+### Флаги (для `run` и `deploy`)
+
+| Флаг              | Описание                              | По умолчанию          |
+|-------------------|---------------------------------------|-----------------------|
+| `--host <значение>` | FQDN или IP-адрес                  | `kanban.local`        |
+| `--port <порт>`   | Порт контейнера                      | `8080`                |
+| `--tls`           | Включить TLS (HTTPS)                 | включён               |
+| `--no-tls`        | Только HTTP, без TLS                 | —                     |
+| `--cert <путь>`   | Путь к TLS-сертификату               | `/etc/nginx/ssl/kanban.crt` |
+| `--key  <путь>`   | Путь к TLS-ключу                     | `/etc/nginx/ssl/kanban.key` |
+
+Флаги дублируются переменными окружения: `KANBAN_HOST`, `KANBAN_PORT`, `KANBAN_TLS`, `KANBAN_SSL_CERT`, `KANBAN_SSL_KEY`.
+
 ```bash
-KANBAN_PORT=9090 ./kanban.sh run
+# Запуск локально на другом порту
+./kanban.sh run --port 9090
+
+# Деплой с TLS
+./kanban.sh deploy --host kanban.example.com --port 9090
+
+# Деплой без TLS (только HTTP)
+./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
 ```
 
 ## Авторизация и роли
@@ -109,34 +128,32 @@ KANBAN_PORT=9090 ./kanban.sh run
 - **Лимиты**: 256MB RAM, 0.5 CPU
 - **Слушает только 127.0.0.1**: наружу только через nginx
 
-## Nginx
+## Деплой (Systemd + Nginx)
 
-Конфиг для reverse proxy с TLS в `deploy/nginx-kanban.conf`.
-Скопировать в `/etc/nginx/sites-available/` и сгенерировать сертификаты.
-
-Для self-signed:
-```bash
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout /etc/nginx/ssl/kanban.key \
-  -out /etc/nginx/ssl/kanban.crt \
-  -subj "/CN=kanban.local"
-```
-
-## Systemd (Quadlet)
-
-Для автозапуска через systemd quadlet:
+Команда `deploy` генерирует и устанавливает systemd quadlet unit-файлы
+и nginx reverse proxy конфиг за один шаг:
 
 ```bash
-# Установить unit-файлы (по умолчанию порт 8080)
-./kanban.sh systemd
+# TLS (по умолчанию) — HTTPS nginx конфиг + systemd units
+./kanban.sh deploy --host kanban.example.com --port 9090
 
-# Или с другим портом
-KANBAN_PORT=9090 ./kanban.sh systemd
+# Только HTTP
+./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
 
-# Затем включить и запустить
+# Затем запустить
 systemctl --user daemon-reload
 systemctl --user start kanban
 systemctl --user enable kanban
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Self-signed сертификат:
+```bash
+sudo mkdir -p /etc/nginx/ssl
+sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/nginx/ssl/kanban.key \
+  -out /etc/nginx/ssl/kanban.crt \
+  -subj "/CN=kanban.example.com"
 ```
 
 ## Структура проекта

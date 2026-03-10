@@ -64,11 +64,30 @@ On first launch you will be prompted to create an admin account.
 | `./kanban.sh logs`    | View logs                            |
 | `./kanban.sh backup`  | Backup DB to ./backups/              |
 | `./kanban.sh status`  | Container status                     |
-| `./kanban.sh systemd` | Install systemd quadlet unit files   |
+| `./kanban.sh deploy`  | Install systemd + nginx configs      |
 
-Set `KANBAN_PORT` to change the listen port (default `8080`):
+### Flags (for `run` and `deploy`)
+
+| Flag              | Description                           | Default               |
+|-------------------|---------------------------------------|-----------------------|
+| `--host <value>`  | FQDN or IP address                    | `kanban.local`        |
+| `--port <port>`   | Container port                        | `8080`                |
+| `--tls`           | Enable TLS (HTTPS)                    | enabled               |
+| `--no-tls`        | HTTP only, no TLS                     | —                     |
+| `--cert <path>`   | Path to TLS certificate               | `/etc/nginx/ssl/kanban.crt` |
+| `--key  <path>`   | Path to TLS private key               | `/etc/nginx/ssl/kanban.key` |
+
+Flags can also be set via environment variables: `KANBAN_HOST`, `KANBAN_PORT`, `KANBAN_TLS`, `KANBAN_SSL_CERT`, `KANBAN_SSL_KEY`.
+
 ```bash
-KANBAN_PORT=9090 ./kanban.sh run
+# Run locally on a custom port
+./kanban.sh run --port 9090
+
+# Deploy with TLS
+./kanban.sh deploy --host kanban.example.com --port 9090
+
+# Deploy HTTP-only (no TLS)
+./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
 ```
 
 ## Authentication & Roles
@@ -109,34 +128,32 @@ Bot commands:
 - **Limits**: 256MB RAM, 0.5 CPU
 - **Listens on 127.0.0.1 only**: exposed via nginx
 
-## Nginx
+## Deploy (Systemd + Nginx)
 
-Reverse proxy config with TLS in `deploy/nginx-kanban.conf`.
-Copy to `/etc/nginx/sites-available/` and generate certificates.
-
-Self-signed example:
-```bash
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout /etc/nginx/ssl/kanban.key \
-  -out /etc/nginx/ssl/kanban.crt \
-  -subj "/CN=kanban.local"
-```
-
-## Systemd (Quadlet)
-
-For auto-start via systemd quadlet:
+The `deploy` command generates and installs both the systemd quadlet unit files
+and the nginx reverse proxy config in one step:
 
 ```bash
-# Install unit files (default port 8080)
-./kanban.sh systemd
+# TLS (default) — generates HTTPS nginx config + systemd units
+./kanban.sh deploy --host kanban.example.com --port 9090
 
-# Or with a custom port
-KANBAN_PORT=9090 ./kanban.sh systemd
+# HTTP only
+./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
 
-# Then enable and start
+# Then start
 systemctl --user daemon-reload
 systemctl --user start kanban
 systemctl --user enable kanban
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+For self-signed TLS:
+```bash
+sudo mkdir -p /etc/nginx/ssl
+sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/nginx/ssl/kanban.key \
+  -out /etc/nginx/ssl/kanban.crt \
+  -subj "/CN=kanban.example.com"
 ```
 
 ## Project Structure
