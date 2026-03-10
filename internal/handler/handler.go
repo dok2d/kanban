@@ -306,6 +306,16 @@ func (h *Handler) handleColumn(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
+		// Protect first (Backlog) and last (Done) columns from deletion
+		cols, err := h.store.ListColumns()
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		if len(cols) > 0 && (cols[0].ID == id || cols[len(cols)-1].ID == id) {
+			http.Error(w, "cannot delete Backlog or Done column", 403)
+			return
+		}
 		if err := h.store.DeleteColumn(id); err != nil {
 			h.logf("DeleteColumn(%d) failed: %v", id, err)
 			http.Error(w, err.Error(), 500)

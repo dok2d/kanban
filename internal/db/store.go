@@ -1226,7 +1226,7 @@ func (s *Store) ValidateResetCode(username, code string) (*model.User, error) {
 	var role string
 	var resetCode string
 	var expiresStr sql.NullString
-	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at,reset_code,reset_code_expires FROM users WHERE username=?", username).
+	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at,reset_code,reset_code_expires FROM users WHERE LOWER(username)=LOWER(?)", username).
 		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt, &resetCode, &expiresStr)
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
