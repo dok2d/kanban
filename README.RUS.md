@@ -55,15 +55,40 @@
 
 ## Команды
 
-| Команда               | Описание                    |
-|-----------------------|-----------------------------|
-| `./kanban.sh build`   | Собрать образ контейнера    |
-| `./kanban.sh run`     | Запустить контейнер         |
-| `./kanban.sh stop`    | Остановить                  |
-| `./kanban.sh restart` | Перезапустить               |
-| `./kanban.sh logs`    | Логи                        |
-| `./kanban.sh backup`  | Бэкап БД в ./backups/       |
-| `./kanban.sh status`  | Статус контейнера           |
+| Команда               | Описание                              |
+|-----------------------|---------------------------------------|
+| `./kanban.sh build`   | Собрать образ контейнера              |
+| `./kanban.sh run`     | Запустить контейнер                   |
+| `./kanban.sh stop`    | Остановить                            |
+| `./kanban.sh restart` | Перезапустить                         |
+| `./kanban.sh logs`    | Логи                                  |
+| `./kanban.sh backup`  | Бэкап БД в ./backups/                 |
+| `./kanban.sh status`  | Статус контейнера                     |
+| `./kanban.sh deploy`  | Установить systemd + nginx конфиг     |
+
+### Флаги (для `run` и `deploy`)
+
+| Флаг              | Описание                              | По умолчанию          |
+|-------------------|---------------------------------------|-----------------------|
+| `--host <значение>` | FQDN или IP-адрес                  | `kanban.local`        |
+| `--port <порт>`   | Порт (nginx + контейнер)             | `443` (TLS) / `80` (HTTP) |
+| `--tls`           | Включить TLS (HTTPS)                 | включён               |
+| `--no-tls`        | Только HTTP, без TLS                 | —                     |
+| `--cert <путь>`   | Путь к TLS-сертификату               | `/etc/nginx/ssl/kanban.crt` |
+| `--key  <путь>`   | Путь к TLS-ключу                     | `/etc/nginx/ssl/kanban.key` |
+
+Флаги дублируются переменными окружения: `KANBAN_HOST`, `KANBAN_PORT`, `KANBAN_TLS`, `KANBAN_SSL_CERT`, `KANBAN_SSL_KEY`.
+
+```bash
+# Запуск локально на другом порту
+./kanban.sh run --port 9090
+
+# Деплой с TLS
+./kanban.sh deploy --host kanban.example.com --port 9090
+
+# Деплой без TLS (только HTTP)
+./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
+```
 
 ## Авторизация и роли
 
@@ -103,28 +128,32 @@
 - **Лимиты**: 256MB RAM, 0.5 CPU
 - **Слушает только 127.0.0.1**: наружу только через nginx
 
-## Nginx
+## Деплой (Systemd + Nginx)
 
-Конфиг для reverse proxy с TLS в `deploy/nginx-kanban.conf`.
-Скопировать в `/etc/nginx/sites-available/` и сгенерировать сертификаты.
-
-Для self-signed:
-```bash
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout /etc/nginx/ssl/kanban.key \
-  -out /etc/nginx/ssl/kanban.crt \
-  -subj "/CN=kanban.local"
-```
-
-## Systemd (Quadlet)
-
-Для автозапуска через systemd quadlet — скопировать `deploy/kanban.container`
-и `deploy/kanban-data.volume` в `~/.config/containers/systemd/` и выполнить:
+Команда `deploy` генерирует и устанавливает systemd quadlet unit-файлы
+и nginx reverse proxy конфиг за один шаг:
 
 ```bash
+# TLS (по умолчанию) — HTTPS nginx конфиг + systemd units
+./kanban.sh deploy --host kanban.example.com --port 9090
+
+# Только HTTP
+./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
+
+# Затем запустить
+loginctl enable-linger $(whoami)   # автостарт после ребута
 systemctl --user daemon-reload
 systemctl --user start kanban
-systemctl --user enable kanban
+sudo nginx -t && sudo nginx -s reload
+```
+
+Self-signed сертификат:
+```bash
+sudo mkdir -p /etc/nginx/ssl
+sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/nginx/ssl/kanban.key \
+  -out /etc/nginx/ssl/kanban.crt \
+  -subj "/CN=kanban.example.com"
 ```
 
 ## Структура проекта
@@ -208,6 +237,13 @@ kanban/
 | GET    | /api/settings/telegram/status | Проверить, настроен ли бот       |
 | POST   | /api/user/telegram/link       | Сгенерировать хеш для привязки   |
 | POST   | /api/user/telegram/unlink     | Отвязать Telegram                |
+
+### Настройки
+
+| Метод  | Путь                    | Описание                         |
+|--------|-------------------------|----------------------------------|
+| GET    | /api/settings/timezone  | Получить часовой пояс сервера    |
+| POST   | /api/settings/timezone  | Задать часовой пояс сервера      |
 
 ### Прочее
 

@@ -55,15 +55,40 @@ On first launch you will be prompted to create an admin account.
 
 ## Commands
 
-| Command               | Description                 |
-|-----------------------|-----------------------------|
-| `./kanban.sh build`   | Build container image       |
-| `./kanban.sh run`     | Start container             |
-| `./kanban.sh stop`    | Stop container              |
-| `./kanban.sh restart` | Restart container           |
-| `./kanban.sh logs`    | View logs                   |
-| `./kanban.sh backup`  | Backup DB to ./backups/     |
-| `./kanban.sh status`  | Container status            |
+| Command               | Description                          |
+|-----------------------|--------------------------------------|
+| `./kanban.sh build`   | Build container image                |
+| `./kanban.sh run`     | Start container                      |
+| `./kanban.sh stop`    | Stop container                       |
+| `./kanban.sh restart` | Restart container                    |
+| `./kanban.sh logs`    | View logs                            |
+| `./kanban.sh backup`  | Backup DB to ./backups/              |
+| `./kanban.sh status`  | Container status                     |
+| `./kanban.sh deploy`  | Install systemd + nginx configs      |
+
+### Flags (for `run` and `deploy`)
+
+| Flag              | Description                           | Default               |
+|-------------------|---------------------------------------|-----------------------|
+| `--host <value>`  | FQDN or IP address                    | `kanban.local`        |
+| `--port <port>`   | Listen port (nginx + container)       | `443` (TLS) / `80` (HTTP) |
+| `--tls`           | Enable TLS (HTTPS)                    | enabled               |
+| `--no-tls`        | HTTP only, no TLS                     | —                     |
+| `--cert <path>`   | Path to TLS certificate               | `/etc/nginx/ssl/kanban.crt` |
+| `--key  <path>`   | Path to TLS private key               | `/etc/nginx/ssl/kanban.key` |
+
+Flags can also be set via environment variables: `KANBAN_HOST`, `KANBAN_PORT`, `KANBAN_TLS`, `KANBAN_SSL_CERT`, `KANBAN_SSL_KEY`.
+
+```bash
+# Run locally on a custom port
+./kanban.sh run --port 9090
+
+# Deploy with TLS
+./kanban.sh deploy --host kanban.example.com --port 9090
+
+# Deploy HTTP-only (no TLS)
+./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
+```
 
 ## Authentication & Roles
 
@@ -103,28 +128,32 @@ Bot commands:
 - **Limits**: 256MB RAM, 0.5 CPU
 - **Listens on 127.0.0.1 only**: exposed via nginx
 
-## Nginx
+## Deploy (Systemd + Nginx)
 
-Reverse proxy config with TLS in `deploy/nginx-kanban.conf`.
-Copy to `/etc/nginx/sites-available/` and generate certificates.
-
-Self-signed example:
-```bash
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout /etc/nginx/ssl/kanban.key \
-  -out /etc/nginx/ssl/kanban.crt \
-  -subj "/CN=kanban.local"
-```
-
-## Systemd (Quadlet)
-
-For auto-start via systemd quadlet, copy `deploy/kanban.container`
-and `deploy/kanban-data.volume` to `~/.config/containers/systemd/` and run:
+The `deploy` command generates and installs both the systemd quadlet unit files
+and the nginx reverse proxy config in one step:
 
 ```bash
+# TLS (default) — generates HTTPS nginx config + systemd units
+./kanban.sh deploy --host kanban.example.com --port 9090
+
+# HTTP only
+./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
+
+# Then start
+loginctl enable-linger $(whoami)   # auto-start after reboot
 systemctl --user daemon-reload
 systemctl --user start kanban
-systemctl --user enable kanban
+sudo nginx -t && sudo nginx -s reload
+```
+
+For self-signed TLS:
+```bash
+sudo mkdir -p /etc/nginx/ssl
+sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/nginx/ssl/kanban.key \
+  -out /etc/nginx/ssl/kanban.crt \
+  -subj "/CN=kanban.example.com"
 ```
 
 ## Project Structure
@@ -208,6 +237,13 @@ All endpoints return JSON. Authentication required (session cookie).
 | GET    | /api/settings/telegram/status | Check if bot configured    |
 | POST   | /api/user/telegram/link       | Generate link hash         |
 | POST   | /api/user/telegram/unlink     | Unlink Telegram            |
+
+### Settings
+
+| Method | Path                    | Description                |
+|--------|-------------------------|----------------------------|
+| GET    | /api/settings/timezone  | Get server timezone        |
+| POST   | /api/settings/timezone  | Set server timezone        |
 
 ### Other
 
