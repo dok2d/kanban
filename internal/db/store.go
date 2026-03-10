@@ -1008,7 +1008,7 @@ func (s *Store) AuthenticateUser(username, password string) (*model.User, error)
 	var hash string
 	var admin int
 	var role string
-	err := s.db.QueryRow("SELECT id,username,password_hash,is_admin,role,created_at FROM users WHERE username=?", username).
+	err := s.db.QueryRow("SELECT id,username,password_hash,is_admin,role,created_at FROM users WHERE LOWER(username)=LOWER(?)", username).
 		Scan(&u.ID, &u.Username, &hash, &admin, &role, &u.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("invalid credentials")
@@ -1098,7 +1098,7 @@ func (s *Store) GetUserByUsername(username string) (*model.User, error) {
 	var u model.User
 	var admin int
 	var role string
-	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at,telegram_chat_id FROM users WHERE username=?", username).
+	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at,telegram_chat_id FROM users WHERE LOWER(username)=LOWER(?)", username).
 		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt, &u.TelegramID)
 	if err != nil {
 		return nil, err
