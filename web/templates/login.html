@@ -166,7 +166,9 @@ function hideResetForm() {
   document.getElementById('reset-form').style.display = 'none';
   document.getElementById('subtitle').textContent = 'Вход в систему';
   document.getElementById('forgot-link').style.display = '';
+  document.getElementById('reset-step-1').style.display = '';
   document.getElementById('reset-step-2').style.display = 'none';
+  document.getElementById('reset-error').textContent = '';
 }
 
 async function requestReset() {
