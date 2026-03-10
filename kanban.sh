@@ -269,10 +269,10 @@ cmd_deploy() {
     if [[ -d "$nginx_dir" ]]; then
         echo ""
         echo "==> Установка nginx конфига (требуется sudo)..."
-        if sudo cp "$nginx_conf" "${nginx_dir}/kanban"; then
-            sudo ln -sf "${nginx_dir}/kanban" "${nginx_enabled}/kanban" 2>/dev/null || true
-            echo "  ${nginx_dir}/kanban"
-            [[ -d "$nginx_enabled" ]] && echo "  ${nginx_enabled}/kanban -> symlink"
+        if sudo cp "$nginx_conf" "${nginx_dir}/kanban.conf"; then
+            sudo ln -sf "${nginx_dir}/kanban.conf" "${nginx_enabled}/kanban.conf" 2>/dev/null || true
+            echo "  ${nginx_dir}/kanban.conf"
+            [[ -d "$nginx_enabled" ]] && echo "  ${nginx_enabled}/kanban.conf -> symlink"
 
             if [[ "$TLS" == "yes" ]] && [[ ! -f "$SSL_CERT" ]]; then
                 echo ""
@@ -296,9 +296,9 @@ cmd_deploy() {
 
     echo ""
     echo "==> Запуск сервиса:"
+    echo "  loginctl enable-linger \$(whoami)   # автостарт после ребута"
     echo "  systemctl --user daemon-reload"
     echo "  systemctl --user start kanban"
-    echo "  systemctl --user enable kanban"
     echo ""
     if [[ "$TLS" == "yes" ]]; then
         echo "==> Канбан будет доступен: https://${HOST}"

@@ -141,9 +141,9 @@ and the nginx reverse proxy config in one step:
 ./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
 
 # Then start
+loginctl enable-linger $(whoami)   # auto-start after reboot
 systemctl --user daemon-reload
 systemctl --user start kanban
-systemctl --user enable kanban
 sudo nginx -t && sudo systemctl reload nginx
 ```
 

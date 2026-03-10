@@ -141,9 +141,9 @@
 ./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
 
 # Затем запустить
+loginctl enable-linger $(whoami)   # автостарт после ребута
 systemctl --user daemon-reload
 systemctl --user start kanban
-systemctl --user enable kanban
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
