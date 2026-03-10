@@ -71,7 +71,7 @@ On first launch you will be prompted to create an admin account.
 | Flag              | Description                           | Default               |
 |-------------------|---------------------------------------|-----------------------|
 | `--host <value>`  | FQDN or IP address                    | `kanban.local`        |
-| `--port <port>`   | Container port                        | `8080`                |
+| `--port <port>`   | Listen port (nginx + container)       | `443` (TLS) / `80` (HTTP) |
 | `--tls`           | Enable TLS (HTTPS)                    | enabled               |
 | `--no-tls`        | HTTP only, no TLS                     | —                     |
 | `--cert <path>`   | Path to TLS certificate               | `/etc/nginx/ssl/kanban.crt` |
@@ -144,7 +144,7 @@ and the nginx reverse proxy config in one step:
 loginctl enable-linger $(whoami)   # auto-start after reboot
 systemctl --user daemon-reload
 systemctl --user start kanban
-sudo nginx -t && sudo systemctl reload nginx
+sudo nginx -t && sudo nginx -s reload
 ```
 
 For self-signed TLS:

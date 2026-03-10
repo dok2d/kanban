@@ -71,7 +71,7 @@
 | Флаг              | Описание                              | По умолчанию          |
 |-------------------|---------------------------------------|-----------------------|
 | `--host <значение>` | FQDN или IP-адрес                  | `kanban.local`        |
-| `--port <порт>`   | Порт контейнера                      | `8080`                |
+| `--port <порт>`   | Порт (nginx + контейнер)             | `443` (TLS) / `80` (HTTP) |
 | `--tls`           | Включить TLS (HTTPS)                 | включён               |
 | `--no-tls`        | Только HTTP, без TLS                 | —                     |
 | `--cert <путь>`   | Путь к TLS-сертификату               | `/etc/nginx/ssl/kanban.crt` |
@@ -144,7 +144,7 @@
 loginctl enable-linger $(whoami)   # автостарт после ребута
 systemctl --user daemon-reload
 systemctl --user start kanban
-sudo nginx -t && sudo systemctl reload nginx
+sudo nginx -t && sudo nginx -s reload
 ```
 
 Self-signed сертификат:

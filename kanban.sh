@@ -7,7 +7,7 @@ VOLUME="kanban-data"
 
 # Настройки (переопределяются переменными окружения или флагами)
 HOST="${KANBAN_HOST:-kanban.local}"
-PORT="${KANBAN_PORT:-8080}"
+PORT="${KANBAN_PORT:-}"
 TLS="${KANBAN_TLS:-yes}"
 SSL_CERT="${KANBAN_SSL_CERT:-/etc/nginx/ssl/kanban.crt}"
 SSL_KEY="${KANBAN_SSL_KEY:-/etc/nginx/ssl/kanban.key}"
@@ -25,6 +25,19 @@ parse_flags() {
             *) break ;;
         esac
     done
+    # Порт по умолчанию: 443 (TLS) или 80 (HTTP)
+    if [[ -z "$PORT" ]]; then
+        [[ "$TLS" == "yes" ]] && PORT=443 || PORT=80
+    fi
+}
+
+# Внутренний порт контейнера (loopback, для nginx proxy_pass)
+backend_port() {
+    if [[ "$PORT" == "8080" ]]; then
+        echo 18080
+    else
+        echo 8080
+    fi
 }
 
 usage() {
@@ -33,7 +46,7 @@ usage() {
 
 Команды:
   build    Собрать образ контейнера
-  run      Запустить контейнер
+  run      Запустить контейнер (без nginx)
   stop     Остановить контейнер
   restart  Перезапустить контейнер
   logs     Логи контейнера
@@ -43,7 +56,7 @@ usage() {
 
 Флаги (для run и deploy):
   --host <FQDN|IP>  Имя хоста / IP     (по умолчанию kanban.local)
-  --port <порт>      Порт контейнера    (по умолчанию 8080)
+  --port <порт>      Порт               (по умолчанию 443/TLS или 80/HTTP)
   --tls              Включить TLS       (по умолчанию)
   --no-tls           Без TLS — только HTTP
   --cert <путь>      Путь к сертификату (по умолчанию /etc/nginx/ssl/kanban.crt)
@@ -53,9 +66,10 @@ usage() {
   KANBAN_HOST, KANBAN_PORT, KANBAN_TLS, KANBAN_SSL_CERT, KANBAN_SSL_KEY
 
 Примеры:
-  ./kanban.sh run --host 192.168.1.10 --port 9090
+  ./kanban.sh run --port 9090
   ./kanban.sh deploy --host kanban.example.com --port 9090 --tls
-  ./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
+  ./kanban.sh deploy --host 10.0.0.5 --no-tls
+  ./kanban.sh deploy --host kanban.local --port 8443 --tls
 HELP
     exit 1
 }
@@ -120,6 +134,7 @@ cmd_status() {
 }
 
 generate_systemd() {
+    local bp="$1"
     local target_dir="${HOME}/.config/containers/systemd"
     mkdir -p "$target_dir"
 
@@ -132,7 +147,7 @@ Wants=network-online.target
 [Container]
 Image=${IMAGE}
 ContainerName=${CONTAINER}
-PublishPort=127.0.0.1:${PORT}:8080
+PublishPort=127.0.0.1:${bp}:8080
 Volume=kanban-data.volume:/data:Z
 
 # Security hardening
@@ -156,24 +171,28 @@ UNIT
 
     cp deploy/kanban-data.volume "${target_dir}/kanban-data.volume"
 
-    echo "  ${target_dir}/kanban.container (порт ${PORT})"
+    echo "  ${target_dir}/kanban.container (контейнер 127.0.0.1:${bp})"
     echo "  ${target_dir}/kanban-data.volume"
 }
 
 generate_nginx() {
-    local nginx_dir="/etc/nginx/sites-available"
-    local conf="${nginx_dir}/kanban"
+    local bp="$1"
 
     if [[ "$TLS" == "yes" ]]; then
-        cat <<NGINX
+        # HTTP → HTTPS редирект (только для стандартных портов)
+        if [[ "$PORT" == "443" ]]; then
+            cat <<NGINX
 server {
     listen 80;
     server_name ${HOST};
     return 301 https://\$host\$request_uri;
 }
 
+NGINX
+        fi
+        cat <<NGINX
 server {
-    listen 443 ssl http2;
+    listen ${PORT} ssl http2;
     server_name ${HOST};
 
     ssl_certificate     ${SSL_CERT};
@@ -189,7 +208,7 @@ server {
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
 
     location / {
-        proxy_pass http://127.0.0.1:${PORT};
+        proxy_pass http://127.0.0.1:${bp};
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -212,7 +231,7 @@ NGINX
     else
         cat <<NGINX
 server {
-    listen 80;
+    listen ${PORT};
     server_name ${HOST};
 
     add_header X-Content-Type-Options "nosniff" always;
@@ -221,7 +240,7 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     location / {
-        proxy_pass http://127.0.0.1:${PORT};
+        proxy_pass http://127.0.0.1:${bp};
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -245,20 +264,24 @@ NGINX
 }
 
 cmd_deploy() {
+    local bp
+    bp=$(backend_port)
+
     echo "==> Конфигурация:"
-    echo "    Хост:  ${HOST}"
-    echo "    Порт:  ${PORT}"
-    echo "    TLS:   ${TLS}"
-    [[ "$TLS" == "yes" ]] && echo "    Серт:  ${SSL_CERT}" && echo "    Ключ:  ${SSL_KEY}"
+    echo "    Хост:     ${HOST}"
+    echo "    Порт:     ${PORT}"
+    echo "    TLS:      ${TLS}"
+    echo "    Бэкенд:   127.0.0.1:${bp}"
+    [[ "$TLS" == "yes" ]] && echo "    Серт:     ${SSL_CERT}" && echo "    Ключ:     ${SSL_KEY}"
     echo ""
 
     # --- systemd ---
     echo "==> Установка systemd unit-файлов..."
-    generate_systemd
+    generate_systemd "$bp"
 
     # --- nginx ---
     local nginx_conf="deploy/nginx-kanban-generated.conf"
-    generate_nginx > "$nginx_conf"
+    generate_nginx "$bp" > "$nginx_conf"
     echo ""
     echo "==> Nginx конфиг сгенерирован: ${nginx_conf}"
 
@@ -286,7 +309,7 @@ cmd_deploy() {
 
             echo ""
             echo "==> Далее выполните:"
-            echo "  sudo nginx -t && sudo systemctl reload nginx"
+            echo "  sudo nginx -t && sudo nginx -s reload"
         else
             echo "  [!] Не удалось скопировать (нет sudo?). Конфиг в ${nginx_conf}"
         fi
@@ -301,9 +324,9 @@ cmd_deploy() {
     echo "  systemctl --user start kanban"
     echo ""
     if [[ "$TLS" == "yes" ]]; then
-        echo "==> Канбан будет доступен: https://${HOST}"
+        echo "==> Канбан будет доступен: https://${HOST}$([ "$PORT" != "443" ] && echo ":${PORT}")"
     else
-        echo "==> Канбан будет доступен: http://${HOST}"
+        echo "==> Канбан будет доступен: http://${HOST}$([ "$PORT" != "80" ] && echo ":${PORT}")"
     fi
 }
 
