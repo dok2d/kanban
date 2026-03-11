@@ -671,21 +671,21 @@ async function loadBoard() {
 }
 
 // === Image compression & paste ===
-function compressImage(file, maxWidth = 1920, maxHeight = 1920, quality = 0.85) {
+function compressImage(file) {
   return new Promise((resolve) => {
     if (!file.type.startsWith('image/') || file.type === 'image/gif') {
       resolve(file);
       return;
     }
+    if (file.size <= 200 * 1024) { resolve(file); return; }
+    const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
+      URL.revokeObjectURL(url);
+      const maxDim = 1920;
       let { width, height } = img;
-      if (width <= maxWidth && height <= maxHeight && file.size <= 512 * 1024) {
-        resolve(file);
-        return;
-      }
-      if (width > maxWidth || height > maxHeight) {
-        const ratio = Math.min(maxWidth / width, maxHeight / height);
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
         width = Math.round(width * ratio);
         height = Math.round(height * ratio);
       }
@@ -694,12 +694,18 @@ function compressImage(file, maxWidth = 1920, maxHeight = 1920, quality = 0.85) 
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => {
-        resolve(blob ? new File([blob], file.name || 'image.jpg', { type: 'image/jpeg' }) : file);
-      }, 'image/jpeg', quality);
+      // Try progressively lower quality until under 500KB
+      const tryQuality = (q) => {
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return; }
+          if (blob.size > 500 * 1024 && q > 0.4) { tryQuality(q - 0.15); return; }
+          resolve(new File([blob], file.name || 'image.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', q);
+      };
+      tryQuality(0.82);
     };
-    img.onerror = () => resolve(file);
-    img.src = URL.createObjectURL(file);
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
   });
 }
 async function uploadImage(file) {
