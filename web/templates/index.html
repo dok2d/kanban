@@ -652,7 +652,11 @@ async function api(path, method = 'GET', body = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(path, opts);
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) {
+    const text = await r.text();
+    if (r.status === 413) throw new Error(t('fileTooLarge'));
+    throw new Error(text.startsWith('<') ? `${r.status} ${r.statusText}` : text);
+  }
   return r.json();
 }
 
@@ -666,16 +670,48 @@ async function loadBoard() {
   renderCurrentView();
 }
 
-// === Image paste ===
+// === Image compression & paste ===
+function compressImage(file, maxWidth = 1920, maxHeight = 1920, quality = 0.85) {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/') || file.type === 'image/gif') {
+      resolve(file);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width <= maxWidth && height <= maxHeight && file.size <= 512 * 1024) {
+        resolve(file);
+        return;
+      }
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        resolve(blob ? new File([blob], file.name || 'image.jpg', { type: 'image/jpeg' }) : file);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = () => resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
 async function uploadImage(file) {
+  const compressed = await compressImage(file);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result.split(',')[1];
-      try { const res = await api('/api/images', 'POST', { data: base64, mime: file.type }); resolve(res.url); }
+      try { const res = await api('/api/images', 'POST', { data: base64, mime: compressed.type }); resolve(res.url); }
       catch (e) { reject(e); }
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(compressed);
   });
 }
 function setupPaste(textarea) {
@@ -691,7 +727,7 @@ function setupPaste(textarea) {
         const after = textarea.value.substring(textarea.selectionEnd);
         textarea.value = before + `![${t('uploading')}]()` + after;
         try { const url = await uploadImage(file); textarea.value = before + `![image](${url})` + after; }
-        catch { textarea.value = before + `![${t('uploadFailed')}]()` + after; }
+        catch (err) { textarea.value = before + after; alert(t('uploadError') + ': ' + err.message); }
         break;
       }
     }
@@ -810,18 +846,20 @@ function triggerFileAttach(textareaId) {
   inp.onchange = async () => {
     const file = inp.files[0];
     if (!file) return;
-    if (file.size > 10*1024*1024) { alert(t('fileTooLarge')); return; }
+    if (file.size > 10*1024*1024 && !file.type.startsWith('image/')) { alert(t('fileTooLarge')); return; }
     const ta = document.getElementById(textareaId);
+    const uploadFile = file.type.startsWith('image/') ? await compressImage(file) : file;
+    if (uploadFile.size > 10*1024*1024) { alert(t('fileTooLarge')); return; }
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result.split(',')[1];
       try {
-        const res = await api('/api/files', 'POST', { data: base64, filename: file.name, mime: file.type });
-        const link = file.type.startsWith('image/') ? `![${file.name}](${res.url})` : `[${file.name}](${res.url})`;
+        const res = await api('/api/files', 'POST', { data: base64, filename: file.name, mime: uploadFile.type });
+        const link = uploadFile.type.startsWith('image/') ? `![${file.name}](${res.url})` : `[${file.name}](${res.url})`;
         if (ta) { const pos = ta.selectionStart; ta.value = ta.value.substring(0, pos) + link + ta.value.substring(ta.selectionEnd); ta.focus(); }
       } catch(e) { alert(t('uploadError') + ': ' + e.message); }
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(uploadFile);
   };
   inp.click();
 }

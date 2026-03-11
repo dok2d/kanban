@@ -361,7 +361,7 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8*1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, 15*1024*1024)
 	var req struct {
 		Data string `json:"data"`
 		Mime string `json:"mime"`
@@ -425,7 +425,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 15*1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, 20*1024*1024)
 	var req struct {
 		Data     string `json:"data"`
 		Filename string `json:"filename"`
