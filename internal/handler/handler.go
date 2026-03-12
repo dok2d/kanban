@@ -810,8 +810,12 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		// Clean up orphaned images/files after task deletion
-		go h.store.CleanupOrphanFiles()
+		// Clean up orphaned images/files after task deletion (sync to avoid SQLite locks)
+		if cleaned, err := h.store.CleanupOrphanFiles(); err != nil {
+			log.Printf("[cleanup] error after task delete: %v", err)
+		} else if cleaned > 0 {
+			log.Printf("[cleanup] removed %d orphaned files/images", cleaned)
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -950,8 +954,12 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		// Clean up orphaned images/files after comment deletion
-		go h.store.CleanupOrphanFiles()
+		// Clean up orphaned images/files after comment deletion (sync to avoid SQLite locks)
+		if cleaned, err := h.store.CleanupOrphanFiles(); err != nil {
+			log.Printf("[cleanup] error after comment delete: %v", err)
+		} else if cleaned > 0 {
+			log.Printf("[cleanup] removed %d orphaned files/images", cleaned)
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
 		http.Error(w, "method not allowed", 405)
