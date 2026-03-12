@@ -218,7 +218,7 @@ server {
         return 404;
     }
 
-    client_max_body_size 2m;
+    client_max_body_size 50m;
 }
 NGINX
     else
@@ -250,7 +250,7 @@ server {
         return 404;
     }
 
-    client_max_body_size 2m;
+    client_max_body_size 50m;
 }
 NGINX
     fi
