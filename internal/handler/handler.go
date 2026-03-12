@@ -798,6 +798,8 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+		// Clean up orphaned images/files after task deletion
+		go h.store.CleanupOrphanFiles()
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -936,6 +938,8 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+		// Clean up orphaned images/files after comment deletion
+		go h.store.CleanupOrphanFiles()
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -1739,8 +1743,9 @@ func (h *Handler) handleTimezoneSettings(w http.ResponseWriter, r *http.Request)
 
 // runBackupScheduler sends daily backup dump to admin via Telegram at 18:00 admin's timezone
 func (h *Handler) runBackupScheduler() {
+	var lastChecksum string
 	for {
-		now := time.Now().UTC()
+		now := time.Now()
 		adminTZ := h.store.GetSetting("admin_timezone")
 		if adminTZ == "" {
 			adminTZ = "UTC"
@@ -1753,24 +1758,30 @@ func (h *Handler) runBackupScheduler() {
 		nowLocal := now.In(loc)
 		// Next 18:00 in admin timezone
 		next := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 18, 0, 0, 0, loc)
-		if nowLocal.After(next) {
+		if !nowLocal.Before(next) {
 			next = next.Add(24 * time.Hour)
 		}
-		sleepDuration := next.Sub(now.In(loc))
+		sleepDuration := time.Until(next.In(time.UTC))
 		if sleepDuration < 0 {
 			sleepDuration = time.Minute
 		}
+		log.Printf("[backup] next backup at %s (%s), sleeping %s", next.Format("2006-01-02 15:04"), adminTZ, sleepDuration.Round(time.Second))
 
 		time.Sleep(sleepDuration)
 
-		h.sendDailyBackup()
+		// Clean up orphaned files before backup
+		if cleaned, err := h.store.CleanupOrphanFiles(); err == nil && cleaned > 0 {
+			log.Printf("[backup] cleaned %d orphaned files/images", cleaned)
+		}
+
+		lastChecksum = h.sendDailyBackup(lastChecksum)
 	}
 }
 
-func (h *Handler) sendDailyBackup() {
+func (h *Handler) sendDailyBackup(lastChecksum string) string {
 	token := h.store.GetSetting("telegram_bot_token")
 	if token == "" {
-		return
+		return lastChecksum
 	}
 
 	// Find admin users with telegram linked
@@ -1782,27 +1793,35 @@ func (h *Handler) sendDailyBackup() {
 		}
 	}
 	if len(adminChatIDs) == 0 {
-		return
+		return lastChecksum
+	}
+
+	// Check if database changed since last backup
+	checksum := h.store.DatabaseChecksum()
+	if checksum == lastChecksum {
+		log.Printf("[backup] database unchanged, skipping backup")
+		return lastChecksum
 	}
 
 	// Generate export
 	data, err := h.store.ExportAll()
 	if err != nil {
 		log.Printf("[backup] export error: %v", err)
-		return
+		return lastChecksum
 	}
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		log.Printf("[backup] marshal error: %v", err)
-		return
+		return lastChecksum
 	}
 
-	filename := fmt.Sprintf("kanban-backup-%s.json", time.Now().UTC().Format("2006-01-02"))
+	filename := fmt.Sprintf("kanban-backup-%s.json", time.Now().Format("2006-01-02"))
 	for _, chatID := range adminChatIDs {
 		h.sendTelegramDocument(token, chatID, filename, jsonData, "📦 Ежедневный бэкап Kanban")
 	}
 	log.Printf("[backup] sent daily backup to %d admin(s)", len(adminChatIDs))
+	return checksum
 }
 
 // helpers
