@@ -221,6 +221,7 @@ func (h *Handler) routes() {
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") || strings.HasPrefix(r.URL.Path, "/user/") {
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 		http.ServeFile(w, r, "web/templates/index.html")
 		return
 	}
@@ -386,8 +387,8 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid base64", 400)
 		return
 	}
-	if len(raw) > 5*1024*1024 {
-		http.Error(w, "image too large (max 5MB)", 413)
+	if len(raw) > 20*1024*1024 {
+		http.Error(w, "image too large (max 20MB)", 413)
 		return
 	}
 	id, err := h.store.SaveImage(raw, req.Mime)
@@ -458,8 +459,8 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid base64", 400)
 		return
 	}
-	if len(raw) > 10*1024*1024 {
-		http.Error(w, "file too large (max 10MB)", 413)
+	if len(raw) > 20*1024*1024 {
+		http.Error(w, "file too large (max 20MB)", 413)
 		return
 	}
 	// Sanitize filename
