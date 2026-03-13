@@ -119,9 +119,10 @@ cmd_backup() {
     BACKUP_DIR="${BACKUP_DIR:-./backups}"
     mkdir -p "$BACKUP_DIR"
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    MOUNT=$(podman volume inspect "$VOLUME" --format '{{.Mountpoint}}')
-    cp "${MOUNT}/kanban.db" "${BACKUP_DIR}/${CONTAINER}_${TIMESTAMP}.db"
-    echo "==> Бэкап: ${BACKUP_DIR}/${CONTAINER}_${TIMESTAMP}.db"
+    local dest="${BACKUP_DIR}/${CONTAINER}_${TIMESTAMP}.db"
+    podman unshare cp "$(podman volume inspect "$VOLUME" --format '{{.Mountpoint}}')/kanban.db" "$dest"
+    podman unshare chown "$(id -u):$(id -g)" "$dest"
+    echo "==> Бэкап: ${dest}"
 }
 
 cmd_restore() {
@@ -158,11 +159,12 @@ cmd_restore() {
         return 1
     fi
 
-    MOUNT=$(podman volume inspect "$VOLUME" --format '{{.Mountpoint}}')
-    local db_path="${MOUNT}/kanban.db"
+    local mount
+    mount=$(podman volume inspect "$VOLUME" --format '{{.Mountpoint}}')
+    local db_path="${mount}/kanban.db"
 
     echo "==> Восстановление из: $backup_file"
-    echo "    Целевая БД: $db_path"
+    echo "    Том: ${VOLUME}"
     echo ""
     echo "    ВНИМАНИЕ: текущие данные будут перезаписаны!"
     read -rp "    Продолжить? (yes/no): " confirm
@@ -173,8 +175,10 @@ cmd_restore() {
 
     # Создаём бэкап текущей БД перед восстановлением
     local pre_restore_backup="${BACKUP_DIR}/${CONTAINER}_pre-restore_$(date +%Y%m%d_%H%M%S).db"
-    if [[ -f "$db_path" ]]; then
-        cp "$db_path" "$pre_restore_backup"
+    mkdir -p "$BACKUP_DIR"
+    if podman unshare test -f "$db_path"; then
+        podman unshare cp "$db_path" "$pre_restore_backup"
+        podman unshare chown "$(id -u):$(id -g)" "$pre_restore_backup"
         echo "==> Бэкап текущей БД: $pre_restore_backup"
     fi
 
@@ -182,10 +186,10 @@ cmd_restore() {
     echo "==> Остановка ${CONTAINER}..."
     podman stop "$CONTAINER" 2>/dev/null || true
 
-    # Копируем бэкап
-    cp "$backup_file" "$db_path"
+    # Копируем бэкап в volume через podman unshare
+    podman unshare cp "$backup_file" "$db_path"
     # Удаляем WAL/SHM файлы для чистого старта
-    rm -f "${db_path}-wal" "${db_path}-shm"
+    podman unshare rm -f "${db_path}-wal" "${db_path}-shm"
 
     echo "==> БД восстановлена."
 
