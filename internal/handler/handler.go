@@ -390,7 +390,10 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid base64", 400)
 		return
 	}
-	log.Printf("[upload] image: decoded=%d bytes, mime=%s", len(raw), req.Mime)
+	log.Printf("[upload] image: decoded=%d bytes (%.1f MB), mime=%s", len(raw), float64(len(raw))/(1024*1024), req.Mime)
+	if len(raw) > 1024*1024 {
+		log.Printf("[upload] image: WARNING client compression may have failed (>1MB)")
+	}
 	if len(raw) > 20*1024*1024 {
 		log.Printf("[upload] image: rejected, size %d > 20MB", len(raw))
 		http.Error(w, "image too large (max 20MB)", 413)
@@ -469,7 +472,10 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid base64", 400)
 		return
 	}
-	log.Printf("[upload] file: name=%s, decoded=%d bytes, mime=%s", req.Filename, len(raw), req.Mime)
+	log.Printf("[upload] file: name=%s, decoded=%d bytes (%.1f MB), mime=%s", req.Filename, len(raw), float64(len(raw))/(1024*1024), req.Mime)
+	if strings.HasPrefix(req.Mime, "image/") && len(raw) > 1024*1024 {
+		log.Printf("[upload] file: WARNING image not compressed by client (>1MB)")
+	}
 	if len(raw) > 20*1024*1024 {
 		log.Printf("[upload] file: rejected, size %d > 20MB", len(raw))
 		http.Error(w, "file too large (max 20MB)", 413)

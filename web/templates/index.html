@@ -681,56 +681,37 @@ function _isGif(file) {
 function _dbg() {
   if (localStorage.getItem('kanban-debug')) console.log('[upload]', ...arguments);
 }
-function compressImage(file) {
-  return new Promise((resolve) => {
-    if (!_isImage(file) || _isGif(file)) {
-      _dbg('skip: not image or gif', file.name, file.type);
-      resolve(file);
-      return;
+async function compressImage(file) {
+  if (!_isImage(file) || _isGif(file)) return file;
+  if (file.size <= 200 * 1024) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxDim = 1920;
+    let { width, height } = bitmap;
+    if (width > maxDim || height > maxDim) {
+      const ratio = Math.min(maxDim / width, maxDim / height);
+      width = Math.round(width * ratio);
+      height = Math.round(height * ratio);
     }
-    if (file.size <= 200 * 1024) { _dbg('skip: small', file.size); resolve(file); return; }
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    const timeout = setTimeout(() => {
-      console.warn('[upload] compression timeout, sending original');
-      URL.revokeObjectURL(url);
-      resolve(file);
-    }, 10000);
-    img.onload = () => {
-      clearTimeout(timeout);
-      URL.revokeObjectURL(url);
-      try {
-        const maxDim = 1920;
-        let { width, height } = img;
-        if (width > maxDim || height > maxDim) {
-          const ratio = Math.min(maxDim / width, maxDim / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
-        }
-        _dbg('resize:', img.width + 'x' + img.height, '->', width + 'x' + height);
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        const tryQuality = (q) => {
-          canvas.toBlob((blob) => {
-            if (!blob) { console.warn('[upload] toBlob null, sending original'); resolve(file); return; }
-            _dbg('q=' + q.toFixed(2), 'size:', blob.size);
-            if (blob.size > 500 * 1024 && q > 0.4) { tryQuality(q - 0.15); return; }
-            const result = new File([blob], file.name || 'image.jpg', { type: 'image/jpeg' });
-            console.log('[upload] compressed:', (file.size/1024).toFixed(0) + 'KB ->', (result.size/1024).toFixed(0) + 'KB (' + Math.round(result.size/file.size*100) + '%)');
-            resolve(result);
-          }, 'image/jpeg', q);
-        };
-        tryQuality(0.82);
-      } catch(e) {
-        console.warn('[upload] compression error:', e);
-        resolve(file);
-      }
-    };
-    img.onerror = () => { clearTimeout(timeout); URL.revokeObjectURL(url); console.warn('[upload] img load failed, sending original'); resolve(file); };
-    img.src = url;
-  });
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    let q = 0.82;
+    let blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
+    while (blob && blob.size > 500 * 1024 && q > 0.4) {
+      q -= 0.15;
+      blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
+    }
+    if (!blob) { console.warn('[compress] toBlob failed'); return file; }
+    const result = new File([blob], file.name || 'image.jpg', { type: 'image/jpeg' });
+    console.log('[compress]', (file.size/1024|0) + 'KB->' + (result.size/1024|0) + 'KB q=' + q.toFixed(2));
+    return result;
+  } catch(e) {
+    console.warn('[compress] error:', e);
+    return file;
+  }
 }
 async function uploadImage(file) {
   const compressed = await compressImage(file);
