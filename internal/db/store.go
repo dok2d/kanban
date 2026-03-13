@@ -183,7 +183,6 @@ func (s *Store) migrate() error {
 		)`,
 		// indexes for FK lookups
 		`CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_tasks_sprint_id ON tasks(sprint_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_comments_task_id ON comments(task_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
@@ -220,6 +219,9 @@ func (s *Store) migrate() error {
 	for _, q := range alters {
 		s.db.Exec(q) // ignore "duplicate column" errors
 	}
+
+	// create indexes that depend on ALTER TABLE columns
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_sprint_id ON tasks(sprint_id)")
 
 	// Migrate existing users: set role based on is_admin
 	s.db.Exec("UPDATE users SET role='admin' WHERE is_admin=1 AND role='regular'")
