@@ -25,7 +25,7 @@ func main() {
 	}
 	defer store.Close()
 
-	h := handler.New(store)
+	h := handler.New(store, *dbPath)
 	if *verbose {
 		h.SetVerbose(true)
 		log.Println("verbose logging enabled")
