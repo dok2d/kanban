@@ -1253,8 +1253,16 @@ function formatDuration(ms) {
 }
 
 // === Drag & Drop ===
-function onDragStart(e, taskId) { draggedTaskId = taskId; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
-function onDragEnd(e) { e.target.classList.remove('dragging'); draggedTaskId = null; }
+let dragScrollRAF = null;
+function dragAutoScroll(e) {
+  const edge = 60, speed = 18;
+  const y = e.clientY;
+  const h = window.innerHeight;
+  if (y < edge) { window.scrollBy(0, -speed); dragScrollRAF = requestAnimationFrame(() => {}); }
+  else if (y > h - edge) { window.scrollBy(0, speed); dragScrollRAF = requestAnimationFrame(() => {}); }
+}
+function onDragStart(e, taskId) { draggedTaskId = taskId; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; document.addEventListener('dragover', dragAutoScroll); }
+function onDragEnd(e) { e.target.classList.remove('dragging'); draggedTaskId = null; document.removeEventListener('dragover', dragAutoScroll); if (dragScrollRAF) { cancelAnimationFrame(dragScrollRAF); dragScrollRAF = null; } }
 function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
 async function onDrop(e, colId) {
   e.preventDefault();
@@ -2402,7 +2410,8 @@ function renderBacklogTaskRow(task) {
   const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
   const epicBadge = task.epic ? `<span class="card-epic" style="background:${task.epic.color};color:${contrastColor(task.epic.color)};font-size:.7rem;padding:1px 5px">${esc(task.epic.name)}</span>` : '';
   return `<div class="epic-task-row" draggable="true" data-task-id="${task.id}"
-    ondragstart="event.dataTransfer.setData('text/plain','${task.id}')"
+    ondragstart="event.dataTransfer.setData('text/plain','${task.id}');document.addEventListener('dragover',dragAutoScroll)"
+    ondragend="document.removeEventListener('dragover',dragAutoScroll)"
     onclick="navigateTo('/task/${task.id}')">
     <span class="card-id">#${task.id}</span>
     <span class="epic-task-title">${esc(task.title)}</span>
