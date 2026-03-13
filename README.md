@@ -2,7 +2,7 @@
 
 [Русская версия](README.RUS.md)
 
-Minimalist self-hosted Kanban board with epics, tags, comments, notifications, Telegram integration, and drag-and-drop.
+Minimalist self-hosted Kanban board with sprints, epics, tags, comments, notifications, Telegram integration, and drag-and-drop.
 
 ## Stack
 
@@ -17,6 +17,9 @@ Minimalist self-hosted Kanban board with epics, tags, comments, notifications, T
 - Create / edit / delete tasks with inline editing
 - Priorities (none, low, medium, high, critical)
 - Optional deadline with visual indicator on cards
+- Sprints with planning/active/completed statuses and backlog view
+- Board filters by sprint and epic in header (⬡ kanban / Sprint / Epic)
+- Sprint completion with automatic task migration to next sprint
 - Epics with color coding and progress tracking
 - Tags (multiple per task)
 - Nested comments with replies (Markdown, @mentions)
@@ -210,7 +213,7 @@ All endpoints return JSON. Authentication required (session cookie).
 
 | Method | Path                | Description                            |
 |--------|---------------------|----------------------------------------|
-| GET    | /api/board          | Full board (columns, tasks, epics, tags) |
+| GET    | /api/board          | Full board (columns, tasks, epics, sprints, tags) |
 | GET    | /api/tasks          | List tasks                             |
 | POST   | /api/tasks          | Create task                            |
 | GET    | /api/tasks/:id      | Task details                           |
@@ -244,6 +247,17 @@ All endpoints return JSON. Authentication required (session cookie).
 |--------|-------------------------|----------------------------|
 | GET    | /api/settings/timezone  | Get server timezone        |
 | POST   | /api/settings/timezone  | Set server timezone        |
+
+### Sprints
+
+| Method | Path                       | Description                            |
+|--------|----------------------------|----------------------------------------|
+| GET    | /api/sprints               | List sprints                           |
+| POST   | /api/sprints               | Create sprint                          |
+| GET    | /api/sprints/:id           | Sprint with tasks                      |
+| PUT    | /api/sprints/:id           | Update sprint                          |
+| DELETE | /api/sprints/:id           | Delete sprint                          |
+| POST   | /api/sprints/:id/complete  | Complete sprint (move tasks)           |
 
 ### Other
 
