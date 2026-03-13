@@ -21,6 +21,14 @@ type Tag struct {
 	Color string `json:"color"`
 }
 
+type Sprint struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	StartDate string `json:"start_date"` // ISO date YYYY-MM-DD
+	EndDate   string `json:"end_date"`   // ISO date YYYY-MM-DD
+	Status    string `json:"status"`     // "planning", "active", "completed"
+}
+
 type TaskDep struct {
 	ID       int64  `json:"id"`
 	Title    string `json:"title"`
@@ -35,6 +43,7 @@ type Task struct {
 	ProjectURL  string    `json:"project_url"`
 	ColumnID    int64     `json:"column_id"`
 	EpicID      *int64    `json:"epic_id"`
+	SprintID    *int64    `json:"sprint_id"`
 	AssigneeID  *int64    `json:"assignee_id"`
 	Position    int       `json:"position"`
 	Priority    int       `json:"priority"` // 0=none,1=low,2=med,3=high,4=critical
@@ -43,6 +52,7 @@ type Task struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 	Tags        []Tag     `json:"tags"`
 	Epic        *Epic     `json:"epic,omitempty"`
+	Sprint      *Sprint   `json:"sprint,omitempty"`
 	Assignee    *User     `json:"assignee,omitempty"`
 	Comments    []Comment `json:"comments,omitempty"`
 	DependsOn   []TaskDep `json:"depends_on,omitempty"`
@@ -155,6 +165,7 @@ type ExportFile struct {
 type ExportData struct {
 	Columns       []Column             `json:"columns"`
 	Epics         []Epic               `json:"epics"`
+	Sprints       []Sprint             `json:"sprints,omitempty"`
 	Tags          []Tag                `json:"tags"`
 	Tasks         []Task               `json:"tasks"`
 	Comments      []Comment            `json:"comments"`

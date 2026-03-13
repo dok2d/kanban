@@ -179,6 +179,8 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/columns/", h.handleColumn)
 	h.mux.HandleFunc("/api/epics", h.handleEpics)
 	h.mux.HandleFunc("/api/epics/", h.handleEpic)
+	h.mux.HandleFunc("/api/sprints", h.handleSprints)
+	h.mux.HandleFunc("/api/sprints/", h.handleSprintRoute)
 	h.mux.HandleFunc("/api/tags", h.handleTags)
 	h.mux.HandleFunc("/api/tags/", h.handleTag)
 	h.mux.HandleFunc("/api/tasks", h.handleTasks)
@@ -220,7 +222,7 @@ func (h *Handler) routes() {
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") || strings.HasPrefix(r.URL.Path, "/user/") {
+	if r.URL.Path == "/" || r.URL.Path == "/backlog" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") || strings.HasPrefix(r.URL.Path, "/sprint/") || strings.HasPrefix(r.URL.Path, "/user/") {
 		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 		http.ServeFile(w, r, "web/templates/index.html")
 		return
@@ -251,6 +253,12 @@ func (h *Handler) handleBoard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", 500)
 		return
 	}
+	sprints, err := h.store.ListSprints()
+	if err != nil {
+		h.logf("handleBoard ListSprints error: %v", err)
+		http.Error(w, "internal error", 500)
+		return
+	}
 	tags, err := h.store.ListTags()
 	if err != nil {
 		h.logf("handleBoard ListTags error: %v", err)
@@ -261,7 +269,7 @@ func (h *Handler) handleBoard(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		users = []model.User{}
 	}
-	jsonResp(w, map[string]any{"columns": cols, "tasks": tasks, "epics": epics, "tags": tags, "users": users})
+	jsonResp(w, map[string]any{"columns": cols, "tasks": tasks, "epics": epics, "sprints": sprints, "tags": tags, "users": users})
 }
 
 // --- Columns ---
@@ -594,6 +602,114 @@ func (h *Handler) handleEpic(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// --- Sprints ---
+func (h *Handler) handleSprints(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		sprints, err := h.store.ListSprints()
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		jsonResp(w, sprints)
+	case http.MethodPost:
+		var req struct {
+			Name      string `json:"name"`
+			StartDate string `json:"start_date"`
+			EndDate   string `json:"end_date"`
+			Status    string `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name required", 400)
+			return
+		}
+		id, err := h.store.CreateSprint(req.Name, req.StartDate, req.EndDate, req.Status)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		jsonResp(w, map[string]int64{"id": id})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func (h *Handler) handleSprintRoute(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	if strings.HasSuffix(path, "/complete") {
+		sprintID := extractID(strings.TrimSuffix(path, "/complete"), "/api/sprints/")
+		h.handleCompleteSprint(w, r, sprintID)
+		return
+	}
+	id := extractID(path, "/api/sprints/")
+	if id == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		sprint, err := h.store.GetSprint(id)
+		if err != nil {
+			http.Error(w, "not found", 404)
+			return
+		}
+		tasks, err := h.store.SprintTasks(id)
+		if err != nil {
+			http.Error(w, "internal error", 500)
+			return
+		}
+		jsonResp(w, map[string]any{"sprint": sprint, "tasks": tasks})
+	case http.MethodPut:
+		var req struct {
+			Name      string `json:"name"`
+			StartDate string `json:"start_date"`
+			EndDate   string `json:"end_date"`
+			Status    string `json:"status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if err := h.store.UpdateSprint(id, req.Name, req.StartDate, req.EndDate, req.Status); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		jsonResp(w, map[string]string{"status": "ok"})
+	case http.MethodDelete:
+		if err := h.store.DeleteSprint(id); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		jsonResp(w, map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func (h *Handler) handleCompleteSprint(w http.ResponseWriter, r *http.Request, sprintID int64) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if sprintID == 0 {
+		http.Error(w, "bad id", 400)
+		return
+	}
+	var req struct {
+		MoveToSprintID *int64 `json:"move_to_sprint_id"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if err := h.store.CompleteSprint(sprintID, req.MoveToSprintID); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	jsonResp(w, map[string]string{"status": "ok"})
+}
+
 // --- Tags ---
 func (h *Handler) handleTags(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -667,6 +783,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			ProjectURL   string  `json:"project_url"`
 			ColumnID     int64   `json:"column_id"`
 			EpicID       *int64  `json:"epic_id"`
+			SprintID     *int64  `json:"sprint_id"`
 			AssigneeID   *int64  `json:"assignee_id"`
 			Priority     int     `json:"priority"`
 			Deadline     string  `json:"deadline"`
@@ -681,7 +798,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "title and column_id required", 400)
 			return
 		}
-		id, err := h.store.CreateTask(req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.AssigneeID, req.Priority, req.TagIDs, req.Deadline)
+		id, err := h.store.CreateTask(req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.SprintID, req.AssigneeID, req.Priority, req.TagIDs, req.Deadline)
 		if err != nil {
 			h.logf("create task: %v", err)
 			http.Error(w, err.Error(), 500)
@@ -751,6 +868,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			ProjectURL   string  `json:"project_url"`
 			ColumnID     int64   `json:"column_id"`
 			EpicID       *int64  `json:"epic_id"`
+			SprintID     *int64  `json:"sprint_id"`
 			AssigneeID   *int64  `json:"assignee_id"`
 			Priority     int     `json:"priority"`
 			Deadline     string  `json:"deadline"`
@@ -765,7 +883,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 		// Get old task for comparison
 		oldTask, _ := h.store.GetTask(id)
 
-		if err := h.store.UpdateTask(id, req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.AssigneeID, req.Priority, req.TagIDs, req.Deadline); err != nil {
+		if err := h.store.UpdateTask(id, req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.SprintID, req.AssigneeID, req.Priority, req.TagIDs, req.Deadline); err != nil {
 			h.logf("UpdateTask(%d) error: %v", id, err)
 			http.Error(w, err.Error(), 500)
 			return

@@ -717,7 +717,7 @@ func (h *Handler) handleTelegramAssignTask(token string, chatID int64, taskID in
 		tagIDs = append(tagIDs, tg.ID)
 	}
 
-	if err := h.store.UpdateTask(task.ID, task.Title, task.Description, task.Todo, task.ProjectURL, task.ColumnID, task.EpicID, aID, task.Priority, tagIDs, task.Deadline); err != nil {
+	if err := h.store.UpdateTask(task.ID, task.Title, task.Description, task.Todo, task.ProjectURL, task.ColumnID, task.EpicID, task.SprintID, aID, task.Priority, tagIDs, task.Deadline); err != nil {
 		h.sendTelegramMessage(token, chatID, "❌ Ошибка назначения.")
 		return
 	}
@@ -782,7 +782,7 @@ func (h *Handler) handleTelegramSetPriority(token string, chatID int64, taskID i
 		tagIDs = append(tagIDs, tg.ID)
 	}
 
-	if err := h.store.UpdateTask(task.ID, task.Title, task.Description, task.Todo, task.ProjectURL, task.ColumnID, task.EpicID, task.AssigneeID, prio, tagIDs, task.Deadline); err != nil {
+	if err := h.store.UpdateTask(task.ID, task.Title, task.Description, task.Todo, task.ProjectURL, task.ColumnID, task.EpicID, task.SprintID, task.AssigneeID, prio, tagIDs, task.Deadline); err != nil {
 		h.sendTelegramMessage(token, chatID, "❌ Ошибка.")
 		return
 	}
