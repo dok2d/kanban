@@ -2335,6 +2335,19 @@ async function renderSprintPage(sprintId) {
   const statusColors = {planning: 'var(--fg3)', active: 'var(--green)', completed: 'var(--blue)'};
   const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
 
+  let sprintSortMode = localStorage.getItem('kanban-sprint-sort') || 'position';
+  let sprintBacklogSort = localStorage.getItem('kanban-sprint-backlog-sort') || 'position';
+  let sprintDoneSort = localStorage.getItem('kanban-sprint-done-sort') || 'position';
+
+  function renderSprintSortSelect(storageKey, currentMode) {
+    return `<select onchange="localStorage.setItem('${storageKey}',this.value);renderSprintPage(${sprintId})" style="background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:4px 8px;color:var(--fg);font-size:.82rem">
+      <option value="position" ${currentMode==='position'?'selected':''}>${t('sortPosition')}</option>
+      <option value="priority" ${currentMode==='priority'?'selected':''}>${t('sortPriority')}</option>
+      <option value="date" ${currentMode==='date'?'selected':''}>${t('sortDate')}</option>
+      <option value="title" ${currentMode==='title'?'selected':''}>${t('sortTitle')}</option>
+    </select>`;
+  }
+
   function renderSprintTaskRow(task) {
     const colName = state.columns.find(c => c.id === task.column_id);
     let colSelect = '';
@@ -2368,16 +2381,44 @@ async function renderSprintPage(sprintId) {
     </div>`;
 
   // Active tasks
-  html += `<h3 style="margin-bottom:8px">${t('active')} (${activeTasks.length})</h3><div class="epic-task-list">`;
-  for (const task of activeTasks) html += renderSprintTaskRow(task);
+  html += `<div style="margin-bottom:8px;display:flex;gap:6px;align-items:center;justify-content:space-between">
+      <h3 style="margin:0">${t('active')} (${activeTasks.length})</h3>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:.78rem;color:var(--fg3)">${t('sortBy')}:</span>
+        ${renderSprintSortSelect('kanban-sprint-sort', sprintSortMode)}
+      </div>
+    </div>
+    <div class="epic-task-list">`;
+  const sortedActive = sortEpicTasks(activeTasks, sprintSortMode);
+  for (const task of sortedActive) html += renderSprintTaskRow(task);
   if (!activeTasks.length) html += `<p style="color:var(--fg3)">${t('noActiveTasks')}</p>`;
   html += '</div>';
 
   if (backlogTasks.length) {
-    html += `<div class="task-page-section" style="margin-top:16px;opacity:.7"><h3 style="margin-bottom:8px">${t('backlog')} (${backlogTasks.length})</h3><div class="epic-task-list">${backlogTasks.map(renderSprintTaskRow).join('')}</div></div>`;
+    const sortedBacklog = sortEpicTasks(backlogTasks, sprintBacklogSort);
+    html += `<div class="task-page-section" style="margin-top:16px;opacity:.7">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="margin:0">${t('backlog')} (${backlogTasks.length})</h3>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:.78rem;color:var(--fg3)">${t('sortBy')}:</span>
+          ${renderSprintSortSelect('kanban-sprint-backlog-sort', sprintBacklogSort)}
+        </div>
+      </div>
+      <div class="epic-task-list">${sortedBacklog.map(renderSprintTaskRow).join('')}</div>
+    </div>`;
   }
   if (doneTasks.length) {
-    html += `<div class="task-page-section" style="margin-top:16px;opacity:.5"><h3 style="margin-bottom:8px">${t('done')} (${doneTasks.length})</h3><div class="epic-task-list">${doneTasks.map(renderSprintTaskRow).join('')}</div></div>`;
+    const sortedDone = sortEpicTasks(doneTasks, sprintDoneSort);
+    html += `<div class="task-page-section" style="margin-top:16px;opacity:.5">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="margin:0">${t('done')} (${doneTasks.length})</h3>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:.78rem;color:var(--fg3)">${t('sortBy')}:</span>
+          ${renderSprintSortSelect('kanban-sprint-done-sort', sprintDoneSort)}
+        </div>
+      </div>
+      <div class="epic-task-list">${sortedDone.map(renderSprintTaskRow).join('')}</div>
+    </div>`;
   }
   html += '</div>';
   app.innerHTML = html;
