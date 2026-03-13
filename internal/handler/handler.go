@@ -1660,14 +1660,17 @@ func (h *Handler) handleResetConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := h.store.ValidateResetCode(req.Username, req.Code)
 	if err != nil {
+		log.Printf("[auth] reset-confirm failed for user %q: %v", req.Username, err)
 		http.Error(w, "invalid or expired code", http.StatusBadRequest)
 		return
 	}
 	if err := h.store.UpdateUserPassword(user.ID, req.NewPassword); err != nil {
+		h.logf("reset-confirm password update failed for user %d: %v", user.ID, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	h.store.ClearResetCode(user.ID)
+	log.Printf("[auth] password reset completed for user %q (id=%d)", user.Username, user.ID)
 	jsonResp(w, map[string]string{"status": "ok"})
 }
 

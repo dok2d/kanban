@@ -1700,6 +1700,9 @@ func (s *Store) UnlinkTelegram(userID int64) error {
 func (s *Store) SetResetCode(userID int64, code string) error {
 	expires := time.Now().UTC().Add(resetCodeDuration).Format("2006-01-02 15:04:05")
 	_, err := s.db.Exec("UPDATE users SET reset_code=?, reset_code_expires=? WHERE id=?", code, expires, userID)
+	if err == nil {
+		s.logf("set reset code for user %d, expires %s", userID, expires)
+	}
 	return err
 }
 
@@ -1712,14 +1715,18 @@ func (s *Store) ValidateResetCode(username, code string) (*model.User, error) {
 	err := s.db.QueryRow("SELECT id,username,is_admin,role,created_at,reset_code,reset_code_expires FROM users WHERE LOWER(username)=LOWER(?)", username).
 		Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt, &resetCode, &expiresStr)
 	if err != nil {
+		s.logf("validate reset code: user %q not found: %v", username, err)
 		return nil, fmt.Errorf("user not found")
 	}
 	if resetCode == "" || resetCode != code {
+		s.logf("validate reset code: user %q code mismatch (stored=%q, provided=%q, stored_len=%d, provided_len=%d)", username, resetCode, code, len(resetCode), len(code))
 		return nil, fmt.Errorf("invalid code")
 	}
 	if expiresStr.Valid {
 		expires := parseTime(expiresStr.String)
-		if time.Now().UTC().After(expires) {
+		now := time.Now().UTC()
+		if now.After(expires) {
+			s.logf("validate reset code: user %q code expired (expires=%s, now=%s)", username, expiresStr.String, now.Format("2006-01-02 15:04:05"))
 			return nil, fmt.Errorf("code expired")
 		}
 	}

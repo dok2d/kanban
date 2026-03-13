@@ -80,6 +80,9 @@ cmd_run() {
     podman volume exists "$VOLUME" 2>/dev/null || podman volume create "$VOLUME"
 
     echo "==> Запуск ${CONTAINER} на порту ${PORT}..."
+    local verbose_flag=""
+    [[ "${VERBOSE:-}" == "1" || "${VERBOSE:-}" == "yes" ]] && verbose_flag="-verbose"
+
     podman run -d \
         --name "$CONTAINER" \
         --replace \
@@ -95,9 +98,11 @@ cmd_run() {
         --health-cmd "test -f /app/kanban || exit 1" \
         --health-interval 30s \
         --health-start-period 5s \
-        "$IMAGE"
+        "$IMAGE" \
+        -addr :8080 -db /data/kanban.db $verbose_flag
 
     echo "==> ${CONTAINER} запущен: http://127.0.0.1:${PORT}"
+    [[ -n "$verbose_flag" ]] && echo "    (verbose logging включен)"
 }
 
 cmd_stop() {
