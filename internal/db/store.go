@@ -756,7 +756,9 @@ func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, ep
 	defer tx.Rollback()
 
 	var maxPos int
-	tx.QueryRow("SELECT COALESCE(MAX(position),0) FROM tasks WHERE column_id=?", colID).Scan(&maxPos)
+	if err := tx.QueryRow("SELECT COALESCE(MAX(position),0) FROM tasks WHERE column_id=?", colID).Scan(&maxPos); err != nil {
+		return 0, fmt.Errorf("get max position: %w", err)
+	}
 	r, err := tx.Exec(`INSERT INTO tasks(title,description,todo,project_url,column_id,epic_id,sprint_id,assignee_id,position,priority,deadline)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?)`, title, desc, todo, projectURL, colID, epicID, sprintID, assigneeID, maxPos+1, priority, deadline)
 	if err != nil {
@@ -827,13 +829,24 @@ func (s *Store) UpdateComment(id int64, text string) error {
 }
 
 func (s *Store) DeleteComment(id int64) error {
-	// Recursively delete all descendants, then the comment itself
-	return s.deleteCommentTree(id)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := s.deleteCommentTreeTx(tx, id, 50); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
-func (s *Store) deleteCommentTree(id int64) error {
-	// Find all direct children
-	rows, err := s.db.Query("SELECT id FROM comments WHERE parent_id=?", id)
+func (s *Store) deleteCommentTreeTx(tx *sql.Tx, id int64, maxDepth int) error {
+	if maxDepth <= 0 {
+		// Safety: just delete this node, don't recurse further
+		_, err := tx.Exec("DELETE FROM comments WHERE id=?", id)
+		return err
+	}
+	rows, err := tx.Query("SELECT id FROM comments WHERE parent_id=?", id)
 	if err != nil {
 		return err
 	}
@@ -847,22 +860,26 @@ func (s *Store) deleteCommentTree(id int64) error {
 		childIDs = append(childIDs, cid)
 	}
 	rows.Close()
-	// Recursively delete children
 	for _, cid := range childIDs {
-		if err := s.deleteCommentTree(cid); err != nil {
+		if err := s.deleteCommentTreeTx(tx, cid, maxDepth-1); err != nil {
 			return err
 		}
 	}
-	// Delete the comment itself
-	_, err = s.db.Exec("DELETE FROM comments WHERE id=?", id)
+	_, err = tx.Exec("DELETE FROM comments WHERE id=?", id)
 	return err
 }
 
 // CountCommentDescendants returns the number of replies (all levels) for a comment
 func (s *Store) CountCommentDescendants(id int64) int {
+	return s.countDescendants(id, 50)
+}
+
+func (s *Store) countDescendants(id int64, maxDepth int) int {
+	if maxDepth <= 0 {
+		return 0
+	}
 	var count int
 	s.db.QueryRow("SELECT COUNT(*) FROM comments WHERE parent_id=?", id).Scan(&count)
-	// Add descendants of children recursively
 	rows, err := s.db.Query("SELECT id FROM comments WHERE parent_id=?", id)
 	if err != nil {
 		return count
@@ -877,7 +894,7 @@ func (s *Store) CountCommentDescendants(id int64) int {
 		childIDs = append(childIDs, cid)
 	}
 	for _, cid := range childIDs {
-		count += s.CountCommentDescendants(cid)
+		count += s.countDescendants(cid, maxDepth-1)
 	}
 	return count
 }
@@ -978,26 +995,38 @@ func (s *Store) taskCommentsTree(taskID int64) []model.Comment {
 		c.Replies = []model.Comment{}
 		all = append(all, c)
 	}
-	// Build tree using pointers for proper deep nesting
-	byID := make(map[int64]*model.Comment)
+	// Build tree using index-based approach to avoid slice reallocation pointer issues
+	byID := make(map[int64]int) // comment ID -> index in all
 	for i := range all {
-		byID[all[i].ID] = &all[i]
+		byID[all[i].ID] = i
 	}
-	var roots []*model.Comment
+	children := make(map[int64][]int64) // parent ID -> child IDs in order
+	var rootIDs []int64
 	for i := range all {
 		if all[i].ParentID != nil {
-			if parent, ok := byID[*all[i].ParentID]; ok {
-				parent.Replies = append(parent.Replies, all[i])
-				// Keep byID pointing to the appended copy
-				byID[all[i].ID] = &parent.Replies[len(parent.Replies)-1]
+			if _, ok := byID[*all[i].ParentID]; ok {
+				children[*all[i].ParentID] = append(children[*all[i].ParentID], all[i].ID)
 				continue
 			}
 		}
-		roots = append(roots, &all[i])
+		rootIDs = append(rootIDs, all[i].ID)
 	}
-	result := make([]model.Comment, 0, len(roots))
-	for _, r := range roots {
-		result = append(result, *r)
+	// Recursively build tree from indices
+	var buildTree func(id int64, depth int) model.Comment
+	buildTree = func(id int64, depth int) model.Comment {
+		idx := byID[id]
+		c := all[idx]
+		c.Replies = []model.Comment{}
+		if depth < 50 { // depth limit to prevent stack overflow (#28)
+			for _, childID := range children[id] {
+				c.Replies = append(c.Replies, buildTree(childID, depth+1))
+			}
+		}
+		return c
+	}
+	result := make([]model.Comment, 0, len(rootIDs))
+	for _, rid := range rootIDs {
+		result = append(result, buildTree(rid, 0))
 	}
 	return result
 }
@@ -1229,6 +1258,7 @@ func (s *Store) exportUsers() []model.ExportUser {
 			continue
 		}
 		u.IsAdmin = admin == 1
+		u.PasswordHash = "" // Strip password hash from export for security
 		users = append(users, u)
 	}
 	return users
@@ -1341,11 +1371,51 @@ func (s *Store) SetTaskDependencies(taskID int64, dependsOnIDs []int64) error {
 		if depID == taskID {
 			continue // no self-dependency
 		}
+		// Check for circular dependency: would depID transitively depend on taskID?
+		if s.wouldCreateCycle(tx, taskID, depID) {
+			continue // skip — would create circular dependency
+		}
 		if _, err := tx.Exec("INSERT OR IGNORE INTO task_dependencies(task_id,depends_on_id) VALUES(?,?)", taskID, depID); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+// wouldCreateCycle checks if adding taskID->depID would create a cycle
+// by checking if depID already transitively depends on taskID.
+func (s *Store) wouldCreateCycle(tx *sql.Tx, taskID, depID int64) bool {
+	visited := map[int64]bool{}
+	return s.reachable(tx, depID, taskID, visited, 50)
+}
+
+func (s *Store) reachable(tx *sql.Tx, from, target int64, visited map[int64]bool, maxDepth int) bool {
+	if from == target {
+		return true
+	}
+	if maxDepth <= 0 || visited[from] {
+		return false
+	}
+	visited[from] = true
+	rows, err := tx.Query("SELECT depends_on_id FROM task_dependencies WHERE task_id=?", from)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	var deps []int64
+	for rows.Next() {
+		var d int64
+		if rows.Scan(&d) == nil {
+			deps = append(deps, d)
+		}
+	}
+	rows.Close()
+	for _, d := range deps {
+		if s.reachable(tx, d, target, visited, maxDepth-1) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) TaskDependencies(taskID int64) []model.TaskDep {
@@ -1908,6 +1978,9 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 			tx.Exec("INSERT INTO images(id,filename,data,mime,size) VALUES(?,?,?,?,?)", f.ID, f.Filename, f.Data, f.Mime, len(f.Data))
 		}
 	}
+
+	// Reset SQLite auto-increment counters to avoid ID conflicts
+	tx.Exec("DELETE FROM sqlite_sequence")
 
 	return tx.Commit()
 }

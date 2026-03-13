@@ -618,6 +618,16 @@ function fmtDate(s) {
     return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
   }
 }
+function deadlineToLocal(s) {
+  if (!s) return '';
+  try {
+    const d = new Date(s);
+    const tz = getTimezone();
+    const parts = {};
+    new Intl.DateTimeFormat('en-CA', {timeZone: tz, year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(d).forEach(p => parts[p.type] = p.value);
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+  } catch { return s.slice(0,16); }
+}
 function autoPrefix(url) {
   if (!url) return url;
   url = url.trim();
@@ -640,8 +650,11 @@ function renderMd(text) {
   try {
     let processed = text.replace(/<details><summary>(.*?)<\/summary>\n?([\s\S]*?)\n?<\/details>/g,
       function(_, summary, body) { return `<details><summary>${summary}</summary>\n${marked.parse(body.trim())}</details>`; });
-    // Highlight @mentions
-    processed = processed.replace(/@(\w+)/g, '<span class="mention" onclick="navigateTo(\'/user/\'+getUserIdByName(\'$1\'))">@$1</span>');
+    // Highlight @mentions (escape username to prevent XSS)
+    processed = processed.replace(/@(\w+)/g, function(_, name) {
+      const safeName = esc(name);
+      return '<span class="mention" onclick="var uid=getUserIdByName(\'' + safeName + '\');if(uid)navigateTo(\'/user/\'+uid)">@' + safeName + '</span>';
+    });
     let html = marked.parse(processed);
     html = html.replace(/<p>\s*<details>/g, '<details>').replace(/<\/details>\s*<\/p>/g, '</details>');
     html = html.replace(/<a\s+href="(?!https?:\/\/|\/|#|mailto:)([^"]+\.[^"]+)"/g, '<a href="https://$1"');
@@ -652,7 +665,7 @@ function renderMd(text) {
 
 function getUserIdByName(name) {
   const u = (state.users || []).find(u => u.username === name);
-  return u ? u.id : 0;
+  return u ? u.id : null;
 }
 
 function countTodos(text) {
@@ -787,7 +800,10 @@ function openLightbox(src) {
   const overlay = document.createElement('div');
   overlay.className = 'lightbox-overlay';
   overlay.onclick = () => overlay.remove();
-  overlay.innerHTML = `<img src="${src}" alt="">`;
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = '';
+  overlay.appendChild(img);
   document.body.appendChild(overlay);
   document.addEventListener('keydown', function handler(e) { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', handler); } });
 }
@@ -1133,6 +1149,17 @@ async function unlinkTelegram() {
 // === Board rendering ===
 function renderBoard() {
   const app = document.getElementById('app');
+  // Save scroll positions before re-render
+  const oldBoard = app.querySelector('.board');
+  const savedScrollLeft = oldBoard ? oldBoard.scrollLeft : 0;
+  const colScrolls = {};
+  if (oldBoard) {
+    oldBoard.querySelectorAll('.column').forEach(col => {
+      const cid = col.dataset.col;
+      const body = col.querySelector('.col-body');
+      if (cid && body) colScrolls[cid] = body.scrollTop;
+    });
+  }
   let html = '<div class="board">';
   for (const col of state.columns) {
     const colTasks = state.tasks.filter(t => t.column_id === col.id).sort((a,b) => a.position - b.position || a.id - b.id);
@@ -1147,6 +1174,16 @@ function renderBoard() {
   }
   html += '</div>';
   app.innerHTML = html;
+  // Restore scroll positions after re-render
+  const newBoard = app.querySelector('.board');
+  if (newBoard) {
+    newBoard.scrollLeft = savedScrollLeft;
+    newBoard.querySelectorAll('.column').forEach(col => {
+      const cid = col.dataset.col;
+      const body = col.querySelector('.col-body');
+      if (cid && body && colScrolls[cid]) body.scrollTop = colScrolls[cid];
+    });
+  }
 }
 
 function filterTasks(tasks) {
@@ -1280,16 +1317,22 @@ function formatDuration(ms) {
 }
 
 // === Drag & Drop ===
-let dragScrollRAF = null;
+let _dragListenerActive = false;
 function dragAutoScroll(e) {
   const edge = 60, speed = 18;
   const y = e.clientY;
   const h = window.innerHeight;
-  if (y < edge) { window.scrollBy(0, -speed); dragScrollRAF = requestAnimationFrame(() => {}); }
-  else if (y > h - edge) { window.scrollBy(0, speed); dragScrollRAF = requestAnimationFrame(() => {}); }
+  if (y < edge) { window.scrollBy(0, -speed); }
+  else if (y > h - edge) { window.scrollBy(0, speed); }
 }
-function onDragStart(e, taskId) { draggedTaskId = taskId; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; document.addEventListener('dragover', dragAutoScroll); }
-function onDragEnd(e) { e.target.classList.remove('dragging'); draggedTaskId = null; document.removeEventListener('dragover', dragAutoScroll); if (dragScrollRAF) { cancelAnimationFrame(dragScrollRAF); dragScrollRAF = null; } }
+function onDragStart(e, taskId) {
+  draggedTaskId = taskId; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
+  if (!_dragListenerActive) { document.addEventListener('dragover', dragAutoScroll); _dragListenerActive = true; }
+}
+function onDragEnd(e) {
+  e.target.classList.remove('dragging'); draggedTaskId = null;
+  if (_dragListenerActive) { document.removeEventListener('dragover', dragAutoScroll); _dragListenerActive = false; }
+}
 function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
 async function onDrop(e, colId) {
   e.preventDefault();
@@ -1306,12 +1349,10 @@ async function onDrop(e, colId) {
   }
   try {
     await api('/api/tasks/move', 'POST', { task_id: taskId, column_id: colId, position: pos });
-    // Update state
-    const task = state.tasks.find(t => t.id === taskId);
-    const oldColId = task ? task.column_id : null;
-    if (task) { task.column_id = colId; task.position = pos; }
-    // Surgical DOM update: move the card element
+    // Surgical DOM update for immediate feedback
     const draggedCard = document.querySelector(`.card[data-task="${taskId}"]`);
+    const oldColEl = draggedCard ? draggedCard.closest('.column') : null;
+    const oldColId = oldColEl ? oldColEl.dataset.col : null;
     if (draggedCard && colBody) {
       const targetCards = Array.from(colBody.querySelectorAll('.card'));
       if (pos < targetCards.length) {
@@ -1319,12 +1360,11 @@ async function onDrop(e, colId) {
       } else {
         colBody.appendChild(draggedCard);
       }
-      // Update column counts
       updateColCount(oldColId);
       updateColCount(colId);
-    } else {
-      renderBoard();
     }
+    // Refetch full state to stay in sync
+    await loadBoard();
   } catch(e) { console.error(e); }
 }
 function updateColCount(colId) {
@@ -1504,18 +1544,20 @@ function showReplyForm(commentId, taskId) {
 
 function showEditComment(commentId, taskId) {
   const el = document.getElementById('comment-text-' + commentId);
-  if (!el) return;
+  if (!el || el.dataset.loading) return;
   const mdEl = el.querySelector('.md-content');
   // Get original text from rendered markdown - we need the raw text
   // Store original in data attr on first edit
   if (!el.dataset.rawText) {
+    el.dataset.loading = '1';
     // Fetch the task again to get raw text
     api('/api/tasks/' + taskId).then(task => {
+      delete el.dataset.loading;
       const comment = findCommentById(task.comments, commentId);
       if (!comment) return;
       el.dataset.rawText = comment.text;
       replaceWithEditForm(el, commentId, taskId, comment.text);
-    });
+    }).catch(() => { delete el.dataset.loading; });
     return;
   }
   replaceWithEditForm(el, commentId, taskId, el.dataset.rawText);
@@ -1608,47 +1650,17 @@ async function refreshComments(taskId) {
       : `<p style="color:var(--fg3);font-size:.85rem">${t('noComments')}</p>`;
     highlightCode();
   }
+  // Restore comment draft if present
+  const draft = getCommentDraft(taskId);
+  const ta = document.getElementById('comment-text');
+  if (ta && draft) {
+    ta.value = draft;
+  }
 }
 
 // === TODO items ===
-async function toggleTodo(taskId, index, checked) {
-  const task = await api('/api/tasks/' + taskId);
-  const items = parseTodoItems(task.todo);
-  if (items[index]) items[index].done = checked;
-  await api('/api/tasks/' + taskId, 'PUT', { ...taskToReq(task), todo: todoItemsToText(items) });
-  // Update just the todo item DOM
-  const todoEl = document.querySelectorAll('.todo-item')[index];
-  if (todoEl) {
-    todoEl.classList.toggle('done', checked);
-  }
-}
-async function addTodoItem(taskId) {
-  const inp = document.getElementById('todo-new');
-  if (!inp || !inp.value.trim()) return;
-  const label = inp.value.trim();
-  const task = await api('/api/tasks/' + taskId);
-  const items = parseTodoItems(task.todo);
-  items.push({ done: false, label });
-  await api('/api/tasks/' + taskId, 'PUT', { ...taskToReq(task), todo: todoItemsToText(items) });
-  inp.value = '';
-  // Append new item to the list
-  const list = document.querySelector('.todo-list');
-  if (list) {
-    const idx = items.length - 1;
-    const div = document.createElement('div');
-    div.className = 'todo-item';
-    div.innerHTML = `<input type="checkbox" onchange="toggleTodo(${taskId},${idx},this.checked)">
-      <span class="todo-text">${esc(label)}</span>
-      <button class="btn-icon" onclick="deleteTodoItem(${taskId},${idx})">&#10005;</button>`;
-    list.appendChild(div);
-  }
-}
-async function deleteTodoItem(taskId, index) {
-  const task = await api('/api/tasks/' + taskId);
-  const items = parseTodoItems(task.todo);
-  items.splice(index, 1);
-  await api('/api/tasks/' + taskId, 'PUT', { ...taskToReq(task), todo: todoItemsToText(items) });
-  // Re-render just the todo list
+let _todoLock = false;
+function renderTodoList(taskId, items) {
   const list = document.querySelector('.todo-list');
   if (list) {
     list.innerHTML = items.map((item, i) => `<div class="todo-item ${item.done?'done':''}">
@@ -1657,6 +1669,43 @@ async function deleteTodoItem(taskId, index) {
       ${!isReadonly() ? `<button class="btn-icon" onclick="deleteTodoItem(${taskId},${i})">&#10005;</button>` : ''}
     </div>`).join('');
   }
+}
+async function toggleTodo(taskId, index, checked) {
+  if (_todoLock) return;
+  _todoLock = true;
+  try {
+    const task = await api('/api/tasks/' + taskId);
+    const items = parseTodoItems(task.todo);
+    if (items[index]) items[index].done = checked;
+    await api('/api/tasks/' + taskId, 'PUT', { ...taskToReq(task), todo: todoItemsToText(items) });
+    renderTodoList(taskId, items);
+  } finally { _todoLock = false; }
+}
+async function addTodoItem(taskId) {
+  if (_todoLock) return;
+  const inp = document.getElementById('todo-new');
+  if (!inp || !inp.value.trim()) return;
+  _todoLock = true;
+  try {
+    const label = inp.value.trim();
+    const task = await api('/api/tasks/' + taskId);
+    const items = parseTodoItems(task.todo);
+    items.push({ done: false, label });
+    await api('/api/tasks/' + taskId, 'PUT', { ...taskToReq(task), todo: todoItemsToText(items) });
+    inp.value = '';
+    renderTodoList(taskId, items);
+  } finally { _todoLock = false; }
+}
+async function deleteTodoItem(taskId, index) {
+  if (_todoLock) return;
+  _todoLock = true;
+  try {
+    const task = await api('/api/tasks/' + taskId);
+    const items = parseTodoItems(task.todo);
+    items.splice(index, 1);
+    await api('/api/tasks/' + taskId, 'PUT', { ...taskToReq(task), todo: todoItemsToText(items) });
+    renderTodoList(taskId, items);
+  } finally { _todoLock = false; }
 }
 
 function taskToReq(task) {
@@ -1980,15 +2029,18 @@ document.addEventListener('click', function(e) {
 
 // === CRUD: Create/Edit Task ===
 function showCreateTask(colId, epicId) {
+  if (isReadonly()) return;
   showTaskModal(null, colId, epicId);
 }
 function showEditTask(taskId) {
+  if (isReadonly()) return;
   const task = state.tasks.find(t => t.id === taskId);
   if (!task) { api('/api/tasks/' + taskId).then(t => showTaskModal(t, t.column_id)); return; }
   api('/api/tasks/' + taskId).then(t => showTaskModal(t, t.column_id));
 }
 
 function showTaskModal(task, defaultColId, defaultEpicId) {
+  _preModalFocus = document.activeElement;
   const isEdit = !!task;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -2026,7 +2078,7 @@ function showTaskModal(task, defaultColId, defaultEpicId) {
           <option value="">${t('none')}</option>
           ${state.users.map(u => `<option value="${u.id}" ${(isEdit&&task.assignee_id===u.id)?'selected':''}>${esc(u.username)}</option>`).join('')}
         </select></div>
-        <div class="field"><label>${t('deadline')}</label><input type="datetime-local" id="task-deadline" lang="${langLocale()}" value="${isEdit && task.deadline ? escAttr(task.deadline.slice(0,16)) : ''}" style="color-scheme:dark"></div>
+        <div class="field"><label>${t('deadline')}</label><input type="datetime-local" id="task-deadline" lang="${langLocale()}" value="${isEdit && task.deadline ? escAttr(deadlineToLocal(task.deadline)) : ''}" style="color-scheme:dark"></div>
       </div>
       <div class="field"><label>${t('description')} <small style="color:var(--fg3)">(${t('markdown')})</small></label>
         ${insertMdToolbar('task-desc')}
@@ -2147,6 +2199,7 @@ async function saveTask(taskId, btn) {
 }
 
 async function deleteTask(taskId) {
+  if (isReadonly()) return;
   if (!confirm(t('deleteConfirm'))) return;
   try {
     await api('/api/tasks/' + taskId, 'DELETE');
@@ -2322,8 +2375,7 @@ async function renderSprintPage(sprintId) {
 async function moveSprintTask(taskId, colId, sprintId) {
   try {
     await api('/api/tasks/move', 'POST', { task_id: taskId, column_id: colId, position: 0 });
-    const task = state.tasks.find(t => t.id === taskId);
-    if (task) task.column_id = colId;
+    await loadBoard();
     renderSprintPage(sprintId);
   } catch(e) { console.error(e); }
 }
@@ -2444,8 +2496,8 @@ function renderBacklogTaskRow(task) {
   const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
   const epicBadge = task.epic ? `<span class="card-epic" style="background:${task.epic.color};color:${contrastColor(task.epic.color)};font-size:.7rem;padding:1px 5px">${esc(task.epic.name)}</span>` : '';
   return `<div class="epic-task-row" draggable="true" data-task-id="${task.id}"
-    ondragstart="event.dataTransfer.setData('text/plain','${task.id}');document.addEventListener('dragover',dragAutoScroll)"
-    ondragend="document.removeEventListener('dragover',dragAutoScroll)"
+    ondragstart="event.dataTransfer.setData('text/plain','${task.id}');if(!_dragListenerActive){document.addEventListener('dragover',dragAutoScroll);_dragListenerActive=true}"
+    ondragend="if(_dragListenerActive){document.removeEventListener('dragover',dragAutoScroll);_dragListenerActive=false}"
     onclick="navigateTo('/task/${task.id}')">
     <span class="card-id">#${task.id}</span>
     <span class="epic-task-title">${esc(task.title)}</span>
@@ -2568,8 +2620,11 @@ async function importBoard(input) {
   if (!file) return;
   if (!confirm(t('importConfirm'))) { input.value = ''; return; }
   try {
+    if (file.size > 50 * 1024 * 1024) { alert(t('fileTooLarge')); input.value = ''; return; }
     const text = await file.text();
-    const data = JSON.parse(text);
+    let data;
+    try { data = JSON.parse(text); } catch(pe) { alert(t('importError') + ': invalid JSON'); input.value = ''; return; }
+    if (!data || !Array.isArray(data.columns) || !Array.isArray(data.tasks)) { alert(t('importError') + ': invalid structure'); input.value = ''; return; }
     await api('/api/import', 'POST', data);
     input.value = '';
     alert(t('importDone'));
@@ -2592,10 +2647,18 @@ document.addEventListener('click', function(e) {
 });
 
 // === Keyboard shortcuts ===
+let _preModalFocus = null;
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') {
     const modal = document.querySelector('.modal-overlay');
-    if (modal) modal.remove();
+    if (modal) {
+      modal.remove();
+      if (_preModalFocus && document.contains(_preModalFocus)) {
+        _preModalFocus.focus();
+        _preModalFocus = null;
+      }
+      return;
+    }
     const sidebar = document.getElementById('sidebar');
     if (sidebar && sidebar.classList.contains('open')) sidebar.classList.remove('open');
   }

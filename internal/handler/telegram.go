@@ -979,7 +979,7 @@ func (h *Handler) downloadTelegramFile(token string, fileID string) ([]byte, err
 		return nil, fmt.Errorf("file too large")
 	}
 
-	// Download file
+	// Download file with size limit enforced on actual download
 	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", token, result.Result.FilePath)
 	resp2, err := client.Get(downloadURL)
 	if err != nil {
@@ -987,7 +987,15 @@ func (h *Handler) downloadTelegramFile(token string, fileID string) ([]byte, err
 	}
 	defer resp2.Body.Close()
 
-	return io.ReadAll(resp2.Body)
+	limitedReader := io.LimitReader(resp2.Body, 10*1024*1024+1)
+	data, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > 10*1024*1024 {
+		return nil, fmt.Errorf("downloaded file too large")
+	}
+	return data, nil
 }
 
 func (h *Handler) sendTelegramMessage(token string, chatID int64, text string) {
