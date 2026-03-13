@@ -565,6 +565,7 @@ let searchTimeout = null;
 let currentUser = null;
 let showPersonalOnly = false;
 let prevEpicId = null; // Track if we came from an epic page
+let prevPath = null; // Track previous path for back navigation
 let currentSprintId = null;
 let boardSprintFilter = null; // null = ALL, number = specific sprint ID
 let boardEpicFilter = null; // null = ALL, number = specific epic ID
@@ -827,28 +828,31 @@ function route() {
   const sprintMatch = path.match(/^\/sprint\/(\d+)$/);
   const userMatch = path.match(/^\/user\/(\d+)$/);
   if (taskMatch) {
-    if (currentView === 'epic' && currentEpicId) prevEpicId = currentEpicId;
+    if (currentView === 'epic' && currentEpicId) { prevEpicId = currentEpicId; prevPath = '/epic/' + currentEpicId; }
+    else if (currentView === 'sprint' && currentSprintId) { prevPath = '/sprint/' + currentSprintId; }
+    else if (currentView === 'backlog') { prevPath = '/backlog'; }
+    else { prevPath = null; }
     currentView = 'task'; currentTaskId = Number(taskMatch[1]); currentEpicId = null; currentSprintId = null; currentProfileId = null;
   } else if (epicMatch) {
-    prevEpicId = null;
+    prevEpicId = null; prevPath = null;
     currentView = 'epic'; currentEpicId = Number(epicMatch[1]); currentTaskId = null; currentSprintId = null; currentProfileId = null;
   } else if (sprintMatch) {
-    prevEpicId = null;
+    prevEpicId = null; prevPath = null;
     currentView = 'sprint'; currentSprintId = Number(sprintMatch[1]); currentTaskId = null; currentEpicId = null; currentProfileId = null;
   } else if (path === '/backlog') {
-    prevEpicId = null;
+    prevEpicId = null; prevPath = null;
     currentView = 'backlog'; currentTaskId = null; currentEpicId = null; currentSprintId = null; currentProfileId = null;
   } else if (userMatch) {
-    prevEpicId = null;
+    prevEpicId = null; prevPath = null;
     currentView = 'user'; currentProfileId = Number(userMatch[1]); currentTaskId = null; currentEpicId = null; currentSprintId = null;
   } else {
-    prevEpicId = null;
+    prevEpicId = null; prevPath = null;
     currentView = 'board'; currentTaskId = null; currentEpicId = null; currentSprintId = null; currentProfileId = null;
   }
   renderCurrentView();
 }
 function goBack() {
-  if (prevEpicId) { const eid = prevEpicId; prevEpicId = null; navigateTo('/epic/' + eid); }
+  if (prevPath) { const p = prevPath; prevPath = null; prevEpicId = null; navigateTo(p); }
   else { navigateTo('/'); }
 }
 window.addEventListener('popstate', route);
