@@ -10,8 +10,10 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -107,10 +109,11 @@ type Handler struct {
 	mux     *http.ServeMux
 	verbose bool
 	tgBot   *TelegramBot
+	dataDir string
 }
 
-func New(store *db.Store) *Handler {
-	h := &Handler{store: store, mux: http.NewServeMux()}
+func New(store *db.Store, dbPath string) *Handler {
+	h := &Handler{store: store, mux: http.NewServeMux(), dataDir: filepath.Dir(dbPath)}
 	h.routes()
 	h.initTelegramBot()
 	go h.runBackupScheduler()
@@ -245,6 +248,8 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/search", h.handleSearch)
 	h.mux.HandleFunc("/api/export", h.handleExport)
 	h.mux.HandleFunc("/api/import", h.handleImport)
+	h.mux.HandleFunc("/api/backups", h.handleBackups)
+	h.mux.HandleFunc("/api/backups/", h.handleBackupAction)
 	h.mux.HandleFunc("/api/board", h.handleBoard)
 
 	// Notifications
@@ -1316,6 +1321,157 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 	jsonResp(w, map[string]string{"status": "ok"})
 }
 
+// --- Backup Management ---
+func (h *Handler) backupDir() string {
+	return filepath.Join(h.dataDir, "backups")
+}
+
+type backupInfo struct {
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	Created string `json:"created"`
+}
+
+func (h *Handler) handleBackups(w http.ResponseWriter, r *http.Request) {
+	user := h.currentUser(r)
+	if user == nil || !user.IsAdmin {
+		http.Error(w, "admin only", http.StatusForbidden)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		// List backups
+		dir := h.backupDir()
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			jsonResp(w, map[string]any{"backups": []backupInfo{}})
+			return
+		}
+		var backups []backupInfo
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			backups = append(backups, backupInfo{
+				Name:    e.Name(),
+				Size:    info.Size(),
+				Created: info.ModTime().Format("2006-01-02 15:04:05"),
+			})
+		}
+		sort.Slice(backups, func(i, j int) bool { return backups[i].Created > backups[j].Created })
+		jsonResp(w, map[string]any{"backups": backups})
+
+	case http.MethodPost:
+		// Create backup
+		dir := h.backupDir()
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			http.Error(w, "cannot create backup dir", http.StatusInternalServerError)
+			return
+		}
+
+		if cleaned, err := h.store.CleanupOrphanFiles(); err == nil && cleaned > 0 {
+			log.Printf("[backup] cleaned %d orphaned files before manual backup", cleaned)
+		}
+
+		data, err := h.store.ExportAll()
+		if err != nil {
+			http.Error(w, "export error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			http.Error(w, "marshal error", http.StatusInternalServerError)
+			return
+		}
+		filename := fmt.Sprintf("backup-%s.json", time.Now().Format("2006-01-02_150405"))
+		path := filepath.Join(dir, filename)
+		if err := os.WriteFile(path, jsonData, 0640); err != nil {
+			http.Error(w, "write error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("[backup] manual backup created: %s (%d bytes)", filename, len(jsonData))
+		jsonResp(w, map[string]string{"status": "ok", "name": filename})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleBackupAction(w http.ResponseWriter, r *http.Request) {
+	user := h.currentUser(r)
+	if user == nil || !user.IsAdmin {
+		http.Error(w, "admin only", http.StatusForbidden)
+		return
+	}
+
+	// Extract backup name from URL: /api/backups/{name}
+	name := strings.TrimPrefix(r.URL.Path, "/api/backups/")
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "..") {
+		http.Error(w, "invalid backup name", http.StatusBadRequest)
+		return
+	}
+
+	path := filepath.Join(h.backupDir(), name)
+
+	switch r.Method {
+	case http.MethodGet:
+		// Download backup
+		jsonData, err := os.ReadFile(path)
+		if err != nil {
+			http.Error(w, "backup not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", name))
+		w.Write(jsonData)
+
+	case http.MethodPost:
+		// Restore from backup
+		jsonData, err := os.ReadFile(path)
+		if err != nil {
+			http.Error(w, "backup not found", http.StatusNotFound)
+			return
+		}
+		var data model.ExportData
+		if err := json.Unmarshal(jsonData, &data); err != nil {
+			http.Error(w, "invalid backup: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Create a pre-restore backup
+		preData, err := h.store.ExportAll()
+		if err == nil {
+			preJSON, _ := json.Marshal(preData)
+			preName := fmt.Sprintf("pre-restore-%s.json", time.Now().Format("2006-01-02_150405"))
+			os.MkdirAll(h.backupDir(), 0750)
+			os.WriteFile(filepath.Join(h.backupDir(), preName), preJSON, 0640)
+			log.Printf("[backup] pre-restore backup: %s", preName)
+		}
+		if err := h.store.ImportAll(&data); err != nil {
+			http.Error(w, "restore error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("[backup] restored from: %s", name)
+		jsonResp(w, map[string]string{"status": "ok"})
+
+	case http.MethodDelete:
+		// Delete backup
+		if err := os.Remove(path); err != nil {
+			http.Error(w, "delete error", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("[backup] deleted: %s", name)
+		jsonResp(w, map[string]string{"status": "ok"})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 // --- Auth ---
 func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -1504,14 +1660,17 @@ func (h *Handler) handleResetConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := h.store.ValidateResetCode(req.Username, req.Code)
 	if err != nil {
+		log.Printf("[auth] reset-confirm failed for user %q: %v", req.Username, err)
 		http.Error(w, "invalid or expired code", http.StatusBadRequest)
 		return
 	}
 	if err := h.store.UpdateUserPassword(user.ID, req.NewPassword); err != nil {
+		h.logf("reset-confirm password update failed for user %d: %v", user.ID, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	h.store.ClearResetCode(user.ID)
+	log.Printf("[auth] password reset completed for user %q (id=%d)", user.Username, user.ID)
 	jsonResp(w, map[string]string{"status": "ok"})
 }
 

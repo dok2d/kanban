@@ -44,6 +44,7 @@ usage() {
   restart  Перезапустить контейнер
   logs     Логи контейнера
   backup   Бэкап БД в ./backups/
+  restore  Восстановить БД из бэкапа (без аргумента — список бэкапов)
   status   Статус контейнера
   deploy   Установить systemd + nginx конфиг
 
@@ -79,6 +80,9 @@ cmd_run() {
     podman volume exists "$VOLUME" 2>/dev/null || podman volume create "$VOLUME"
 
     echo "==> Запуск ${CONTAINER} на порту ${PORT}..."
+    local verbose_flag=""
+    [[ "${VERBOSE:-}" == "1" || "${VERBOSE:-}" == "yes" ]] && verbose_flag="-verbose"
+
     podman run -d \
         --name "$CONTAINER" \
         --replace \
@@ -94,20 +98,46 @@ cmd_run() {
         --health-cmd "test -f /app/kanban || exit 1" \
         --health-interval 30s \
         --health-start-period 5s \
-        "$IMAGE"
+        "$IMAGE" \
+        -addr :8080 -db /data/kanban.db $verbose_flag
 
     echo "==> ${CONTAINER} запущен: http://127.0.0.1:${PORT}"
+    [[ -n "$verbose_flag" ]] && echo "    (verbose logging включен)"
 }
 
 cmd_stop() {
     echo "==> Остановка ${CONTAINER}..."
-    podman stop "$CONTAINER" 2>/dev/null || true
-    podman rm "$CONTAINER" 2>/dev/null || true
+    # Если контейнер управляется systemd — останавливаем через systemctl
+    if systemctl --user is-active "${CONTAINER}.service" &>/dev/null; then
+        systemctl --user stop "${CONTAINER}.service"
+        echo "==> Остановлен через systemd"
+    else
+        podman stop "$CONTAINER" 2>/dev/null || true
+        podman rm "$CONTAINER" 2>/dev/null || true
+    fi
+}
+
+cmd_start() {
+    if systemctl --user is-active "${CONTAINER}.service" &>/dev/null; then
+        echo "==> Уже запущен (systemd)"
+        return 0
+    fi
+    if systemctl --user is-enabled "${CONTAINER}.service" &>/dev/null; then
+        systemctl --user start "${CONTAINER}.service"
+        echo "==> Запущен через systemd"
+    else
+        cmd_run
+    fi
 }
 
 cmd_restart() {
-    cmd_stop
-    cmd_run
+    if systemctl --user is-enabled "${CONTAINER}.service" &>/dev/null; then
+        echo "==> Перезапуск ${CONTAINER} через systemd..."
+        systemctl --user restart "${CONTAINER}.service"
+    else
+        cmd_stop
+        cmd_run
+    fi
 }
 
 cmd_logs() {
@@ -118,9 +148,84 @@ cmd_backup() {
     BACKUP_DIR="${BACKUP_DIR:-./backups}"
     mkdir -p "$BACKUP_DIR"
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    MOUNT=$(podman volume inspect "$VOLUME" --format '{{.Mountpoint}}')
-    cp "${MOUNT}/kanban.db" "${BACKUP_DIR}/${CONTAINER}_${TIMESTAMP}.db"
-    echo "==> Бэкап: ${BACKUP_DIR}/${CONTAINER}_${TIMESTAMP}.db"
+    local dest="${BACKUP_DIR}/${CONTAINER}_${TIMESTAMP}.db"
+    podman unshare cp "$(podman volume inspect "$VOLUME" --format '{{.Mountpoint}}')/kanban.db" "$dest"
+    podman unshare chown "$(id -u):$(id -g)" "$dest"
+    echo "==> Бэкап: ${dest}"
+}
+
+cmd_restore() {
+    local backup_file="${1:-}"
+    BACKUP_DIR="${BACKUP_DIR:-./backups}"
+
+    if [[ -z "$backup_file" ]]; then
+        echo "==> Доступные бэкапы:"
+        local found=0
+        for f in "${BACKUP_DIR}"/${CONTAINER}_*.db; do
+            [[ -f "$f" ]] || continue
+            found=1
+            local size
+            size=$(du -h "$f" | cut -f1)
+            echo "    $(basename "$f")  ($size)"
+        done
+        if [[ $found -eq 0 ]]; then
+            echo "    (нет бэкапов)"
+        fi
+        echo ""
+        echo "Использование: ./kanban.sh restore <файл>"
+        echo "Пример:        ./kanban.sh restore ${BACKUP_DIR}/${CONTAINER}_20250101_120000.db"
+        return 1
+    fi
+
+    if [[ ! -f "$backup_file" ]]; then
+        echo "==> Ошибка: файл не найден: $backup_file"
+        return 1
+    fi
+
+    # Проверяем что файл — валидная SQLite БД
+    if ! file "$backup_file" | grep -q "SQLite"; then
+        echo "==> Ошибка: файл не является базой данных SQLite"
+        return 1
+    fi
+
+    local mount
+    mount=$(podman volume inspect "$VOLUME" --format '{{.Mountpoint}}')
+    local db_path="${mount}/kanban.db"
+
+    echo "==> Восстановление из: $backup_file"
+    echo "    Том: ${VOLUME}"
+    echo ""
+    echo "    ВНИМАНИЕ: текущие данные будут перезаписаны!"
+    read -rp "    Продолжить? (yes/no): " confirm
+    if [[ "$confirm" != "yes" ]]; then
+        echo "==> Отменено."
+        return 1
+    fi
+
+    # Создаём бэкап текущей БД перед восстановлением
+    local pre_restore_backup="${BACKUP_DIR}/${CONTAINER}_pre-restore_$(date +%Y%m%d_%H%M%S).db"
+    mkdir -p "$BACKUP_DIR"
+    if podman unshare test -f "$db_path"; then
+        podman unshare cp "$db_path" "$pre_restore_backup"
+        podman unshare chown "$(id -u):$(id -g)" "$pre_restore_backup"
+        echo "==> Бэкап текущей БД: $pre_restore_backup"
+    fi
+
+    # Останавливаем контейнер
+    echo "==> Остановка ${CONTAINER}..."
+    podman stop "$CONTAINER" 2>/dev/null || true
+
+    # Копируем бэкап в volume через podman unshare
+    podman unshare cp "$backup_file" "$db_path"
+    # Удаляем WAL/SHM файлы для чистого старта
+    podman unshare rm -f "${db_path}-wal" "${db_path}-shm"
+
+    echo "==> БД восстановлена."
+
+    # Запускаем контейнер
+    echo "==> Запуск ${CONTAINER}..."
+    cmd_start
+    echo "==> Готово! Данные восстановлены из бэкапа."
 }
 
 cmd_status() {
@@ -325,6 +430,14 @@ cmd_deploy() {
 # --- main ---
 CMD="${1:-}"
 shift || true
+
+# Для restore первый аргумент — путь к файлу, а не флаг
+RESTORE_FILE=""
+if [[ "$CMD" == "restore" && $# -gt 0 && ! "$1" =~ ^-- ]]; then
+    RESTORE_FILE="$1"
+    shift
+fi
+
 parse_flags "$@"
 
 case "$CMD" in
@@ -334,6 +447,7 @@ case "$CMD" in
     restart) cmd_restart ;;
     logs)    cmd_logs    ;;
     backup)  cmd_backup  ;;
+    restore) cmd_restore "$RESTORE_FILE" ;;
     status)  cmd_status  ;;
     deploy)  cmd_deploy  ;;
     *)       usage       ;;
