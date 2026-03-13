@@ -81,14 +81,14 @@ a{color:var(--accent2);text-decoration:none}
 .header h1{font-family:'JetBrains Mono',monospace;font-size:1.1rem;color:var(--accent2);letter-spacing:-.02em;display:flex;align-items:center;gap:0}
 .header h1 a{color:inherit;text-decoration:none}
 .header-actions{display:flex;gap:8px;align-items:center}
-.sprint-filter{position:relative;display:inline-flex;align-items:center}
-.sprint-filter-btn{background:none;border:none;color:var(--fg3);cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:1.1rem;padding:0 4px;transition:color .15s}
-.sprint-filter-btn:hover{color:var(--accent2)}
-.sprint-filter-name{color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:1.1rem;margin-left:2px}
-.sprint-filter-dropdown{position:absolute;top:100%;left:0;margin-top:6px;background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);min-width:180px;z-index:200;padding:4px 0;max-height:calc(6 * 36px + 8px);overflow-y:auto}
-.sprint-filter-dropdown .sfd-item{padding:7px 14px;cursor:pointer;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
-.sprint-filter-dropdown .sfd-item:hover{background:var(--bg4)}
-.sprint-filter-dropdown .sfd-item.active{color:var(--accent2);font-weight:600}
+.hdr-sep{color:var(--fg3);margin:0 4px;font-family:'JetBrains Mono',monospace;font-size:1.1rem;user-select:none}
+.hdr-filter{position:relative;display:inline-flex;align-items:center}
+.hdr-filter-name{color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:1.1rem;cursor:pointer;transition:color .15s;white-space:nowrap}
+.hdr-filter-name:hover{color:var(--accent2)}
+.hdr-filter-dropdown{position:absolute;top:100%;left:0;margin-top:6px;background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);min-width:180px;z-index:200;padding:4px 0;max-height:calc(6 * 36px + 8px);overflow-y:auto}
+.hdr-filter-dropdown .sfd-item{padding:7px 14px;cursor:pointer;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+.hdr-filter-dropdown .sfd-item:hover{background:var(--bg4)}
+.hdr-filter-dropdown .sfd-item.active{color:var(--accent2);font-weight:600}
 .header-spacer{height:52px}
 
 .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:none;border-radius:var(--radius);cursor:pointer;font-size:.85rem;font-family:inherit;font-weight:600;transition:all .15s}
@@ -381,10 +381,15 @@ a{color:var(--accent2);text-decoration:none}
 <div class="header">
   <h1>
     <a href="/" onclick="navigateTo('/');return false;">&#x2B21; kanban</a>
-    <span class="sprint-filter">
-      <button class="sprint-filter-btn" onclick="toggleSprintFilter(event)">&nbsp;/&nbsp;</button>
-      <span class="sprint-filter-name" id="sprint-filter-label">ALL</span>
-      <div class="sprint-filter-dropdown hidden" id="sprint-filter-dropdown"></div>
+    <span class="hdr-sep">/</span>
+    <span class="hdr-filter">
+      <span class="hdr-filter-name" id="sprint-filter-label" onclick="toggleSprintFilter(event)">ALL</span>
+      <div class="hdr-filter-dropdown hidden" id="sprint-filter-dropdown"></div>
+    </span>
+    <span class="hdr-sep">/</span>
+    <span class="hdr-filter">
+      <span class="hdr-filter-name" id="epic-filter-label" onclick="toggleEpicFilter(event)">ALL</span>
+      <div class="hdr-filter-dropdown hidden" id="epic-filter-dropdown"></div>
     </span>
   </h1>
   <div class="header-actions">
@@ -562,6 +567,7 @@ let showPersonalOnly = false;
 let prevEpicId = null; // Track if we came from an epic page
 let currentSprintId = null;
 let boardSprintFilter = null; // null = ALL, number = specific sprint ID
+let boardEpicFilter = null; // null = ALL, number = specific epic ID
 
 // === Theme ===
 function setTheme(name) {
@@ -1124,6 +1130,9 @@ function filterTasks(tasks) {
   if (boardSprintFilter !== null) {
     result = result.filter(t => t.sprint_id === boardSprintFilter);
   }
+  if (boardEpicFilter !== null) {
+    result = result.filter(t => t.epic_id === boardEpicFilter);
+  }
   if (showPersonalOnly && currentUser) {
     result = result.filter(t => t.assignee_id === currentUser.id || (t.assignee && t.assignee.id === currentUser.id));
   }
@@ -1133,26 +1142,34 @@ function filterTasks(tasks) {
   return result;
 }
 
-function toggleSprintFilter(e) {
+function toggleHdrFilter(e, ddId, items, currentVal, setFn) {
   e.stopPropagation();
-  const dd = document.getElementById('sprint-filter-dropdown');
+  // close any other open dropdown
+  document.querySelectorAll('.hdr-filter-dropdown').forEach(d => { if (d.id !== ddId) d.classList.add('hidden'); });
+  const dd = document.getElementById(ddId);
   if (!dd) return;
   if (dd.classList.contains('hidden')) {
-    const sprints = [...state.sprints].sort((a,b) => b.id - a.id);
-    let html = `<div class="sfd-item${boardSprintFilter===null?' active':''}" onclick="setSprintFilter(null)">ALL</div>`;
-    for (const sp of sprints) {
-      html += `<div class="sfd-item${boardSprintFilter===sp.id?' active':''}" onclick="setSprintFilter(${sp.id})">${esc(sp.name)}</div>`;
+    let html = `<div class="sfd-item${currentVal===null?' active':''}" onclick="${setFn}(null)">ALL</div>`;
+    for (const it of items) {
+      html += `<div class="sfd-item${currentVal===it.id?' active':''}" onclick="${setFn}(${it.id})">${esc(it.name)}</div>`;
     }
     dd.innerHTML = html;
     dd.classList.remove('hidden');
-    setTimeout(() => document.addEventListener('click', closeSprintFilter, {once:true}), 0);
+    setTimeout(() => document.addEventListener('click', closeHdrFilters, {once:true}), 0);
   } else {
     dd.classList.add('hidden');
   }
 }
-function closeSprintFilter() {
-  const dd = document.getElementById('sprint-filter-dropdown');
-  if (dd) dd.classList.add('hidden');
+function closeHdrFilters() {
+  document.querySelectorAll('.hdr-filter-dropdown').forEach(d => d.classList.add('hidden'));
+}
+function toggleSprintFilter(e) {
+  const sprints = [...state.sprints].sort((a,b) => b.id - a.id);
+  toggleHdrFilter(e, 'sprint-filter-dropdown', sprints, boardSprintFilter, 'setSprintFilter');
+}
+function toggleEpicFilter(e) {
+  const epics = [...state.epics].sort((a,b) => b.id - a.id);
+  toggleHdrFilter(e, 'epic-filter-dropdown', epics, boardEpicFilter, 'setEpicFilter');
 }
 function setSprintFilter(sprintId) {
   boardSprintFilter = sprintId;
@@ -1161,7 +1178,17 @@ function setSprintFilter(sprintId) {
     if (sprintId === null) { label.textContent = 'ALL'; }
     else { const sp = state.sprints.find(s => s.id === sprintId); label.textContent = sp ? sp.name : 'ALL'; }
   }
-  closeSprintFilter();
+  closeHdrFilters();
+  if (currentView === 'board') renderBoard();
+}
+function setEpicFilter(epicId) {
+  boardEpicFilter = epicId;
+  const label = document.getElementById('epic-filter-label');
+  if (label) {
+    if (epicId === null) { label.textContent = 'ALL'; }
+    else { const ep = state.epics.find(e => e.id === epicId); label.textContent = ep ? ep.name : 'ALL'; }
+  }
+  closeHdrFilters();
   if (currentView === 'board') renderBoard();
 }
 
@@ -1186,8 +1213,7 @@ function renderCard(task) {
       <div class="card-title" style="margin-bottom:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(task.title)}</div>
       <span class="card-id" style="margin-left:8px;flex-shrink:0">#${task.id}</span>
     </div>
-    ${sprintHtml ? `<div style="margin-top:2px">${sprintHtml}</div>` : ''}
-    <div class="card-meta">${deadlineHtml}${epicHtml}${tagsHtml}${assigneeHtml}${todoHtml}${linkHtml}${commentsHtml}</div>
+    <div class="card-meta">${sprintHtml}${deadlineHtml}${epicHtml}${tagsHtml}${assigneeHtml}${todoHtml}${linkHtml}${commentsHtml}</div>
   </div>`;
 }
 
