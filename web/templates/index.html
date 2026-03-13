@@ -380,7 +380,7 @@ a{color:var(--accent2);text-decoration:none}
 
 <div class="header">
   <h1>
-    <a href="/" onclick="navigateTo('/');return false;">&#x2B21; kanban</a>
+    <a href="/" onclick="resetBoardFilters();navigateTo('/');return false;">&#x2B21; kanban</a>
     <span class="hdr-sep">/</span>
     <span class="hdr-filter">
       <span class="hdr-filter-name" id="sprint-filter-label" onclick="toggleSprintFilter(event)">ALL</span>
@@ -1190,6 +1190,14 @@ function setEpicFilter(epicId) {
   }
   closeHdrFilters();
   if (currentView === 'board') renderBoard();
+}
+function resetBoardFilters() {
+  boardSprintFilter = null;
+  boardEpicFilter = null;
+  const sl = document.getElementById('sprint-filter-label');
+  const el = document.getElementById('epic-filter-label');
+  if (sl) sl.textContent = 'ALL';
+  if (el) el.textContent = 'ALL';
 }
 
 function renderCard(task) {
