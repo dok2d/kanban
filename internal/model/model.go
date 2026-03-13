@@ -125,11 +125,11 @@ type ActivityEntry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// ExportUser contains user data for export (password hash included for full restore)
+// ExportUser contains user data for export (password hash omitted by default for security)
 type ExportUser struct {
 	ID           int64  `json:"id"`
 	Username     string `json:"username"`
-	PasswordHash string `json:"password_hash"`
+	PasswordHash string `json:"password_hash,omitempty"`
 	Role         string `json:"role"`
 	IsAdmin      bool   `json:"is_admin"`
 	TelegramID   int64  `json:"telegram_id,omitempty"`

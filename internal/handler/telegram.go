@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/jpeg"
+	_ "image/gif"
+	_ "image/png"
 	"io"
 	"log"
 	"net/http"
@@ -12,6 +17,89 @@ import (
 	"sync"
 	"time"
 )
+
+const (
+	tgPollTimeout       = 30 * time.Second
+	tgPollClientTimeout = 35 * time.Second
+	tgPollRetrySleep    = 5 * time.Second
+	tgAPIRetrySleep     = 10 * time.Second
+	tgHTTPTimeout       = 10 * time.Second
+	tgFileTimeout       = 30 * time.Second
+	tgLinkHashLen       = 16
+
+	// Image compression settings (matching frontend compressImage)
+	imgCompressThreshold = 200 * 1024 // skip compression if smaller than 200 KB
+	imgMaxDimension      = 1920       // max width or height in pixels
+	imgTargetSize        = 500 * 1024 // target compressed size 500 KB
+	imgInitialQuality    = 82         // initial JPEG quality (0-100)
+	imgMinQuality        = 40         // minimum JPEG quality
+	imgQualityStep       = 15         // quality decrement step
+)
+
+// compressImageData compresses image data (JPEG/PNG/GIF) using the same logic as frontend:
+// resize to max 1920px, encode as JPEG with adaptive quality targeting 500KB.
+func compressImageData(data []byte, mime string) ([]byte, string) {
+	// Don't compress GIFs (animated) or small images
+	if strings.HasPrefix(mime, "image/gif") {
+		return data, mime
+	}
+	if len(data) <= imgCompressThreshold {
+		return data, mime
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		log.Printf("[compress] decode error: %v, keeping original", err)
+		return data, mime
+	}
+
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+
+	// Resize if exceeds max dimension
+	if w > imgMaxDimension || h > imgMaxDimension {
+		ratio := float64(imgMaxDimension) / float64(w)
+		if float64(imgMaxDimension)/float64(h) < ratio {
+			ratio = float64(imgMaxDimension) / float64(h)
+		}
+		newW := int(float64(w) * ratio)
+		newH := int(float64(h) * ratio)
+		dst := image.NewRGBA(image.Rect(0, 0, newW, newH))
+		// Simple nearest-neighbor resize (stdlib only)
+		for y := 0; y < newH; y++ {
+			for x := 0; x < newW; x++ {
+				srcX := x * w / newW
+				srcY := y * h / newH
+				dst.Set(x, y, img.At(srcX+bounds.Min.X, srcY+bounds.Min.Y))
+			}
+		}
+		img = dst
+		w, h = newW, newH
+	} else {
+		// Convert to RGBA for consistent encoding
+		rgba := image.NewRGBA(image.Rect(0, 0, w, h))
+		draw.Draw(rgba, rgba.Bounds(), img, bounds.Min, draw.Src)
+		img = rgba
+	}
+
+	// Encode as JPEG with adaptive quality
+	q := imgInitialQuality
+	var buf bytes.Buffer
+	for q >= imgMinQuality {
+		buf.Reset()
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: q}); err != nil {
+			log.Printf("[compress] encode error: %v, keeping original", err)
+			return data, mime
+		}
+		if buf.Len() <= imgTargetSize || q <= imgMinQuality {
+			break
+		}
+		q -= imgQualityStep
+	}
+
+	log.Printf("[compress] %dKB -> %dKB (%dx%d, q=%d)", len(data)/1024, buf.Len()/1024, w, h, q)
+	return buf.Bytes(), "image/jpeg"
+}
 
 // TelegramBot handles long-polling and sending messages via Telegram Bot API
 type TelegramBot struct {
@@ -56,7 +144,7 @@ func (h *Handler) stopTelegramBot() {
 
 func (h *Handler) runTelegramBot(token string) {
 	offset := 0
-	client := &http.Client{Timeout: 35 * time.Second}
+	client := &http.Client{Timeout: tgPollClientTimeout}
 
 	for {
 		select {
@@ -65,11 +153,11 @@ func (h *Handler) runTelegramBot(token string) {
 		default:
 		}
 
-		url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=30&allowed_updates=%s", token, offset, `["message","callback_query"]`)
+		url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d&timeout=%d&allowed_updates=%s", token, offset, int(tgPollTimeout.Seconds()), `["message","callback_query"]`)
 		resp, err := client.Get(url)
 		if err != nil {
 			log.Printf("[telegram] poll error: %v", err)
-			time.Sleep(5 * time.Second)
+			time.Sleep(tgPollRetrySleep)
 			continue
 		}
 
@@ -115,13 +203,13 @@ func (h *Handler) runTelegramBot(token string) {
 
 		if err := json.Unmarshal(body, &result); err != nil {
 			log.Printf("[telegram] parse error: %v", err)
-			time.Sleep(5 * time.Second)
+			time.Sleep(tgPollRetrySleep)
 			continue
 		}
 
 		if !result.OK {
 			log.Printf("[telegram] API returned not OK")
-			time.Sleep(10 * time.Second)
+			time.Sleep(tgAPIRetrySleep)
 			continue
 		}
 
@@ -242,8 +330,8 @@ func (h *Handler) runTelegramBot(token string) {
 				continue
 			}
 
-			// Try to link user by hash (16 chars)
-			if len(text) == 16 {
+			// Try to link user by hash
+			if len(text) == tgLinkHashLen {
 				user, err := h.store.FindUserByLinkHash(text)
 				if err != nil {
 					h.sendTelegramMessage(token, chatID, "❌ Неверный хэш. Получите новый в настройках kanban.")
@@ -255,7 +343,7 @@ func (h *Handler) runTelegramBot(token string) {
 				continue
 			}
 
-			h.sendTelegramMessageWithKeyboard(token, chatID, "Отправьте 16-символьный хэш привязки из настроек kanban.", h.mainMenuKeyboard())
+			h.sendTelegramMessageWithKeyboard(token, chatID, fmt.Sprintf("Отправьте %d-символьный хэш привязки из настроек kanban.", tgLinkHashLen), h.mainMenuKeyboard())
 		}
 	}
 }
@@ -459,7 +547,7 @@ func (h *Handler) handleTelegramTasks(token string, chatID int64, onlyMine bool)
 		lines = append(lines, fmt.Sprintf("%s#%d %s [%s]", prio, s.id, s.title, col))
 
 		// Add inline button for each task (up to 30)
-		if len(buttons) < 30 {
+		if len(buttons) < tgMaxInlineButtons {
 			buttons = append(buttons, []tgInlineButton{
 				{Text: fmt.Sprintf("#%d %s", s.id, truncate(s.title, 30)), CallbackData: fmt.Sprintf("task_%d", s.id)},
 			})
@@ -480,8 +568,8 @@ func (h *Handler) handleTelegramTasks(token string, chatID int64, onlyMine bool)
 		title = "Мои задачи"
 	}
 	msg := fmt.Sprintf("📋 %s (%d):\n\n%s", title, len(lines), strings.Join(lines, "\n"))
-	if len(msg) > 4000 {
-		msg = msg[:4000] + "…"
+	if len(msg) > tgMessageMaxLen {
+		msg = msg[:tgMessageMaxLen] + "…"
 	}
 
 	// Add navigation buttons at the bottom
@@ -536,8 +624,8 @@ func (h *Handler) handleTelegramTaskView(token string, chatID int64, taskID int6
 
 	if task.Description != "" {
 		desc := task.Description
-		if len(desc) > 500 {
-			desc = desc[:500] + "…"
+		if len(desc) > truncateDesc {
+			desc = desc[:truncateDesc] + "…"
 		}
 		msg += fmt.Sprintf("\n\n📝 %s", desc)
 	}
@@ -547,7 +635,7 @@ func (h *Handler) handleTelegramTaskView(token string, chatID int64, taskID int6
 		msg += "\n\n💬 Комментарии:"
 		shown := 0
 		for _, c := range task.Comments {
-			if shown >= 5 {
+			if shown >= tgMaxCommentsShown {
 				msg += fmt.Sprintf("\n...и ещё %d", len(task.Comments)-shown)
 				break
 			}
@@ -556,16 +644,16 @@ func (h *Handler) handleTelegramTaskView(token string, chatID int64, taskID int6
 				author = c.Author.Username
 			}
 			ctext := c.Text
-			if len(ctext) > 100 {
-				ctext = ctext[:100] + "…"
+			if len(ctext) > truncateCommentTG {
+				ctext = ctext[:truncateCommentTG] + "…"
 			}
 			msg += fmt.Sprintf("\n@%s: %s", author, ctext)
 			shown++
 		}
 	}
 
-	if len(msg) > 4000 {
-		msg = msg[:4000] + "…"
+	if len(msg) > tgMessageMaxLen {
+		msg = msg[:tgMessageMaxLen] + "…"
 	}
 
 	// Action buttons for the task
@@ -653,7 +741,7 @@ func (h *Handler) handleTelegramMoveTask(token string, chatID int64, taskID int6
 
 	h.store.LogActivity(user.ID, "move_task", &taskID, fmt.Sprintf("→ %s", colName))
 	shortText := fmt.Sprintf("@%s переместил(а) задачу #%d: %s → %s", user.Username, taskID, task.Title, colName)
-	h.notifySubscribers(taskID, user.ID, truncate(shortText, 200))
+	h.notifySubscribers(taskID, user.ID, truncate(shortText, truncateShort))
 
 	h.handleTelegramTaskView(token, chatID, taskID)
 }
@@ -812,15 +900,15 @@ func (h *Handler) handleTelegramComment(token string, chatID int64, taskID int64
 
 	// Log activity
 	commentPreview := text
-	if len(commentPreview) > 200 {
-		commentPreview = commentPreview[:200] + "…"
+	if len(commentPreview) > truncateShort {
+		commentPreview = commentPreview[:truncateShort] + "…"
 	}
 	h.store.LogActivity(user.ID, "comment", &taskID, commentPreview)
 
 	// Notify subscribers
 	shortText := fmt.Sprintf("@%s оставил(а) комментарий к задаче #%d: %s", user.Username, taskID, task.Title)
 	h.notifySubscribers(taskID, user.ID, shortText)
-	detailedText := shortText + "\n> " + truncate(text, 300)
+	detailedText := shortText + "\n> " + truncate(text, truncateComment)
 	h.sendSubscribersTelegram(taskID, user.ID, detailedText)
 
 	// Process mentions
@@ -897,6 +985,16 @@ func (h *Handler) handleTelegramFileComment(token string, chatID int64, taskID i
 		return
 	}
 
+	// Compress images (same logic as frontend)
+	if strings.HasPrefix(mimeType, "image/") {
+		fileData, mimeType = compressImageData(fileData, mimeType)
+		if isPhoto || mimeType == "image/jpeg" {
+			if !strings.HasSuffix(fileName, ".jpg") && !strings.HasSuffix(fileName, ".jpeg") {
+				fileName = strings.TrimSuffix(fileName, ".png") + ".jpg"
+			}
+		}
+	}
+
 	// Save file to DB
 	savedID, err := h.store.SaveFile(fileName, fileData, mimeType)
 	if err != nil {
@@ -933,7 +1031,7 @@ func (h *Handler) handleTelegramFileComment(token string, chatID int64, taskID i
 		return
 	}
 
-	h.store.LogActivity(user.ID, "comment", &taskID, truncate(commentText, 200))
+	h.store.LogActivity(user.ID, "comment", &taskID, truncate(commentText, truncateShort))
 	shortText := fmt.Sprintf("@%s оставил(а) комментарий к задаче #%d: %s", user.Username, taskID, task.Title)
 	h.notifySubscribers(taskID, user.ID, shortText)
 	h.sendSubscribersTelegram(taskID, user.ID, shortText)
@@ -953,7 +1051,7 @@ func (h *Handler) handleTelegramFileComment(token string, chatID int64, taskID i
 func (h *Handler) downloadTelegramFile(token string, fileID string) ([]byte, error) {
 	// Get file path
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s", token, fileID)
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: tgFileTimeout}
 	resp, err := client.Get(apiURL)
 	if err != nil {
 		return nil, err
@@ -974,12 +1072,7 @@ func (h *Handler) downloadTelegramFile(token string, fileID string) ([]byte, err
 		return nil, fmt.Errorf("file not available")
 	}
 
-	// Check file size (10MB limit)
-	if result.Result.FileSize > 10*1024*1024 {
-		return nil, fmt.Errorf("file too large")
-	}
-
-	// Download file
+	// Download file (no size limit — images will be compressed, files stored as-is)
 	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", token, result.Result.FilePath)
 	resp2, err := client.Get(downloadURL)
 	if err != nil {
@@ -987,7 +1080,11 @@ func (h *Handler) downloadTelegramFile(token string, fileID string) ([]byte, err
 	}
 	defer resp2.Body.Close()
 
-	return io.ReadAll(resp2.Body)
+	data, err := io.ReadAll(resp2.Body)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func (h *Handler) sendTelegramMessage(token string, chatID int64, text string) {
@@ -1008,7 +1105,7 @@ func (h *Handler) sendTelegramMessageWithKeyboard(token string, chatID int64, te
 		payload["reply_markup"] = keyboard
 	}
 	data, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: tgHTTPTimeout}
 	resp, err := client.Post(apiURL, "application/json", bytes.NewReader(data))
 	if err != nil {
 		log.Printf("[telegram] send error: %v", err)
@@ -1022,7 +1119,7 @@ func (h *Handler) answerCallbackQuery(token string, callbackQueryID string) {
 	payload, _ := json.Marshal(map[string]any{
 		"callback_query_id": callbackQueryID,
 	})
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: tgHTTPTimeout}
 	resp, err := client.Post(apiURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		log.Printf("[telegram] answerCallback error: %v", err)
@@ -1064,7 +1161,7 @@ func (h *Handler) sendTelegramDocument(token string, chatID int64, filename stri
 	buf.WriteString(fmt.Sprintf("\r\n--%s--\r\n", boundary))
 
 	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendDocument", token)
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: tgFileTimeout}
 	resp, err := client.Post(apiURL, "multipart/form-data; boundary="+boundary, &buf)
 	if err != nil {
 		log.Printf("[telegram] sendDocument error: %v", err)

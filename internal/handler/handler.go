@@ -17,7 +17,57 @@ import (
 	"time"
 )
 
-const sessionCookie = "kanban_session"
+const (
+	sessionCookie = "kanban_session"
+
+	// File upload limits
+	maxUploadSize = 50 * 1024 * 1024 // 50 MB — universal upload limit
+
+	// Image compression warning threshold
+	imageWarnUncompressed = 1024 * 1024 // 1 MB
+
+	// Cache
+	imageCacheMaxAge = "public, max-age=31536000, immutable" // 1 year
+
+	// Session
+	sessionMaxAgeSec = 90 * 24 * 3600 // 90 days in seconds
+
+	// Password
+	minPasswordLen = 6
+
+	// Reset code
+	resetCodeRange  = 100000000 // 10^8 for 8-digit codes
+	resetCodeFormat = "%08d"
+
+	// Text truncation limits
+	truncateShort    = 200  // notifications, previews
+	truncateComment  = 300  // comment body in notifications
+	truncateActivity = 1000 // activity log details
+	truncateDesc     = 500  // description in TG view
+	truncateCommentTG = 100 // comment preview in TG task view
+
+	// Telegram message limit
+	tgMessageMaxLen = 4000
+
+	// Telegram UI limits
+	tgMaxInlineButtons   = 30
+	tgMaxCommentsShown   = 5
+
+	// Search
+	maxSearchQueryLen = 200
+
+	// Activity history
+	activityHistoryLimit = 100
+
+	// Backup
+	backupHour = 18
+
+	// Notification poll
+	notifPollIntervalMs = 30000
+
+	// Search debounce
+	searchDebounceMs = 300
+)
 
 // allowed MIME types for image uploads
 var allowedImageMIME = map[string]bool{
@@ -232,37 +282,37 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleBoard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	cols, err := h.store.ListColumns()
 	if err != nil {
 		h.logf("handleBoard ListColumns error: %v", err)
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	tasks, err := h.store.ListTasks()
 	if err != nil {
 		h.logf("handleBoard ListTasks error: %v", err)
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	epics, err := h.store.ListEpics()
 	if err != nil {
 		h.logf("handleBoard ListEpics error: %v", err)
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	sprints, err := h.store.ListSprints()
 	if err != nil {
 		h.logf("handleBoard ListSprints error: %v", err)
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	tags, err := h.store.ListTags()
 	if err != nil {
 		h.logf("handleBoard ListTags error: %v", err)
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	users, err := h.store.ListUsers()
@@ -278,87 +328,107 @@ func (h *Handler) handleColumns(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		cols, err := h.store.ListColumns()
 		if err != nil {
-			http.Error(w, "internal error", 500)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, cols)
 	case http.MethodPost:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		var req struct{ Name string }
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		id, err := h.store.CreateColumn(req.Name)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]int64{"id": id})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (h *Handler) handleColumn(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, "/api/columns/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
 	case http.MethodPut:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		var req struct{ Name string }
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if err := h.store.UpdateColumn(id, req.Name); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		// Protect first (Backlog) and last (Done) columns from deletion
 		cols, err := h.store.ListColumns()
 		if err != nil {
-			http.Error(w, "internal error", 500)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		if len(cols) > 0 && (cols[0].ID == id || cols[len(cols)-1].ID == id) {
-			http.Error(w, "cannot delete Backlog or Done column", 403)
+			http.Error(w, "cannot delete Backlog or Done column", http.StatusForbidden)
 			return
 		}
 		if err := h.store.DeleteColumn(id); err != nil {
 			h.logf("DeleteColumn(%d) failed: %v", id, err)
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (h *Handler) handleColumnsReorder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil || user.Role != "admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	var req struct {
 		IDs []int64 `json:"ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	h.logf("ReorderColumns: ids=%v", req.IDs)
 	if len(req.IDs) == 0 {
-		http.Error(w, "ids required", 400)
+		http.Error(w, "ids required", http.StatusBadRequest)
 		return
 	}
 	if err := h.store.ReorderColumns(req.IDs); err != nil {
 		h.logf("ReorderColumns error: %v", err)
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonResp(w, map[string]string{"status": "ok"})
@@ -367,22 +437,22 @@ func (h *Handler) handleColumnsReorder(w http.ResponseWriter, r *http.Request) {
 // --- Images ---
 func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	log.Printf("[upload] image: content-length=%d", r.ContentLength)
-	r.Body = http.MaxBytesReader(w, r.Body, 15*1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	var req struct {
 		Data string `json:"data"`
 		Mime string `json:"mime"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[upload] image: decode error: %v", err)
-		http.Error(w, "bad request or body too large", 400)
+		http.Error(w, "bad request or body too large", http.StatusBadRequest)
 		return
 	}
 	if req.Data == "" {
-		http.Error(w, "data required", 400)
+		http.Error(w, "data required", http.StatusBadRequest)
 		return
 	}
 	if req.Mime == "" {
@@ -390,26 +460,32 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if !allowedImageMIME[req.Mime] {
 		log.Printf("[upload] image: unsupported mime: %s", req.Mime)
-		http.Error(w, "unsupported image type", 400)
+		http.Error(w, "unsupported image type", http.StatusBadRequest)
 		return
 	}
 	raw, err := base64.StdEncoding.DecodeString(req.Data)
 	if err != nil {
-		http.Error(w, "invalid base64", 400)
+		http.Error(w, "invalid base64", http.StatusBadRequest)
+		return
+	}
+	// Validate content matches declared MIME type
+	detectedMIME := http.DetectContentType(raw)
+	if !strings.HasPrefix(detectedMIME, "image/") {
+		http.Error(w, "file content is not a valid image", http.StatusBadRequest)
 		return
 	}
 	log.Printf("[upload] image: decoded=%d bytes (%.1f MB), mime=%s", len(raw), float64(len(raw))/(1024*1024), req.Mime)
-	if len(raw) > 1024*1024 {
+	if len(raw) > imageWarnUncompressed {
 		log.Printf("[upload] image: WARNING client compression may have failed (>1MB)")
 	}
-	if len(raw) > 20*1024*1024 {
-		log.Printf("[upload] image: rejected, size %d > 20MB", len(raw))
-		http.Error(w, "image too large (max 20MB)", 413)
+	if len(raw) > maxUploadSize {
+		log.Printf("[upload] image: rejected, size %d > %dMB", len(raw), maxUploadSize/(1024*1024))
+		http.Error(w, fmt.Sprintf("image too large (max %dMB)", maxUploadSize/(1024*1024)), http.StatusRequestEntityTooLarge)
 		return
 	}
 	id, err := h.store.SaveImage(raw, req.Mime)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	log.Printf("[upload] image: saved id=%d, size=%d", id, len(raw))
@@ -418,21 +494,26 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleImageServe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	id := extractID(r.URL.Path, "/api/images/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	data, mime, err := h.store.GetImage(id)
 	if err != nil {
-		http.Error(w, "not found", 404)
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", mime)
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", imageCacheMaxAge)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 	w.Write(data)
 }
@@ -440,11 +521,11 @@ func (h *Handler) handleImageServe(w http.ResponseWriter, r *http.Request) {
 // --- Files ---
 func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	log.Printf("[upload] file: content-length=%d", r.ContentLength)
-	r.Body = http.MaxBytesReader(w, r.Body, 20*1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	var req struct {
 		Data     string `json:"data"`
 		Filename string `json:"filename"`
@@ -452,18 +533,18 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("[upload] file: decode error: %v", err)
-		http.Error(w, "bad request or body too large", 400)
+		http.Error(w, "bad request or body too large", http.StatusBadRequest)
 		return
 	}
 	if req.Data == "" || req.Filename == "" {
-		http.Error(w, "data and filename required", 400)
+		http.Error(w, "data and filename required", http.StatusBadRequest)
 		return
 	}
 	// Security: check extension
 	ext := strings.ToLower(filepath.Ext(req.Filename))
 	if blockedExtensions[ext] {
 		log.Printf("[upload] file: blocked extension: %s", ext)
-		http.Error(w, "file type not allowed", 400)
+		http.Error(w, "file type not allowed", http.StatusBadRequest)
 		return
 	}
 	// Security: check MIME
@@ -472,28 +553,40 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if !allowedFileMIME[req.Mime] {
 		log.Printf("[upload] file: blocked mime: %s", req.Mime)
-		http.Error(w, "file MIME type not allowed", 400)
+		http.Error(w, "file MIME type not allowed", http.StatusBadRequest)
 		return
 	}
 	raw, err := base64.StdEncoding.DecodeString(req.Data)
 	if err != nil {
-		http.Error(w, "invalid base64", 400)
+		http.Error(w, "invalid base64", http.StatusBadRequest)
 		return
 	}
 	log.Printf("[upload] file: name=%s, decoded=%d bytes (%.1f MB), mime=%s", req.Filename, len(raw), float64(len(raw))/(1024*1024), req.Mime)
-	if strings.HasPrefix(req.Mime, "image/") && len(raw) > 1024*1024 {
+	if strings.HasPrefix(req.Mime, "image/") && len(raw) > imageWarnUncompressed {
 		log.Printf("[upload] file: WARNING image not compressed by client (>1MB)")
 	}
-	if len(raw) > 20*1024*1024 {
-		log.Printf("[upload] file: rejected, size %d > 20MB", len(raw))
-		http.Error(w, "file too large (max 20MB)", 413)
+	if len(raw) > maxUploadSize {
+		log.Printf("[upload] file: rejected, size %d > %dMB", len(raw), maxUploadSize/(1024*1024))
+		http.Error(w, fmt.Sprintf("file too large (max %dMB)", maxUploadSize/(1024*1024)), http.StatusRequestEntityTooLarge)
 		return
 	}
-	// Sanitize filename
+	// Validate file content matches declared MIME using magic bytes
+	detectedMIME := http.DetectContentType(raw)
+	if strings.HasPrefix(req.Mime, "image/") && !strings.HasPrefix(detectedMIME, "image/") {
+		http.Error(w, "file content does not match declared MIME type", http.StatusBadRequest)
+		return
+	}
+	// Sanitize filename — only allow safe characters
 	safeName := filepath.Base(req.Filename)
+	safeName = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
+			return r
+		}
+		return '_'
+	}, safeName)
 	id, err := h.store.SaveFile(safeName, raw, req.Mime)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonResp(w, map[string]any{"id": id, "url": "/api/files/" + strconv.FormatInt(id, 10), "filename": safeName})
@@ -501,17 +594,22 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleFileServe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	user := h.currentUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	id := extractID(r.URL.Path, "/api/files/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	data, mime, filename, err := h.store.GetFile(id)
 	if err != nil {
-		http.Error(w, "not found", 404)
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", mime)
@@ -526,21 +624,26 @@ func (h *Handler) handleEpics(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		epics, err := h.store.ListEpics()
 		if err != nil {
-			http.Error(w, "internal error", 500)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, epics)
 	case http.MethodPost:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		var req struct {
 			Name  string
 			Color string
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if req.Name == "" {
-			http.Error(w, "name required", 400)
+			http.Error(w, "name required", http.StatusBadRequest)
 			return
 		}
 		if req.Color == "" {
@@ -548,57 +651,67 @@ func (h *Handler) handleEpics(w http.ResponseWriter, r *http.Request) {
 		}
 		id, err := h.store.CreateEpic(req.Name, req.Color)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]int64{"id": id})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (h *Handler) handleEpic(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, "/api/epics/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
 		epic, err := h.store.GetEpic(id)
 		if err != nil {
-			http.Error(w, "not found", 404)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		tasks, err := h.store.EpicTasks(id)
 		if err != nil {
-			http.Error(w, "internal error", 500)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]any{"epic": epic, "tasks": tasks})
 	case http.MethodPut:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		var req struct {
 			Name        string `json:"name"`
 			Color       string `json:"color"`
 			Description string `json:"description"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if err := h.store.UpdateEpic(id, req.Name, req.Color, req.Description); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		if err := h.store.DeleteEpic(id); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -608,11 +721,16 @@ func (h *Handler) handleSprints(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		sprints, err := h.store.ListSprints()
 		if err != nil {
-			http.Error(w, "internal error", 500)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, sprints)
 	case http.MethodPost:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		var req struct {
 			Name      string `json:"name"`
 			StartDate string `json:"start_date"`
@@ -620,21 +738,21 @@ func (h *Handler) handleSprints(w http.ResponseWriter, r *http.Request) {
 			Status    string `json:"status"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if req.Name == "" {
-			http.Error(w, "name required", 400)
+			http.Error(w, "name required", http.StatusBadRequest)
 			return
 		}
 		id, err := h.store.CreateSprint(req.Name, req.StartDate, req.EndDate, req.Status)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]int64{"id": id})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -647,23 +765,28 @@ func (h *Handler) handleSprintRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	id := extractID(path, "/api/sprints/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
 		sprint, err := h.store.GetSprint(id)
 		if err != nil {
-			http.Error(w, "not found", 404)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		tasks, err := h.store.SprintTasks(id)
 		if err != nil {
-			http.Error(w, "internal error", 500)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]any{"sprint": sprint, "tasks": tasks})
 	case http.MethodPut:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		var req struct {
 			Name      string `json:"name"`
 			StartDate string `json:"start_date"`
@@ -671,32 +794,37 @@ func (h *Handler) handleSprintRoute(w http.ResponseWriter, r *http.Request) {
 			Status    string `json:"status"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if err := h.store.UpdateSprint(id, req.Name, req.StartDate, req.EndDate, req.Status); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		if err := h.store.DeleteSprint(id); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (h *Handler) handleCompleteSprint(w http.ResponseWriter, r *http.Request, sprintID int64) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if sprintID == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	var req struct {
@@ -704,7 +832,7 @@ func (h *Handler) handleCompleteSprint(w http.ResponseWriter, r *http.Request, s
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 	if err := h.store.CompleteSprint(sprintID, req.MoveToSprintID); err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonResp(w, map[string]string{"status": "ok"})
@@ -716,21 +844,26 @@ func (h *Handler) handleTags(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		tags, err := h.store.ListTags()
 		if err != nil {
-			http.Error(w, "internal error", 500)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, tags)
 	case http.MethodPost:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		var req struct {
 			Name  string
 			Color string
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if req.Name == "" {
-			http.Error(w, "name required", 400)
+			http.Error(w, "name required", http.StatusBadRequest)
 			return
 		}
 		if req.Color == "" {
@@ -738,30 +871,35 @@ func (h *Handler) handleTags(w http.ResponseWriter, r *http.Request) {
 		}
 		id, err := h.store.CreateTag(req.Name, req.Color)
 		if err != nil {
-			http.Error(w, "tag exists", 409)
+			http.Error(w, "tag exists", http.StatusConflict)
 			return
 		}
 		jsonResp(w, map[string]int64{"id": id})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (h *Handler) handleTag(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, "/api/tags/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	if r.Method == http.MethodDelete {
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		if err := h.store.DeleteTag(id); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 		return
 	}
-	http.Error(w, "method not allowed", 405)
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 // --- Tasks ---
@@ -770,7 +908,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		tasks, err := h.store.ListTasks()
 		if err != nil {
-			http.Error(w, "internal error", 500)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, tasks)
@@ -791,17 +929,17 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 			DependsOnIDs []int64 `json:"depends_on_ids"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if req.Title == "" || req.ColumnID == 0 {
-			http.Error(w, "title and column_id required", 400)
+			http.Error(w, "title and column_id required", http.StatusBadRequest)
 			return
 		}
 		id, err := h.store.CreateTask(req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.SprintID, req.AssigneeID, req.Priority, req.TagIDs, req.Deadline)
 		if err != nil {
 			h.logf("create task: %v", err)
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if len(req.DependsOnIDs) > 0 {
@@ -809,7 +947,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		task, err := h.store.GetTask(id)
 		if err != nil {
-			http.Error(w, "created but failed to fetch", 500)
+			http.Error(w, "created but failed to fetch", http.StatusInternalServerError)
 			return
 		}
 		// Log activity
@@ -828,7 +966,7 @@ func (h *Handler) handleTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonResp(w, task)
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -848,14 +986,14 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 
 	id := extractID(r.URL.Path, "/api/tasks/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
 		task, err := h.store.GetTask(id)
 		if err != nil {
-			http.Error(w, "not found", 404)
+			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		jsonResp(w, task)
@@ -876,22 +1014,25 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			DependsOnIDs []int64 `json:"depends_on_ids"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 
-		// Get old task for comparison
-		oldTask, _ := h.store.GetTask(id)
+		// Get old task for comparison (ignore error, may be nil)
+		oldTask, getErr := h.store.GetTask(id)
+		if getErr != nil {
+			oldTask = nil
+		}
 
 		if err := h.store.UpdateTask(id, req.Title, req.Description, req.Todo, req.ProjectURL, req.ColumnID, req.EpicID, req.SprintID, req.AssigneeID, req.Priority, req.TagIDs, req.Deadline); err != nil {
 			h.logf("UpdateTask(%d) error: %v", id, err)
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		h.store.SetTaskDependencies(id, req.DependsOnIDs)
 		task, err := h.store.GetTask(id)
 		if err != nil {
-			http.Error(w, "updated but failed to fetch", 500)
+			http.Error(w, "updated but failed to fetch", http.StatusInternalServerError)
 			return
 		}
 
@@ -903,7 +1044,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			if changes != "" {
 				detailedText = shortText + "\n" + changes
 			}
-			h.store.LogActivity(user.ID, "edit_task", &id, truncate(detailedText, 1000))
+			h.store.LogActivity(user.ID, "edit_task", &id, truncate(detailedText, truncateActivity))
 
 			// Notify new assignee
 			if req.AssigneeID != nil && *req.AssigneeID != user.ID {
@@ -915,9 +1056,9 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Notify subscribers about edit with details
-			h.notifySubscribers(id, user.ID, truncate(shortText, 200))
+			h.notifySubscribers(id, user.ID, truncate(shortText, truncateShort))
 			if changes != "" {
-				h.sendSubscribersTelegram(id, user.ID, truncate(detailedText, 500))
+				h.sendSubscribersTelegram(id, user.ID, truncate(detailedText, truncateActivity))
 			}
 
 			// Process mentions in description
@@ -931,7 +1072,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			h.store.LogActivity(user.ID, "delete_task", &id, "")
 		}
 		if err := h.store.DeleteTask(id); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// Clean up orphaned images/files after task deletion (sync to avoid SQLite locks)
@@ -942,13 +1083,13 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (h *Handler) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
@@ -957,15 +1098,15 @@ func (h *Handler) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 		Position int   `json:"position"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	if req.TaskID == 0 || req.ColumnID == 0 {
-		http.Error(w, "task_id and column_id required", 400)
+		http.Error(w, "task_id and column_id required", http.StatusBadRequest)
 		return
 	}
 	if err := h.store.MoveTask(req.TaskID, req.ColumnID, req.Position); err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	user := h.currentUser(r)
@@ -984,7 +1125,7 @@ func (h *Handler) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 		h.store.LogActivity(user.ID, "move_task", &req.TaskID, details)
 		if task != nil {
 			shortText := fmt.Sprintf("@%s переместил(а) задачу #%d: %s → %s", user.Username, req.TaskID, task.Title, colName)
-			h.notifySubscribers(req.TaskID, user.ID, truncate(shortText, 200))
+			h.notifySubscribers(req.TaskID, user.ID, truncate(shortText, truncateShort))
 		}
 	}
 	jsonResp(w, map[string]string{"status": "ok"})
@@ -993,7 +1134,7 @@ func (h *Handler) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 // --- Comments ---
 func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
@@ -1003,11 +1144,11 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 		ParentID *int64 `json:"parent_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	if req.TaskID == 0 || req.Text == "" {
-		http.Error(w, "task_id and text required", 400)
+		http.Error(w, "task_id and text required", http.StatusBadRequest)
 		return
 	}
 	var authorID *int64
@@ -1016,12 +1157,12 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := h.store.AddComment(req.TaskID, req.Text, req.ParentID, authorID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if user != nil {
-		commentPreview := truncate(req.Text, 200)
+		commentPreview := truncate(req.Text, truncateShort)
 		h.store.LogActivity(user.ID, "comment", &req.TaskID, commentPreview)
 
 		// Notify subscribers about comment
@@ -1029,7 +1170,7 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 		if task != nil {
 			shortText := fmt.Sprintf("@%s оставил(а) комментарий к задаче #%d: %s", user.Username, req.TaskID, task.Title)
 			h.notifySubscribers(req.TaskID, user.ID, shortText)
-			detailedText := shortText + "\n> " + truncate(req.Text, 300)
+			detailedText := shortText + "\n> " + truncate(req.Text, truncateComment)
 			h.sendSubscribersTelegram(req.TaskID, user.ID, detailedText)
 		}
 
@@ -1045,7 +1186,7 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r.URL.Path, "/api/comments/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
@@ -1054,11 +1195,11 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 			Text string `json:"text"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Text == "" {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if err := h.store.UpdateComment(id, req.Text); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// Process mentions in edited comment
@@ -1075,7 +1216,7 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
 		if err := h.store.DeleteComment(id); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// Clean up orphaned images/files after comment deletion (sync to avoid SQLite locks)
@@ -1086,14 +1227,14 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 // --- Search ---
 func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	q := r.URL.Query().Get("q")
@@ -1101,25 +1242,30 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		jsonResp(w, map[string]any{"task_ids": []int64{}})
 		return
 	}
-	if len(q) > 200 {
-		http.Error(w, "query too long", 400)
+	if len(q) > maxSearchQueryLen {
+		http.Error(w, "query too long", http.StatusBadRequest)
 		return
 	}
 	isRegex := r.URL.Query().Get("regex") == "1"
 
+	if isRegex {
+		// Reject patterns with known catastrophic backtracking constructs
+		if strings.Count(q, "*") > 3 || strings.Count(q, "+") > 3 || strings.Contains(q, "(.*)(.*)") {
+			http.Error(w, "regex too complex", http.StatusBadRequest)
+			return
+		}
+		_, err := regexp.Compile(q)
+		if err != nil {
+			http.Error(w, "invalid regex: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	ids, err := h.store.SearchTasks(q)
 	if err != nil {
 		h.logf("search error: %v", err)
-		http.Error(w, "search error", 500)
+		http.Error(w, "search error", http.StatusInternalServerError)
 		return
-	}
-
-	if isRegex {
-		_, err := regexp.Compile(q)
-		if err != nil {
-			http.Error(w, "invalid regex: "+err.Error(), 400)
-			return
-		}
 	}
 
 	jsonResp(w, map[string]any{"task_ids": ids})
@@ -1128,18 +1274,18 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 // --- Export / Import ---
 func (h *Handler) handleExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil || !user.IsAdmin {
-		http.Error(w, "admin only", 403)
+		http.Error(w, "admin only", http.StatusForbidden)
 		return
 	}
 	data, err := h.store.ExportAll()
 	if err != nil {
 		h.logf("export error: %v", err)
-		http.Error(w, "export error", 500)
+		http.Error(w, "export error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -1149,23 +1295,22 @@ func (h *Handler) handleExport(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil || !user.IsAdmin {
-		http.Error(w, "admin only", 403)
+		http.Error(w, "admin only", http.StatusForbidden)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024) // 50MB max import
 	var data model.ExportData
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		http.Error(w, "bad request: "+err.Error(), 400)
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := h.store.ImportAll(&data); err != nil {
 		h.logf("import error: %v", err)
-		http.Error(w, "import error: "+err.Error(), 500)
+		http.Error(w, "import error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonResp(w, map[string]string{"status": "ok"})
@@ -1174,12 +1319,12 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 // --- Auth ---
 func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	cnt, _ := h.store.UserCount()
 	if cnt > 0 {
-		http.Error(w, "setup already completed", 400)
+		http.Error(w, "setup already completed", http.StatusBadRequest)
 		return
 	}
 	var req struct {
@@ -1187,28 +1332,28 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if req.Username == "" || len(req.Password) < 6 {
-		http.Error(w, "username required, password min 6 chars", 400)
+	if req.Username == "" || len(req.Password) < minPasswordLen {
+		http.Error(w, "username required, password min 6 chars", http.StatusBadRequest)
 		return
 	}
 	id, err := h.store.CreateUser(req.Username, req.Password, "admin")
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	token, err := h.store.CreateSession(id)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   90 * 24 * 3600,
+		MaxAge:   sessionMaxAgeSec,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -1217,7 +1362,7 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
@@ -1225,24 +1370,24 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	user, err := h.store.AuthenticateUser(req.Username, req.Password)
 	if err != nil {
-		http.Error(w, "invalid credentials", 401)
+		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
 	token, err := h.store.CreateSession(user.ID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   90 * 24 * 3600,
+		MaxAge:   sessionMaxAgeSec,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -1251,7 +1396,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	cookie, err := r.Cookie(sessionCookie)
@@ -1264,12 +1409,12 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	// Get full user info with telegram
@@ -1301,14 +1446,14 @@ func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleResetRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
 		Username string `json:"username"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" {
-		http.Error(w, "username required", 400)
+		http.Error(w, "username required", http.StatusBadRequest)
 		return
 	}
 	user, err := h.store.GetUserByUsername(req.Username)
@@ -1322,15 +1467,15 @@ func (h *Handler) handleResetRequest(w http.ResponseWriter, r *http.Request) {
 		jsonResp(w, map[string]string{"status": "ok"})
 		return
 	}
-	// Generate 6-digit code using crypto/rand
-	n, err2 := rand.Int(rand.Reader, big.NewInt(1000000))
+	// Generate 8-digit code using crypto/rand
+	n, err2 := rand.Int(rand.Reader, big.NewInt(resetCodeRange))
 	if err2 != nil {
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	code := fmt.Sprintf("%06d", n.Int64())
+	code := fmt.Sprintf(resetCodeFormat, n.Int64())
 	if err := h.store.SetResetCode(user.ID, code); err != nil {
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	// Send code via Telegram
@@ -1340,7 +1485,7 @@ func (h *Handler) handleResetRequest(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleResetConfirm(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
@@ -1349,21 +1494,21 @@ func (h *Handler) handleResetConfirm(w http.ResponseWriter, r *http.Request) {
 		NewPassword string `json:"new_password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	req.Code = strings.TrimSpace(req.Code)
-	if req.Username == "" || req.Code == "" || len(req.NewPassword) < 6 {
-		http.Error(w, "username, code, and new_password (min 6) required", 400)
+	if req.Username == "" || req.Code == "" || len(req.NewPassword) < minPasswordLen {
+		http.Error(w, "username, code, and new_password (min 6) required", http.StatusBadRequest)
 		return
 	}
 	user, err := h.store.ValidateResetCode(req.Username, req.Code)
 	if err != nil {
-		http.Error(w, "invalid or expired code", 400)
+		http.Error(w, "invalid or expired code", http.StatusBadRequest)
 		return
 	}
 	if err := h.store.UpdateUserPassword(user.ID, req.NewPassword); err != nil {
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	h.store.ClearResetCode(user.ID)
@@ -1374,20 +1519,20 @@ func (h *Handler) handleResetConfirm(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "forbidden", 403)
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
 		users, err := h.store.ListUsers()
 		if err != nil {
-			http.Error(w, "internal error", 500)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, users)
 	case http.MethodPost:
 		if user.Role != "admin" {
-			http.Error(w, "forbidden", 403)
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		var req struct {
@@ -1396,51 +1541,51 @@ func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
 			Role     string `json:"role"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		if req.Username == "" || len(req.Password) < 6 {
-			http.Error(w, "username required, password min 6 chars", 400)
+		if req.Username == "" || len(req.Password) < minPasswordLen {
+			http.Error(w, "username required, password min 6 chars", http.StatusBadRequest)
 			return
 		}
 		if req.Role == "" {
 			req.Role = "regular"
 		}
 		if req.Role != "admin" && req.Role != "regular" && req.Role != "readonly" {
-			http.Error(w, "invalid role", 400)
+			http.Error(w, "invalid role", http.StatusBadRequest)
 			return
 		}
 		id, err := h.store.CreateUser(req.Username, req.Password, req.Role)
 		if err != nil {
-			http.Error(w, "user exists or error: "+err.Error(), 409)
+			http.Error(w, "user exists or error: "+err.Error(), http.StatusConflict)
 			return
 		}
 		jsonResp(w, map[string]int64{"id": id})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
 	user := h.currentUser(r)
 	if user == nil || user.Role != "admin" {
-		http.Error(w, "forbidden", 403)
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	id := extractID(r.URL.Path, "/api/users/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
 	case http.MethodDelete:
 		// Cannot delete yourself
 		if id == user.ID {
-			http.Error(w, "cannot delete yourself", 400)
+			http.Error(w, "cannot delete yourself", http.StatusBadRequest)
 			return
 		}
 		if err := h.store.DeleteUser(id); err != nil {
-			http.Error(w, err.Error(), 400)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
@@ -1450,53 +1595,53 @@ func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
 			Role     string `json:"role"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if req.Password != "" {
-			if len(req.Password) < 6 {
-				http.Error(w, "password min 6 chars", 400)
+			if len(req.Password) < minPasswordLen {
+				http.Error(w, "password min 6 chars", http.StatusBadRequest)
 				return
 			}
 			if err := h.store.UpdateUserPassword(id, req.Password); err != nil {
-				http.Error(w, err.Error(), 500)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 		}
 		if req.Role != "" {
 			if req.Role != "admin" && req.Role != "regular" && req.Role != "readonly" {
-				http.Error(w, "invalid role", 400)
+				http.Error(w, "invalid role", http.StatusBadRequest)
 				return
 			}
 			if id == user.ID {
-				http.Error(w, "cannot change own role", 400)
+				http.Error(w, "cannot change own role", http.StatusBadRequest)
 				return
 			}
 			if err := h.store.UpdateUserRole(id, req.Role); err != nil {
-				http.Error(w, err.Error(), 500)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 // --- Notifications ---
 func (h *Handler) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	notifs, err := h.store.ListNotifications(user.ID, 50)
 	if err != nil {
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	jsonResp(w, notifs)
@@ -1504,19 +1649,19 @@ func (h *Handler) handleNotifications(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleNotificationRead(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var req struct {
 		ID int64 `json:"id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	h.store.MarkNotificationRead(req.ID, user.ID)
@@ -1525,12 +1670,12 @@ func (h *Handler) handleNotificationRead(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) handleNotificationReadAll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	h.store.MarkAllNotificationsRead(user.ID)
@@ -1540,19 +1685,19 @@ func (h *Handler) handleNotificationReadAll(w http.ResponseWriter, r *http.Reque
 // --- Task Subscriptions ---
 func (h *Handler) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var req struct {
 		TaskID int64 `json:"task_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TaskID == 0 {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	h.store.SubscribeToTask(req.TaskID, user.ID)
@@ -1561,19 +1706,19 @@ func (h *Handler) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var req struct {
 		TaskID int64 `json:"task_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TaskID == 0 {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	h.store.UnsubscribeFromTask(req.TaskID, user.ID)
@@ -1582,12 +1727,12 @@ func (h *Handler) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleTaskSubscribe(w http.ResponseWriter, r *http.Request, taskID int64) {
 	if taskID == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if r.Method == http.MethodPost {
@@ -1600,17 +1745,17 @@ func (h *Handler) handleTaskSubscribe(w http.ResponseWriter, r *http.Request, ta
 		jsonResp(w, map[string]string{"status": "ok"})
 		return
 	}
-	http.Error(w, "method not allowed", 405)
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func (h *Handler) handleTaskSubscribed(w http.ResponseWriter, r *http.Request, taskID int64) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	subscribed := h.store.IsSubscribed(taskID, user.ID)
@@ -1620,22 +1765,22 @@ func (h *Handler) handleTaskSubscribed(w http.ResponseWriter, r *http.Request, t
 // --- User Profile & Activity ---
 func (h *Handler) handleUserActivity(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	id := extractID(r.URL.Path, "/api/user/activity/")
 	if id == 0 {
-		http.Error(w, "bad id", 400)
+		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
 	user, err := h.store.GetUser(id)
 	if err != nil {
-		http.Error(w, "user not found", 404)
+		http.Error(w, "user not found", http.StatusNotFound)
 		return
 	}
-	activity, err := h.store.UserActivity(id, 100)
+	activity, err := h.store.UserActivity(id, activityHistoryLimit)
 	if err != nil {
-		http.Error(w, "internal error", 500)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	jsonResp(w, map[string]any{"user": user, "activity": activity})
@@ -1644,17 +1789,17 @@ func (h *Handler) handleUserActivity(w http.ResponseWriter, r *http.Request) {
 // --- Telegram Integration ---
 func (h *Handler) handleTelegramLink(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	hash, err := h.store.GenerateLinkHash(user.ID)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonResp(w, map[string]string{"hash": hash})
@@ -1662,12 +1807,12 @@ func (h *Handler) handleTelegramLink(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleTelegramUnlink(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	h.store.UnlinkTelegram(user.ID)
@@ -1677,27 +1822,27 @@ func (h *Handler) handleTelegramUnlink(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	var req struct {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", 400)
+		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if len(req.Password) < 6 {
-		http.Error(w, "password min 6 chars", 400)
+	if len(req.Password) < minPasswordLen {
+		http.Error(w, "password min 6 chars", http.StatusBadRequest)
 		return
 	}
 	if err := h.store.UpdateUserPassword(user.ID, req.Password); err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonResp(w, map[string]string{"status": "ok"})
@@ -1706,7 +1851,7 @@ func (h *Handler) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request
 func (h *Handler) handleTelegramSettings(w http.ResponseWriter, r *http.Request) {
 	user := h.currentUser(r)
 	if user == nil || user.Role != "admin" {
-		http.Error(w, "forbidden", 403)
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	switch r.Method {
@@ -1720,28 +1865,28 @@ func (h *Handler) handleTelegramSettings(w http.ResponseWriter, r *http.Request)
 			BotUsername string `json:"bot_username"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if err := h.store.SetSetting("telegram_bot_token", req.Token); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if err := h.store.SetSetting("telegram_bot_username", req.BotUsername); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// Restart telegram bot
 		h.initTelegramBot()
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (h *Handler) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	token := h.store.GetSetting("telegram_bot_token")
@@ -1853,7 +1998,7 @@ func truncate(s string, maxLen int) string {
 func (h *Handler) handleTimezoneSettings(w http.ResponseWriter, r *http.Request) {
 	user := h.currentUser(r)
 	if user == nil {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	switch r.Method {
@@ -1865,23 +2010,23 @@ func (h *Handler) handleTimezoneSettings(w http.ResponseWriter, r *http.Request)
 		jsonResp(w, map[string]string{"timezone": tz})
 	case http.MethodPost:
 		if !user.IsAdmin {
-			http.Error(w, "admin only", 403)
+			http.Error(w, "admin only", http.StatusForbidden)
 			return
 		}
 		var req struct {
 			Timezone string `json:"timezone"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", 400)
+			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
 		if err := h.store.SetSetting("admin_timezone", req.Timezone); err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -1901,7 +2046,7 @@ func (h *Handler) runBackupScheduler() {
 
 		nowLocal := now.In(loc)
 		// Next 18:00 in admin timezone
-		next := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 18, 0, 0, 0, loc)
+		next := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), backupHour, 0, 0, 0, loc)
 		if !nowLocal.Before(next) {
 			next = next.Add(24 * time.Hour)
 		}

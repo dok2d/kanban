@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	saltLen    = 32
-	iterations = 100_000
-	keyLen     = 32
+	saltLen    = 32      // PBKDF2 salt length in bytes
+	iterations = 100_000 // PBKDF2 iteration count
+	keyLen     = 32      // PBKDF2 derived key length in bytes
+	tokenLen   = 32      // session token length in bytes (64 hex chars)
 )
 
 // HashPassword returns "salt:hash" using PBKDF2-HMAC-SHA256.
@@ -52,7 +53,7 @@ func CheckPassword(password, stored string) bool {
 
 // GenerateToken creates a cryptographically random session token.
 func GenerateToken() (string, error) {
-	b := make([]byte, 32)
+	b := make([]byte, tokenLen)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
