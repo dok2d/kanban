@@ -17,7 +17,57 @@ import (
 	"time"
 )
 
-const sessionCookie = "kanban_session"
+const (
+	sessionCookie = "kanban_session"
+
+	// File upload limits
+	maxUploadSize = 50 * 1024 * 1024 // 50 MB — universal upload limit
+
+	// Image compression warning threshold
+	imageWarnUncompressed = 1024 * 1024 // 1 MB
+
+	// Cache
+	imageCacheMaxAge = "public, max-age=31536000, immutable" // 1 year
+
+	// Session
+	sessionMaxAgeSec = 90 * 24 * 3600 // 90 days in seconds
+
+	// Password
+	minPasswordLen = 6
+
+	// Reset code
+	resetCodeRange  = 100000000 // 10^8 for 8-digit codes
+	resetCodeFormat = "%08d"
+
+	// Text truncation limits
+	truncateShort    = 200  // notifications, previews
+	truncateComment  = 300  // comment body in notifications
+	truncateActivity = 1000 // activity log details
+	truncateDesc     = 500  // description in TG view
+	truncateCommentTG = 100 // comment preview in TG task view
+
+	// Telegram message limit
+	tgMessageMaxLen = 4000
+
+	// Telegram UI limits
+	tgMaxInlineButtons   = 30
+	tgMaxCommentsShown   = 5
+
+	// Search
+	maxSearchQueryLen = 200
+
+	// Activity history
+	activityHistoryLimit = 100
+
+	// Backup
+	backupHour = 18
+
+	// Notification poll
+	notifPollIntervalMs = 30000
+
+	// Search debounce
+	searchDebounceMs = 300
+)
 
 // allowed MIME types for image uploads
 var allowedImageMIME = map[string]bool{
@@ -391,7 +441,7 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("[upload] image: content-length=%d", r.ContentLength)
-	r.Body = http.MaxBytesReader(w, r.Body, 15*1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	var req struct {
 		Data string `json:"data"`
 		Mime string `json:"mime"`
@@ -425,12 +475,12 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("[upload] image: decoded=%d bytes (%.1f MB), mime=%s", len(raw), float64(len(raw))/(1024*1024), req.Mime)
-	if len(raw) > 1024*1024 {
+	if len(raw) > imageWarnUncompressed {
 		log.Printf("[upload] image: WARNING client compression may have failed (>1MB)")
 	}
-	if len(raw) > 20*1024*1024 {
-		log.Printf("[upload] image: rejected, size %d > 20MB", len(raw))
-		http.Error(w, "image too large (max 20MB)", http.StatusRequestEntityTooLarge)
+	if len(raw) > maxUploadSize {
+		log.Printf("[upload] image: rejected, size %d > %dMB", len(raw), maxUploadSize/(1024*1024))
+		http.Error(w, fmt.Sprintf("image too large (max %dMB)", maxUploadSize/(1024*1024)), http.StatusRequestEntityTooLarge)
 		return
 	}
 	id, err := h.store.SaveImage(raw, req.Mime)
@@ -463,7 +513,7 @@ func (h *Handler) handleImageServe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", mime)
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", imageCacheMaxAge)
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 	w.Write(data)
 }
@@ -475,7 +525,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("[upload] file: content-length=%d", r.ContentLength)
-	r.Body = http.MaxBytesReader(w, r.Body, 20*1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	var req struct {
 		Data     string `json:"data"`
 		Filename string `json:"filename"`
@@ -512,12 +562,12 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("[upload] file: name=%s, decoded=%d bytes (%.1f MB), mime=%s", req.Filename, len(raw), float64(len(raw))/(1024*1024), req.Mime)
-	if strings.HasPrefix(req.Mime, "image/") && len(raw) > 1024*1024 {
+	if strings.HasPrefix(req.Mime, "image/") && len(raw) > imageWarnUncompressed {
 		log.Printf("[upload] file: WARNING image not compressed by client (>1MB)")
 	}
-	if len(raw) > 20*1024*1024 {
-		log.Printf("[upload] file: rejected, size %d > 20MB", len(raw))
-		http.Error(w, "file too large (max 20MB)", http.StatusRequestEntityTooLarge)
+	if len(raw) > maxUploadSize {
+		log.Printf("[upload] file: rejected, size %d > %dMB", len(raw), maxUploadSize/(1024*1024))
+		http.Error(w, fmt.Sprintf("file too large (max %dMB)", maxUploadSize/(1024*1024)), http.StatusRequestEntityTooLarge)
 		return
 	}
 	// Validate file content matches declared MIME using magic bytes
@@ -994,7 +1044,7 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			if changes != "" {
 				detailedText = shortText + "\n" + changes
 			}
-			h.store.LogActivity(user.ID, "edit_task", &id, truncate(detailedText, 1000))
+			h.store.LogActivity(user.ID, "edit_task", &id, truncate(detailedText, truncateActivity))
 
 			// Notify new assignee
 			if req.AssigneeID != nil && *req.AssigneeID != user.ID {
@@ -1006,9 +1056,9 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Notify subscribers about edit with details
-			h.notifySubscribers(id, user.ID, truncate(shortText, 200))
+			h.notifySubscribers(id, user.ID, truncate(shortText, truncateShort))
 			if changes != "" {
-				h.sendSubscribersTelegram(id, user.ID, truncate(detailedText, http.StatusInternalServerError))
+				h.sendSubscribersTelegram(id, user.ID, truncate(detailedText, truncateActivity))
 			}
 
 			// Process mentions in description
@@ -1075,7 +1125,7 @@ func (h *Handler) handleMoveTask(w http.ResponseWriter, r *http.Request) {
 		h.store.LogActivity(user.ID, "move_task", &req.TaskID, details)
 		if task != nil {
 			shortText := fmt.Sprintf("@%s переместил(а) задачу #%d: %s → %s", user.Username, req.TaskID, task.Title, colName)
-			h.notifySubscribers(req.TaskID, user.ID, truncate(shortText, 200))
+			h.notifySubscribers(req.TaskID, user.ID, truncate(shortText, truncateShort))
 		}
 	}
 	jsonResp(w, map[string]string{"status": "ok"})
@@ -1112,7 +1162,7 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user != nil {
-		commentPreview := truncate(req.Text, 200)
+		commentPreview := truncate(req.Text, truncateShort)
 		h.store.LogActivity(user.ID, "comment", &req.TaskID, commentPreview)
 
 		// Notify subscribers about comment
@@ -1120,7 +1170,7 @@ func (h *Handler) handleComments(w http.ResponseWriter, r *http.Request) {
 		if task != nil {
 			shortText := fmt.Sprintf("@%s оставил(а) комментарий к задаче #%d: %s", user.Username, req.TaskID, task.Title)
 			h.notifySubscribers(req.TaskID, user.ID, shortText)
-			detailedText := shortText + "\n> " + truncate(req.Text, 300)
+			detailedText := shortText + "\n> " + truncate(req.Text, truncateComment)
 			h.sendSubscribersTelegram(req.TaskID, user.ID, detailedText)
 		}
 
@@ -1192,7 +1242,7 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		jsonResp(w, map[string]any{"task_ids": []int64{}})
 		return
 	}
-	if len(q) > 200 {
+	if len(q) > maxSearchQueryLen {
 		http.Error(w, "query too long", http.StatusBadRequest)
 		return
 	}
@@ -1253,7 +1303,6 @@ func (h *Handler) handleImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "admin only", http.StatusForbidden)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024) // 50MB max import
 	var data model.ExportData
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -1286,7 +1335,7 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if req.Username == "" || len(req.Password) < 6 {
+	if req.Username == "" || len(req.Password) < minPasswordLen {
 		http.Error(w, "username required, password min 6 chars", http.StatusBadRequest)
 		return
 	}
@@ -1304,7 +1353,7 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   90 * 24 * 3600,
+		MaxAge:   sessionMaxAgeSec,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -1338,7 +1387,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
-		MaxAge:   90 * 24 * 3600,
+		MaxAge:   sessionMaxAgeSec,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -1419,12 +1468,12 @@ func (h *Handler) handleResetRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Generate 8-digit code using crypto/rand
-	n, err2 := rand.Int(rand.Reader, big.NewInt(100000000))
+	n, err2 := rand.Int(rand.Reader, big.NewInt(resetCodeRange))
 	if err2 != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	code := fmt.Sprintf("%08d", n.Int64())
+	code := fmt.Sprintf(resetCodeFormat, n.Int64())
 	if err := h.store.SetResetCode(user.ID, code); err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -1449,7 +1498,7 @@ func (h *Handler) handleResetConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Code = strings.TrimSpace(req.Code)
-	if req.Username == "" || req.Code == "" || len(req.NewPassword) < 6 {
+	if req.Username == "" || req.Code == "" || len(req.NewPassword) < minPasswordLen {
 		http.Error(w, "username, code, and new_password (min 6) required", http.StatusBadRequest)
 		return
 	}
@@ -1495,7 +1544,7 @@ func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		if req.Username == "" || len(req.Password) < 6 {
+		if req.Username == "" || len(req.Password) < minPasswordLen {
 			http.Error(w, "username required, password min 6 chars", http.StatusBadRequest)
 			return
 		}
@@ -1550,7 +1599,7 @@ func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.Password != "" {
-			if len(req.Password) < 6 {
+			if len(req.Password) < minPasswordLen {
 				http.Error(w, "password min 6 chars", http.StatusBadRequest)
 				return
 			}
@@ -1729,7 +1778,7 @@ func (h *Handler) handleUserActivity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "user not found", http.StatusNotFound)
 		return
 	}
-	activity, err := h.store.UserActivity(id, 100)
+	activity, err := h.store.UserActivity(id, activityHistoryLimit)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -1788,7 +1837,7 @@ func (h *Handler) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if len(req.Password) < 6 {
+	if len(req.Password) < minPasswordLen {
 		http.Error(w, "password min 6 chars", http.StatusBadRequest)
 		return
 	}
@@ -1997,7 +2046,7 @@ func (h *Handler) runBackupScheduler() {
 
 		nowLocal := now.In(loc)
 		// Next 18:00 in admin timezone
-		next := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 18, 0, 0, 0, loc)
+		next := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), backupHour, 0, 0, 0, loc)
 		if !nowLocal.Before(next) {
 			next = next.Add(24 * time.Hour)
 		}

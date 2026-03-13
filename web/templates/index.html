@@ -557,6 +557,17 @@ let state = { columns: [], tasks: [], epics: [], sprints: [], tags: [], users: [
 let draggedTaskId = null;
 let searchQuery = '';
 let searchMatchIds = null;
+// === Constants ===
+const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;       // 50 MB
+const IMG_COMPRESS_THRESHOLD = 200 * 1024;       // skip if < 200 KB
+const IMG_MAX_DIMENSION = 1920;                  // max width/height px
+const IMG_TARGET_SIZE = 500 * 1024;              // target compressed size
+const IMG_INITIAL_QUALITY = 0.82;
+const IMG_MIN_QUALITY = 0.4;
+const IMG_QUALITY_STEP = 0.15;
+const SEARCH_DEBOUNCE_MS = 300;
+const NOTIF_POLL_MS = 30000;
+
 let currentView = 'board';
 let currentTaskId = null;
 let currentEpicId = null;
@@ -732,10 +743,10 @@ function _dbg() {
 }
 async function compressImage(file) {
   if (!_isImage(file) || _isGif(file)) return file;
-  if (file.size <= 200 * 1024) return file;
+  if (file.size <= IMG_COMPRESS_THRESHOLD) return file;
   try {
     const bitmap = await createImageBitmap(file);
-    const maxDim = 1920;
+    const maxDim = IMG_MAX_DIMENSION;
     let { width, height } = bitmap;
     if (width > maxDim || height > maxDim) {
       const ratio = Math.min(maxDim / width, maxDim / height);
@@ -747,10 +758,10 @@ async function compressImage(file) {
     canvas.height = height;
     canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
     bitmap.close();
-    let q = 0.82;
+    let q = IMG_INITIAL_QUALITY;
     let blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
-    while (blob && blob.size > 500 * 1024 && q > 0.4) {
-      q -= 0.15;
+    while (blob && blob.size > IMG_TARGET_SIZE && q > IMG_MIN_QUALITY) {
+      q -= IMG_QUALITY_STEP;
       blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
     }
     if (!blob) { console.warn('[compress] toBlob failed'); return file; }
@@ -922,10 +933,10 @@ function triggerFileAttach(textareaId) {
     const file = inp.files[0];
     if (!file) return;
     _dbg('attach:', file.name, 'size:', file.size, 'type:', file.type, 'isImage:', _isImage(file));
-    if (file.size > 20*1024*1024 && !_isImage(file)) { alert(t('fileTooLarge')); return; }
+    if (file.size > MAX_UPLOAD_SIZE && !_isImage(file)) { alert(t('fileTooLarge')); return; }
     const ta = document.getElementById(textareaId);
     const uploadFile = _isImage(file) ? await compressImage(file) : file;
-    if (uploadFile.size > 20*1024*1024) { alert(t('fileTooLarge')); return; }
+    if (uploadFile.size > MAX_UPLOAD_SIZE) { alert(t('fileTooLarge')); return; }
     const mime = uploadFile.type || 'image/jpeg';
     const reader = new FileReader();
     reader.onload = async () => {
@@ -959,7 +970,7 @@ async function init() {
     if (searchEl) {
       searchEl.addEventListener('input', function() {
         clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => doSearch(this.value), 300);
+        searchTimeout = setTimeout(() => doSearch(this.value), SEARCH_DEBOUNCE_MS);
       });
       searchEl.addEventListener('keydown', function(e) { if (e.key === 'Escape') { this.value = ''; doSearch(''); } });
     }
@@ -1978,7 +1989,7 @@ async function refreshNotifCount() {
 }
 
 function pollNotifications() {
-  setInterval(refreshNotifCount, 30000);
+  setInterval(refreshNotifCount, NOTIF_POLL_MS);
 }
 
 // Close notif dropdown on outside click
@@ -2620,7 +2631,6 @@ async function importBoard(input) {
   if (!file) return;
   if (!confirm(t('importConfirm'))) { input.value = ''; return; }
   try {
-    if (file.size > 50 * 1024 * 1024) { alert(t('fileTooLarge')); input.value = ''; return; }
     const text = await file.text();
     let data;
     try { data = JSON.parse(text); } catch(pe) { alert(t('importError') + ': invalid JSON'); input.value = ''; return; }

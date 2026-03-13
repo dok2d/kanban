@@ -13,6 +13,14 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+const (
+	sqliteBusyTimeout  = 5000                // milliseconds
+	sessionDuration    = 90 * 24 * time.Hour // 90 days
+	resetCodeDuration  = 10 * time.Minute
+	linkHashLen        = 16
+	maxRecursionDepth  = 50
+)
+
 var fileRefRe = regexp.MustCompile(`/api/(images|files)/(\d+)`)
 
 func collectFileRefs(text string, refImages, refFiles map[int64]bool) {
@@ -59,7 +67,7 @@ func (s *Store) logf(format string, args ...any) {
 }
 
 func New(path string) (*Store, error) {
-	d, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")
+	d, err := sql.Open("sqlite3", fmt.Sprintf("%s?_journal_mode=WAL&_busy_timeout=%d&_foreign_keys=on", path, sqliteBusyTimeout))
 	if err != nil {
 		return nil, err
 	}
@@ -834,7 +842,7 @@ func (s *Store) DeleteComment(id int64) error {
 		return err
 	}
 	defer tx.Rollback()
-	if err := s.deleteCommentTreeTx(tx, id, 50); err != nil {
+	if err := s.deleteCommentTreeTx(tx, id, maxRecursionDepth); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -871,7 +879,7 @@ func (s *Store) deleteCommentTreeTx(tx *sql.Tx, id int64, maxDepth int) error {
 
 // CountCommentDescendants returns the number of replies (all levels) for a comment
 func (s *Store) CountCommentDescendants(id int64) int {
-	return s.countDescendants(id, 50)
+	return s.countDescendants(id, maxRecursionDepth)
 }
 
 func (s *Store) countDescendants(id int64, maxDepth int) int {
@@ -1017,7 +1025,7 @@ func (s *Store) taskCommentsTree(taskID int64) []model.Comment {
 		idx := byID[id]
 		c := all[idx]
 		c.Replies = []model.Comment{}
-		if depth < 50 { // depth limit to prevent stack overflow (#28)
+		if depth < maxRecursionDepth { // depth limit to prevent stack overflow (#28)
 			for _, childID := range children[id] {
 				c.Replies = append(c.Replies, buildTree(childID, depth+1))
 			}
@@ -1386,7 +1394,7 @@ func (s *Store) SetTaskDependencies(taskID int64, dependsOnIDs []int64) error {
 // by checking if depID already transitively depends on taskID.
 func (s *Store) wouldCreateCycle(tx *sql.Tx, taskID, depID int64) bool {
 	visited := map[int64]bool{}
-	return s.reachable(tx, depID, taskID, visited, 50)
+	return s.reachable(tx, depID, taskID, visited, maxRecursionDepth)
 }
 
 func (s *Store) reachable(tx *sql.Tx, from, target int64, visited map[int64]bool, maxDepth int) bool {
@@ -1501,7 +1509,7 @@ func (s *Store) CreateSession(userID int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	expires := time.Now().Add(90 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	expires := time.Now().Add(sessionDuration).Format("2006-01-02 15:04:05")
 	_, err = s.db.Exec("INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)", token, userID, expires)
 	if err != nil {
 		return "", err
@@ -1635,7 +1643,7 @@ func (s *Store) GenerateLinkHash(userID int64) (string, error) {
 		return "", err
 	}
 	// Use first 16 chars for a shorter hash
-	hash = hash[:16]
+	hash = hash[:linkHashLen]
 	_, err = s.db.Exec("UPDATE users SET link_hash=? WHERE id=?", hash, userID)
 	if err != nil {
 		return "", err
@@ -1690,7 +1698,7 @@ func (s *Store) UnlinkTelegram(userID int64) error {
 // --- Password Reset ---
 
 func (s *Store) SetResetCode(userID int64, code string) error {
-	expires := time.Now().UTC().Add(10 * time.Minute).Format("2006-01-02 15:04:05")
+	expires := time.Now().UTC().Add(resetCodeDuration).Format("2006-01-02 15:04:05")
 	_, err := s.db.Exec("UPDATE users SET reset_code=?, reset_code_expires=? WHERE id=?", code, expires, userID)
 	return err
 }
