@@ -102,13 +102,37 @@ cmd_run() {
 
 cmd_stop() {
     echo "==> Остановка ${CONTAINER}..."
-    podman stop "$CONTAINER" 2>/dev/null || true
-    podman rm "$CONTAINER" 2>/dev/null || true
+    # Если контейнер управляется systemd — останавливаем через systemctl
+    if systemctl --user is-active "${CONTAINER}.service" &>/dev/null; then
+        systemctl --user stop "${CONTAINER}.service"
+        echo "==> Остановлен через systemd"
+    else
+        podman stop "$CONTAINER" 2>/dev/null || true
+        podman rm "$CONTAINER" 2>/dev/null || true
+    fi
+}
+
+cmd_start() {
+    if systemctl --user is-active "${CONTAINER}.service" &>/dev/null; then
+        echo "==> Уже запущен (systemd)"
+        return 0
+    fi
+    if systemctl --user is-enabled "${CONTAINER}.service" &>/dev/null; then
+        systemctl --user start "${CONTAINER}.service"
+        echo "==> Запущен через systemd"
+    else
+        cmd_run
+    fi
 }
 
 cmd_restart() {
-    cmd_stop
-    cmd_run
+    if systemctl --user is-enabled "${CONTAINER}.service" &>/dev/null; then
+        echo "==> Перезапуск ${CONTAINER} через systemd..."
+        systemctl --user restart "${CONTAINER}.service"
+    else
+        cmd_stop
+        cmd_run
+    fi
 }
 
 cmd_logs() {
@@ -195,7 +219,7 @@ cmd_restore() {
 
     # Запускаем контейнер
     echo "==> Запуск ${CONTAINER}..."
-    podman start "$CONTAINER" 2>/dev/null || cmd_run
+    cmd_start
     echo "==> Готово! Данные восстановлены из бэкапа."
 }
 
