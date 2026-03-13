@@ -6,10 +6,28 @@ import (
 	"kanban/internal/auth"
 	"kanban/internal/model"
 	"log"
+	"regexp"
+	"strconv"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+var fileRefRe = regexp.MustCompile(`/api/(images|files)/(\d+)`)
+
+func collectFileRefs(text string, refImages, refFiles map[int64]bool) {
+	for _, m := range fileRefRe.FindAllStringSubmatch(text, -1) {
+		id, _ := strconv.ParseInt(m[2], 10, 64)
+		if id == 0 {
+			continue
+		}
+		if m[1] == "images" {
+			refImages[id] = true
+		} else {
+			refFiles[id] = true
+		}
+	}
+}
 
 type Store struct {
 	db      *sql.DB
@@ -845,6 +863,89 @@ func (s *Store) GetFile(id int64) ([]byte, string, string, error) {
 	return data, mime, filename, err
 }
 
+func (s *Store) DeleteImage(id int64) error {
+	_, err := s.db.Exec("DELETE FROM images WHERE id=?", id)
+	return err
+}
+
+func (s *Store) DeleteFile(id int64) error {
+	_, err := s.db.Exec("DELETE FROM files WHERE id=?", id)
+	return err
+}
+
+// CleanupOrphanFiles removes images and files not referenced in any comment or task description.
+func (s *Store) CleanupOrphanFiles() (int, error) {
+	// Collect all referenced IDs from comments and task descriptions
+	refImages := make(map[int64]bool)
+	refFiles := make(map[int64]bool)
+
+	// Scan comments
+	rows, err := s.db.Query("SELECT text FROM comments")
+	if err != nil {
+		return 0, err
+	}
+	for rows.Next() {
+		var text string
+		rows.Scan(&text)
+		collectFileRefs(text, refImages, refFiles)
+	}
+	rows.Close()
+
+	// Scan task descriptions
+	rows, err = s.db.Query("SELECT description FROM tasks WHERE description != ''")
+	if err != nil {
+		return 0, err
+	}
+	for rows.Next() {
+		var text string
+		rows.Scan(&text)
+		collectFileRefs(text, refImages, refFiles)
+	}
+	rows.Close()
+
+	count := 0
+
+	// Delete orphan images
+	imgRows, err := s.db.Query("SELECT id FROM images")
+	if err != nil {
+		return 0, err
+	}
+	var orphanImgs []int64
+	for imgRows.Next() {
+		var id int64
+		imgRows.Scan(&id)
+		if !refImages[id] {
+			orphanImgs = append(orphanImgs, id)
+		}
+	}
+	imgRows.Close()
+	for _, id := range orphanImgs {
+		s.db.Exec("DELETE FROM images WHERE id=?", id)
+		count++
+	}
+
+	// Delete orphan files
+	fileRows, err := s.db.Query("SELECT id FROM files")
+	if err != nil {
+		return count, err
+	}
+	var orphanFiles []int64
+	for fileRows.Next() {
+		var id int64
+		fileRows.Scan(&id)
+		if !refFiles[id] {
+			orphanFiles = append(orphanFiles, id)
+		}
+	}
+	fileRows.Close()
+	for _, id := range orphanFiles {
+		s.db.Exec("DELETE FROM files WHERE id=?", id)
+		count++
+	}
+
+	return count, nil
+}
+
 // SearchTasks searches across tasks (title, description, todo), comments, epics, tags.
 func (s *Store) SearchTasks(query string) ([]int64, error) {
 	like := "%" + query + "%"
@@ -1186,7 +1287,7 @@ func (s *Store) CleanExpiredSessions() {
 }
 
 func (s *Store) ListUsers() ([]model.User, error) {
-	rows, err := s.db.Query("SELECT id,username,is_admin,role,created_at FROM users ORDER BY id")
+	rows, err := s.db.Query("SELECT id,username,is_admin,role,created_at,telegram_chat_id FROM users ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -1196,7 +1297,7 @@ func (s *Store) ListUsers() ([]model.User, error) {
 		var u model.User
 		var admin int
 		var role string
-		if err := rows.Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &admin, &role, &u.CreatedAt, &u.TelegramID); err != nil {
 			return nil, err
 		}
 		u.IsAdmin = admin == 1
@@ -1625,4 +1726,20 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 	}
 
 	return tx.Commit()
+}
+
+// DatabaseChecksum returns a quick checksum based on row counts and max IDs to detect changes.
+func (s *Store) DatabaseChecksum() string {
+	var checksum string
+	tables := []string{"tasks", "comments", "columns", "epics", "tags", "users", "files", "images"}
+	for _, t := range tables {
+		var cnt, maxID int64
+		s.db.QueryRow("SELECT COUNT(*), COALESCE(MAX(id),0) FROM " + t).Scan(&cnt, &maxID)
+		checksum += fmt.Sprintf("%s:%d:%d;", t, cnt, maxID)
+	}
+	var lastTask, lastComment string
+	s.db.QueryRow("SELECT COALESCE(MAX(updated_at),'') FROM tasks").Scan(&lastTask)
+	s.db.QueryRow("SELECT COALESCE(MAX(updated_at),'') FROM comments").Scan(&lastComment)
+	checksum += fmt.Sprintf("lt:%s;lc:%s", lastTask, lastComment)
+	return checksum
 }

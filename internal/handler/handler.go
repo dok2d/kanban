@@ -83,7 +83,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data:")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:")
 
 	// Public paths: login page, login API, static assets, setup
 	path := r.URL.Path
@@ -221,6 +221,7 @@ func (h *Handler) routes() {
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") || strings.HasPrefix(r.URL.Path, "/user/") {
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 		http.ServeFile(w, r, "web/templates/index.html")
 		return
 	}
@@ -361,12 +362,14 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8*1024*1024)
+	log.Printf("[upload] image: content-length=%d", r.ContentLength)
+	r.Body = http.MaxBytesReader(w, r.Body, 15*1024*1024)
 	var req struct {
 		Data string `json:"data"`
 		Mime string `json:"mime"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[upload] image: decode error: %v", err)
 		http.Error(w, "bad request or body too large", 400)
 		return
 	}
@@ -378,6 +381,7 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		req.Mime = "image/png"
 	}
 	if !allowedImageMIME[req.Mime] {
+		log.Printf("[upload] image: unsupported mime: %s", req.Mime)
 		http.Error(w, "unsupported image type", 400)
 		return
 	}
@@ -386,8 +390,13 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid base64", 400)
 		return
 	}
-	if len(raw) > 5*1024*1024 {
-		http.Error(w, "image too large (max 5MB)", 413)
+	log.Printf("[upload] image: decoded=%d bytes (%.1f MB), mime=%s", len(raw), float64(len(raw))/(1024*1024), req.Mime)
+	if len(raw) > 1024*1024 {
+		log.Printf("[upload] image: WARNING client compression may have failed (>1MB)")
+	}
+	if len(raw) > 20*1024*1024 {
+		log.Printf("[upload] image: rejected, size %d > 20MB", len(raw))
+		http.Error(w, "image too large (max 20MB)", 413)
 		return
 	}
 	id, err := h.store.SaveImage(raw, req.Mime)
@@ -395,6 +404,7 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+	log.Printf("[upload] image: saved id=%d, size=%d", id, len(raw))
 	jsonResp(w, map[string]any{"id": id, "url": "/api/images/" + strconv.FormatInt(id, 10)})
 }
 
@@ -425,13 +435,15 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 15*1024*1024)
+	log.Printf("[upload] file: content-length=%d", r.ContentLength)
+	r.Body = http.MaxBytesReader(w, r.Body, 20*1024*1024)
 	var req struct {
 		Data     string `json:"data"`
 		Filename string `json:"filename"`
 		Mime     string `json:"mime"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[upload] file: decode error: %v", err)
 		http.Error(w, "bad request or body too large", 400)
 		return
 	}
@@ -442,6 +454,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	// Security: check extension
 	ext := strings.ToLower(filepath.Ext(req.Filename))
 	if blockedExtensions[ext] {
+		log.Printf("[upload] file: blocked extension: %s", ext)
 		http.Error(w, "file type not allowed", 400)
 		return
 	}
@@ -450,6 +463,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		req.Mime = "application/octet-stream"
 	}
 	if !allowedFileMIME[req.Mime] {
+		log.Printf("[upload] file: blocked mime: %s", req.Mime)
 		http.Error(w, "file MIME type not allowed", 400)
 		return
 	}
@@ -458,8 +472,13 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid base64", 400)
 		return
 	}
-	if len(raw) > 10*1024*1024 {
-		http.Error(w, "file too large (max 10MB)", 413)
+	log.Printf("[upload] file: name=%s, decoded=%d bytes (%.1f MB), mime=%s", req.Filename, len(raw), float64(len(raw))/(1024*1024), req.Mime)
+	if strings.HasPrefix(req.Mime, "image/") && len(raw) > 1024*1024 {
+		log.Printf("[upload] file: WARNING image not compressed by client (>1MB)")
+	}
+	if len(raw) > 20*1024*1024 {
+		log.Printf("[upload] file: rejected, size %d > 20MB", len(raw))
+		http.Error(w, "file too large (max 20MB)", 413)
 		return
 	}
 	// Sanitize filename
@@ -797,6 +816,12 @@ func (h *Handler) handleTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+		// Clean up orphaned images/files after task deletion (sync to avoid SQLite locks)
+		if cleaned, err := h.store.CleanupOrphanFiles(); err != nil {
+			log.Printf("[cleanup] error after task delete: %v", err)
+		} else if cleaned > 0 {
+			log.Printf("[cleanup] removed %d orphaned files/images", cleaned)
+		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
 		http.Error(w, "method not allowed", 405)
@@ -934,6 +959,12 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 		if err := h.store.DeleteComment(id); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
+		}
+		// Clean up orphaned images/files after comment deletion (sync to avoid SQLite locks)
+		if cleaned, err := h.store.CleanupOrphanFiles(); err != nil {
+			log.Printf("[cleanup] error after comment delete: %v", err)
+		} else if cleaned > 0 {
+			log.Printf("[cleanup] removed %d orphaned files/images", cleaned)
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	default:
@@ -1738,8 +1769,9 @@ func (h *Handler) handleTimezoneSettings(w http.ResponseWriter, r *http.Request)
 
 // runBackupScheduler sends daily backup dump to admin via Telegram at 18:00 admin's timezone
 func (h *Handler) runBackupScheduler() {
+	var lastChecksum string
 	for {
-		now := time.Now().UTC()
+		now := time.Now()
 		adminTZ := h.store.GetSetting("admin_timezone")
 		if adminTZ == "" {
 			adminTZ = "UTC"
@@ -1752,24 +1784,30 @@ func (h *Handler) runBackupScheduler() {
 		nowLocal := now.In(loc)
 		// Next 18:00 in admin timezone
 		next := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 18, 0, 0, 0, loc)
-		if nowLocal.After(next) {
+		if !nowLocal.Before(next) {
 			next = next.Add(24 * time.Hour)
 		}
-		sleepDuration := next.Sub(now.In(loc))
+		sleepDuration := time.Until(next.In(time.UTC))
 		if sleepDuration < 0 {
 			sleepDuration = time.Minute
 		}
+		log.Printf("[backup] next backup at %s (%s), sleeping %s", next.Format("2006-01-02 15:04"), adminTZ, sleepDuration.Round(time.Second))
 
 		time.Sleep(sleepDuration)
 
-		h.sendDailyBackup()
+		// Clean up orphaned files before backup
+		if cleaned, err := h.store.CleanupOrphanFiles(); err == nil && cleaned > 0 {
+			log.Printf("[backup] cleaned %d orphaned files/images", cleaned)
+		}
+
+		lastChecksum = h.sendDailyBackup(lastChecksum)
 	}
 }
 
-func (h *Handler) sendDailyBackup() {
+func (h *Handler) sendDailyBackup(lastChecksum string) string {
 	token := h.store.GetSetting("telegram_bot_token")
 	if token == "" {
-		return
+		return lastChecksum
 	}
 
 	// Find admin users with telegram linked
@@ -1781,27 +1819,35 @@ func (h *Handler) sendDailyBackup() {
 		}
 	}
 	if len(adminChatIDs) == 0 {
-		return
+		return lastChecksum
+	}
+
+	// Check if database changed since last backup
+	checksum := h.store.DatabaseChecksum()
+	if checksum == lastChecksum {
+		log.Printf("[backup] database unchanged, skipping backup")
+		return lastChecksum
 	}
 
 	// Generate export
 	data, err := h.store.ExportAll()
 	if err != nil {
 		log.Printf("[backup] export error: %v", err)
-		return
+		return lastChecksum
 	}
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		log.Printf("[backup] marshal error: %v", err)
-		return
+		return lastChecksum
 	}
 
-	filename := fmt.Sprintf("kanban-backup-%s.json", time.Now().UTC().Format("2006-01-02"))
+	filename := fmt.Sprintf("kanban-backup-%s.json", time.Now().Format("2006-01-02"))
 	for _, chatID := range adminChatIDs {
 		h.sendTelegramDocument(token, chatID, filename, jsonData, "📦 Ежедневный бэкап Kanban")
 	}
 	log.Printf("[backup] sent daily backup to %d admin(s)", len(adminChatIDs))
+	return checksum
 }
 
 // helpers
