@@ -173,6 +173,14 @@ func (s *Store) migrate() error {
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL DEFAULT ''
 		)`,
+		// Sprints
+		`CREATE TABLE IF NOT EXISTS sprints (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			start_date TEXT NOT NULL DEFAULT '',
+			end_date TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'planning'
+		)`,
 		// indexes for FK lookups
 		`CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_comments_task_id ON comments(task_id)`,
@@ -206,10 +214,14 @@ func (s *Store) migrate() error {
 		"ALTER TABLE tasks ADD COLUMN deadline TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE users ADD COLUMN reset_code TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE users ADD COLUMN reset_code_expires DATETIME",
+		"ALTER TABLE tasks ADD COLUMN sprint_id INTEGER REFERENCES sprints(id)",
 	}
 	for _, q := range alters {
 		s.db.Exec(q) // ignore "duplicate column" errors
 	}
+
+	// create indexes that depend on ALTER TABLE columns
+	s.db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_sprint_id ON tasks(sprint_id)")
 
 	// Migrate existing users: set role based on is_admin
 	s.db.Exec("UPDATE users SET role='admin' WHERE is_admin=1 AND role='regular'")
@@ -377,10 +389,152 @@ func (s *Store) DeleteEpic(id int64) error {
 	return tx.Commit()
 }
 
+// --- Sprints ---
+
+func (s *Store) ListSprints() ([]model.Sprint, error) {
+	rows, err := s.db.Query("SELECT id,name,start_date,end_date,status FROM sprints ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	sprints := make([]model.Sprint, 0)
+	for rows.Next() {
+		var sp model.Sprint
+		if err := rows.Scan(&sp.ID, &sp.Name, &sp.StartDate, &sp.EndDate, &sp.Status); err != nil {
+			return nil, fmt.Errorf("scan sprint: %w", err)
+		}
+		sprints = append(sprints, sp)
+	}
+	return sprints, rows.Err()
+}
+
+func (s *Store) GetSprint(id int64) (*model.Sprint, error) {
+	var sp model.Sprint
+	err := s.db.QueryRow("SELECT id,name,start_date,end_date,status FROM sprints WHERE id=?", id).
+		Scan(&sp.ID, &sp.Name, &sp.StartDate, &sp.EndDate, &sp.Status)
+	if err != nil {
+		return nil, err
+	}
+	return &sp, nil
+}
+
+func (s *Store) CreateSprint(name, startDate, endDate, status string) (int64, error) {
+	if status == "" {
+		status = "planning"
+	}
+	r, err := s.db.Exec("INSERT INTO sprints(name,start_date,end_date,status) VALUES(?,?,?,?)", name, startDate, endDate, status)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastInsertId()
+}
+
+func (s *Store) UpdateSprint(id int64, name, startDate, endDate, status string) error {
+	_, err := s.db.Exec("UPDATE sprints SET name=?,start_date=?,end_date=?,status=? WHERE id=?", name, startDate, endDate, status, id)
+	return err
+}
+
+func (s *Store) DeleteSprint(id int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("UPDATE tasks SET sprint_id=NULL WHERE sprint_id=?", id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM sprints WHERE id=?", id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) CompleteSprint(id int64, moveToSprintID *int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Mark sprint as completed
+	if _, err := tx.Exec("UPDATE sprints SET status='completed' WHERE id=?", id); err != nil {
+		return err
+	}
+
+	// Find last column (Done)
+	var lastColID int64
+	err = tx.QueryRow("SELECT id FROM columns ORDER BY position DESC LIMIT 1").Scan(&lastColID)
+	if err != nil {
+		return err
+	}
+
+	// Move incomplete tasks to next sprint (or unassign if nil)
+	if moveToSprintID != nil {
+		_, err = tx.Exec("UPDATE tasks SET sprint_id=? WHERE sprint_id=? AND column_id!=?", *moveToSprintID, id, lastColID)
+	} else {
+		_, err = tx.Exec("UPDATE tasks SET sprint_id=NULL WHERE sprint_id=? AND column_id!=?", id, lastColID)
+	}
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) SprintTasks(sprintID int64) ([]model.Task, error) {
+	rows, err := s.db.Query(`
+		SELECT t.id, t.title, t.description, t.todo, t.project_url,
+		       t.column_id, t.epic_id, t.sprint_id, t.assignee_id, t.position, t.priority, t.deadline, t.created_at, t.updated_at
+		FROM tasks t WHERE t.sprint_id=? ORDER BY t.position, t.id`, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tasks := make([]model.Task, 0)
+	var taskIDs []int64
+	for rows.Next() {
+		var t model.Task
+		var eid, sid, aid sql.NullInt64
+		var ca, ua string
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL,
+			&t.ColumnID, &eid, &sid, &aid, &t.Position, &t.Priority, &t.Deadline, &ca, &ua); err != nil {
+			return nil, fmt.Errorf("scan sprint task: %w", err)
+		}
+		t.CreatedAt = parseTime(ca)
+		t.UpdatedAt = parseTime(ua)
+		if eid.Valid {
+			t.EpicID = &eid.Int64
+		}
+		if sid.Valid {
+			t.SprintID = &sid.Int64
+		}
+		if aid.Valid {
+			t.AssigneeID = &aid.Int64
+		}
+		t.Tags = []model.Tag{}
+		tasks = append(tasks, t)
+		taskIDs = append(taskIDs, t.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(taskIDs) > 0 {
+		tagMap, err := s.batchTaskTags(taskIDs)
+		if err == nil {
+			for i := range tasks {
+				if tags, ok := tagMap[tasks[i].ID]; ok {
+					tasks[i].Tags = tags
+				}
+			}
+		}
+	}
+	return tasks, nil
+}
+
 func (s *Store) EpicTasks(epicID int64) ([]model.Task, error) {
 	rows, err := s.db.Query(`
 		SELECT t.id, t.title, t.description, t.todo, t.project_url,
-		       t.column_id, t.epic_id, t.assignee_id, t.position, t.priority, t.deadline, t.created_at, t.updated_at
+		       t.column_id, t.epic_id, t.sprint_id, t.assignee_id, t.position, t.priority, t.deadline, t.created_at, t.updated_at
 		FROM tasks t WHERE t.epic_id=? ORDER BY t.position, t.id`, epicID)
 	if err != nil {
 		return nil, err
@@ -390,14 +544,17 @@ func (s *Store) EpicTasks(epicID int64) ([]model.Task, error) {
 	var taskIDs []int64
 	for rows.Next() {
 		var t model.Task
-		var eid, aid sql.NullInt64
+		var eid, sid, aid sql.NullInt64
 		var ca, ua string
 		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL,
-			&t.ColumnID, &eid, &aid, &t.Position, &t.Priority, &t.Deadline, &ca, &ua); err != nil {
+			&t.ColumnID, &eid, &sid, &aid, &t.Position, &t.Priority, &t.Deadline, &ca, &ua); err != nil {
 			return nil, fmt.Errorf("scan epic task: %w", err)
 		}
 		t.CreatedAt = parseTime(ca)
 		t.UpdatedAt = parseTime(ua)
+		if sid.Valid {
+			t.SprintID = &sid.Int64
+		}
 		if eid.Valid {
 			t.EpicID = &eid.Int64
 		}
@@ -474,12 +631,14 @@ func (s *Store) DeleteTag(id int64) error {
 func (s *Store) ListTasks() ([]model.Task, error) {
 	rows, err := s.db.Query(`
 		SELECT t.id, t.title, t.description, t.todo, t.project_url,
-		       t.column_id, t.epic_id, t.assignee_id,
+		       t.column_id, t.epic_id, t.sprint_id, t.assignee_id,
 		       t.position, t.priority, t.deadline, t.created_at, t.updated_at,
 		       e.id, e.name, e.color,
+		       sp.id, sp.name, sp.start_date, sp.end_date, sp.status,
 		       u.id, u.username
 		FROM tasks t
 		LEFT JOIN epics e ON t.epic_id = e.id
+		LEFT JOIN sprints sp ON t.sprint_id = sp.id
 		LEFT JOIN users u ON t.assignee_id = u.id
 		ORDER BY t.position, t.id`)
 	if err != nil {
@@ -491,15 +650,18 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 	var taskIDs []int64
 	for rows.Next() {
 		var t model.Task
-		var eid, aid sql.NullInt64
+		var eid, sid, aid sql.NullInt64
 		var epicName, epicColor sql.NullString
+		var sprintID sql.NullInt64
+		var sprintName, sprintStart, sprintEnd, sprintStatus sql.NullString
 		var assigneeID sql.NullInt64
 		var assigneeName sql.NullString
 		var ca, ua string
 		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL,
-			&t.ColumnID, &eid, &aid,
+			&t.ColumnID, &eid, &sid, &aid,
 			&t.Position, &t.Priority, &t.Deadline, &ca, &ua,
 			&eid, &epicName, &epicColor,
+			&sprintID, &sprintName, &sprintStart, &sprintEnd, &sprintStatus,
 			&assigneeID, &assigneeName); err != nil {
 			return nil, fmt.Errorf("scan task: %w", err)
 		}
@@ -508,6 +670,10 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 		if eid.Valid {
 			t.EpicID = &eid.Int64
 			t.Epic = &model.Epic{ID: eid.Int64, Name: epicName.String, Color: epicColor.String}
+		}
+		if sprintID.Valid {
+			t.SprintID = &sprintID.Int64
+			t.Sprint = &model.Sprint{ID: sprintID.Int64, Name: sprintName.String, StartDate: sprintStart.String, EndDate: sprintEnd.String, Status: sprintStatus.String}
 		}
 		if assigneeID.Valid {
 			t.AssigneeID = &assigneeID.Int64
@@ -539,10 +705,10 @@ func (s *Store) ListTasks() ([]model.Task, error) {
 
 func (s *Store) GetTask(id int64) (*model.Task, error) {
 	var t model.Task
-	var eid, aid sql.NullInt64
+	var eid, sid, aid sql.NullInt64
 	var ca, ua string
-	err := s.db.QueryRow(`SELECT id,title,description,todo,project_url,column_id,epic_id,assignee_id,position,priority,deadline,created_at,updated_at
-		FROM tasks WHERE id=?`, id).Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL, &t.ColumnID, &eid, &aid,
+	err := s.db.QueryRow(`SELECT id,title,description,todo,project_url,column_id,epic_id,sprint_id,assignee_id,position,priority,deadline,created_at,updated_at
+		FROM tasks WHERE id=?`, id).Scan(&t.ID, &t.Title, &t.Description, &t.Todo, &t.ProjectURL, &t.ColumnID, &eid, &sid, &aid,
 		&t.Position, &t.Priority, &t.Deadline, &ca, &ua)
 	if err != nil {
 		return nil, err
@@ -554,6 +720,13 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 		var e model.Epic
 		if err := s.db.QueryRow("SELECT id,name,color,description FROM epics WHERE id=?", eid.Int64).Scan(&e.ID, &e.Name, &e.Color, &e.Description); err == nil {
 			t.Epic = &e
+		}
+	}
+	if sid.Valid {
+		t.SprintID = &sid.Int64
+		sp, err := s.GetSprint(sid.Int64)
+		if err == nil {
+			t.Sprint = sp
 		}
 	}
 	if aid.Valid {
@@ -574,7 +747,7 @@ func (s *Store) GetTask(id int64) (*model.Task, error) {
 	return &t, nil
 }
 
-func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, epicID *int64, assigneeID *int64, priority int, tagIDs []int64, deadline string) (int64, error) {
+func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, epicID *int64, sprintID *int64, assigneeID *int64, priority int, tagIDs []int64, deadline string) (int64, error) {
 	s.logf("CreateTask(%q, col=%d, prio=%d, tags=%v)", title, colID, priority, tagIDs)
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -584,8 +757,8 @@ func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, ep
 
 	var maxPos int
 	tx.QueryRow("SELECT COALESCE(MAX(position),0) FROM tasks WHERE column_id=?", colID).Scan(&maxPos)
-	r, err := tx.Exec(`INSERT INTO tasks(title,description,todo,project_url,column_id,epic_id,assignee_id,position,priority,deadline)
-		VALUES(?,?,?,?,?,?,?,?,?,?)`, title, desc, todo, projectURL, colID, epicID, assigneeID, maxPos+1, priority, deadline)
+	r, err := tx.Exec(`INSERT INTO tasks(title,description,todo,project_url,column_id,epic_id,sprint_id,assignee_id,position,priority,deadline)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?)`, title, desc, todo, projectURL, colID, epicID, sprintID, assigneeID, maxPos+1, priority, deadline)
 	if err != nil {
 		s.logf("CreateTask error: %v", err)
 		return 0, err
@@ -603,15 +776,15 @@ func (s *Store) CreateTask(title, desc, todo, projectURL string, colID int64, ep
 	return id, nil
 }
 
-func (s *Store) UpdateTask(id int64, title, desc, todo, projectURL string, colID int64, epicID *int64, assigneeID *int64, priority int, tagIDs []int64, deadline string) error {
+func (s *Store) UpdateTask(id int64, title, desc, todo, projectURL string, colID int64, epicID *int64, sprintID *int64, assigneeID *int64, priority int, tagIDs []int64, deadline string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`UPDATE tasks SET title=?,description=?,todo=?,project_url=?,column_id=?,epic_id=?,assignee_id=?,priority=?,deadline=?,
-		updated_at=datetime('now') WHERE id=?`, title, desc, todo, projectURL, colID, epicID, assigneeID, priority, deadline, id)
+	_, err = tx.Exec(`UPDATE tasks SET title=?,description=?,todo=?,project_url=?,column_id=?,epic_id=?,sprint_id=?,assignee_id=?,priority=?,deadline=?,
+		updated_at=datetime('now') WHERE id=?`, title, desc, todo, projectURL, colID, epicID, sprintID, assigneeID, priority, deadline, id)
 	if err != nil {
 		return err
 	}
@@ -985,6 +1158,10 @@ func (s *Store) ExportAll() (*model.ExportData, error) {
 	if err != nil {
 		return nil, err
 	}
+	sprints, err := s.ListSprints()
+	if err != nil {
+		return nil, err
+	}
 	tags, err := s.ListTags()
 	if err != nil {
 		return nil, err
@@ -1025,6 +1202,7 @@ func (s *Store) ExportAll() (*model.ExportData, error) {
 	return &model.ExportData{
 		Columns:       cols,
 		Epics:         epics,
+		Sprints:       sprints,
 		Tags:          tags,
 		Tasks:         tasks,
 		Comments:      allComments,
@@ -1627,7 +1805,7 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 	defer tx.Rollback()
 
 	// Clear existing data
-	for _, tbl := range []string{"task_subscriptions", "task_dependencies", "comments", "task_tags", "tasks", "tags", "epics", "columns"} {
+	for _, tbl := range []string{"task_subscriptions", "task_dependencies", "comments", "task_tags", "tasks", "tags", "epics", "sprints", "columns"} {
 		if _, err := tx.Exec("DELETE FROM " + tbl); err != nil {
 			return fmt.Errorf("clear %s: %w", tbl, err)
 		}
@@ -1671,6 +1849,12 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 			return fmt.Errorf("import epic: %w", err)
 		}
 	}
+	// Import sprints
+	for _, sp := range data.Sprints {
+		if _, err := tx.Exec("INSERT INTO sprints(id,name,start_date,end_date,status) VALUES(?,?,?,?,?)", sp.ID, sp.Name, sp.StartDate, sp.EndDate, sp.Status); err != nil {
+			return fmt.Errorf("import sprint: %w", err)
+		}
+	}
 	// Import tags
 	for _, t := range data.Tags {
 		if _, err := tx.Exec("INSERT INTO tags(id,name,color) VALUES(?,?,?)", t.ID, t.Name, t.Color); err != nil {
@@ -1679,9 +1863,9 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 	}
 	// Import tasks
 	for _, t := range data.Tasks {
-		if _, err := tx.Exec(`INSERT INTO tasks(id,title,description,todo,project_url,column_id,epic_id,assignee_id,position,priority,deadline,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			t.ID, t.Title, t.Description, t.Todo, t.ProjectURL, t.ColumnID, t.EpicID, t.AssigneeID, t.Position, t.Priority, t.Deadline,
+		if _, err := tx.Exec(`INSERT INTO tasks(id,title,description,todo,project_url,column_id,epic_id,sprint_id,assignee_id,position,priority,deadline,created_at,updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			t.ID, t.Title, t.Description, t.Todo, t.ProjectURL, t.ColumnID, t.EpicID, t.SprintID, t.AssigneeID, t.Position, t.Priority, t.Deadline,
 			t.CreatedAt.Format("2006-01-02 15:04:05"), t.UpdatedAt.Format("2006-01-02 15:04:05")); err != nil {
 			return fmt.Errorf("import task: %w", err)
 		}
@@ -1731,7 +1915,7 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 // DatabaseChecksum returns a quick checksum based on row counts and max IDs to detect changes.
 func (s *Store) DatabaseChecksum() string {
 	var checksum string
-	tables := []string{"tasks", "comments", "columns", "epics", "tags", "users", "files", "images"}
+	tables := []string{"tasks", "comments", "columns", "epics", "sprints", "tags", "users", "files", "images"}
 	for _, t := range tables {
 		var cnt, maxID int64
 		s.db.QueryRow("SELECT COUNT(*), COALESCE(MAX(id),0) FROM " + t).Scan(&cnt, &maxID)

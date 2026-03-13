@@ -78,9 +78,17 @@ body{font-family:'Source Sans 3',sans-serif;background:var(--bg);color:var(--fg)
 a{color:var(--accent2);text-decoration:none}
 
 .header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:var(--bg2);border-bottom:1px solid var(--bg4);position:fixed;top:0;left:0;right:0;z-index:100;height:52px}
-.header h1{font-family:'JetBrains Mono',monospace;font-size:1.1rem;color:var(--accent2);letter-spacing:-.02em}
+.header h1{font-family:'JetBrains Mono',monospace;font-size:1.1rem;color:var(--accent2);letter-spacing:-.02em;display:flex;align-items:center;gap:0}
 .header h1 a{color:inherit;text-decoration:none}
 .header-actions{display:flex;gap:8px;align-items:center}
+.hdr-sep{color:var(--fg3);margin:0 4px;font-family:'JetBrains Mono',monospace;font-size:1.1rem;user-select:none}
+.hdr-filter{position:relative;display:inline-flex;align-items:center}
+.hdr-filter-name{color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:1.1rem;cursor:pointer;transition:color .15s;white-space:nowrap}
+.hdr-filter-name:hover{color:var(--accent2)}
+.hdr-filter-dropdown{position:absolute;top:100%;left:0;margin-top:6px;background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);min-width:180px;z-index:200;padding:4px 0;max-height:calc(6 * 36px + 8px);overflow-y:auto}
+.hdr-filter-dropdown .sfd-item{padding:7px 14px;cursor:pointer;font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+.hdr-filter-dropdown .sfd-item:hover{background:var(--bg4)}
+.hdr-filter-dropdown .sfd-item.active{color:var(--accent2);font-weight:600}
 .header-spacer{height:52px}
 
 .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:none;border-radius:var(--radius);cursor:pointer;font-size:.85rem;font-family:inherit;font-weight:600;transition:all .15s}
@@ -219,7 +227,7 @@ a{color:var(--accent2);text-decoration:none}
 .sidebar.open{transform:translateX(0)}
 .sidebar h3{font-size:.95rem;margin-bottom:12px}
 .sidebar-section{margin-bottom:24px}
-.entity-list{display:flex;flex-direction:column;gap:6px}
+.entity-list{display:flex;flex-direction:column;gap:6px;max-height:calc(6 * 42px);overflow-y:auto}
 .entity-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg3);border-radius:var(--radius)}
 .entity-item .dot{width:12px;height:12px;max-width:12px;min-width:12px;min-height:12px;border-radius:50%;margin-right:8px;flex-shrink:0}
 .entity-item span{flex:1;font-size:.85rem;min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -371,9 +379,22 @@ a{color:var(--accent2);text-decoration:none}
 <body>
 
 <div class="header">
-  <h1><a href="/" onclick="navigateTo('/');return false;">&#x2B21; kanban</a></h1>
+  <h1>
+    <a href="/" onclick="resetBoardFilters();navigateTo('/');return false;">&#x2B21; kanban</a>
+    <span class="hdr-sep">/</span>
+    <span class="hdr-filter">
+      <span class="hdr-filter-name" id="sprint-filter-label" onclick="toggleSprintFilter(event)">ALL</span>
+      <div class="hdr-filter-dropdown hidden" id="sprint-filter-dropdown"></div>
+    </span>
+    <span class="hdr-sep">/</span>
+    <span class="hdr-filter">
+      <span class="hdr-filter-name" id="epic-filter-label" onclick="toggleEpicFilter(event)">ALL</span>
+      <div class="hdr-filter-dropdown hidden" id="epic-filter-dropdown"></div>
+    </span>
+  </h1>
   <div class="header-actions">
     <input class="search-input" id="search" autocomplete="off">
+    <button class="btn btn-ghost btn-sm" onclick="navigateTo('/backlog')" data-i18n="sprintBacklog" style="font-size:.8rem"></button>
     <button class="btn btn-ghost btn-sm" id="notif-btn" onclick="toggleNotifications()" style="position:relative">&#128276;<span id="notif-count" class="notif-badge hidden">0</span></button>
     <button class="btn btn-ghost btn-sm" id="personal-toggle" onclick="togglePersonalView()" style="display:none"></button>
     <button class="btn btn-ghost btn-sm" onclick="toggleSidebar()">&#9881;</button>
@@ -425,6 +446,14 @@ a{color:var(--accent2);text-decoration:none}
       <input type="color" id="epic-color" value="#6366f1">
       <input type="text" id="epic-name" onkeydown="if(event.key==='Enter')addEpic()">
       <button class="btn btn-primary btn-sm" onclick="addEpic()">+</button>
+    </div>
+  </div>
+  <div class="sidebar-section" id="sprints-section">
+    <h3 data-i18n="sprints"></h3>
+    <div class="entity-list" id="sprint-list"></div>
+    <div class="entity-add" id="sprint-add-form" style="display:none">
+      <input type="text" id="sprint-name" style="min-width:120px" onkeydown="if(event.key==='Enter')addSprint()">
+      <button class="btn btn-primary btn-sm" onclick="addSprint()">+</button>
     </div>
   </div>
   <div class="sidebar-section" id="tags-section">
@@ -480,16 +509,16 @@ a{color:var(--accent2);text-decoration:none}
 <script>
 // === i18n ===
 const LANGS = {
-  ru:{name:'Русский',theme:'Тема оформления',language:'Язык',fontSize:'Размер шрифта',columns:'Колонки',epics:'Эпики',tags:'Теги',timezone:'Часовой пояс',exportImport:'Экспорт / Импорт',users:'Пользователи',logout:'Выход',changePassword:'Пароль',search:'Поиск...',addTask:'+ Добавить задачу',newTask:'Новая задача',editTask:'Редактировать',save:'Сохранить',cancel:'Отмена',delete:'Удалить',title:'Название',description:'Описание',column:'Колонка',priority:'Приоритет',epic:'Эпик',assignee:'Исполнитель',none:'—',low:'Низкий',medium:'Средний',high:'Высокий',critical:'Критический',projectUrl:'Ссылка на проект',dependsOn:'Зависит от',blocks:'Блокирует',created:'Создана',updated:'Обновлена',comments:'Комментарии',noComments:'Нет комментариев',writeComment:'Написать комментарий...',send:'Отправить',reply:'Ответить',edit:'Ред.',noDescription:'Нет описания',deleteTask:'Удалить задачу',deleteConfirm:'Удалить задачу?',back:'Доска',notFound:'Не найдено',backToBoard:'Вернуться на доску',todo:'TODO',addTodoItem:'Добавить пункт...',newColumn:'Новая колонка...',newEpic:'Новый эпик...',newTag:'Новый тег...',login:'Логин...',password:'Пароль...',admin:'Админ',regular:'Пользователь',readonly:'Только чтение',role:'Роль',deleteColumn:'Удалить колонку',deleteEpic:'Удалить эпик',deleteTag:'Удалить тег',deleteUser:'Удалить пользователя',moveTasksFirst:'Сначала переместите задачи из колонки',confirmDeleteCol:'Удалить колонку',confirmDeleteEpic:'Удалить эпик',confirmDeleteTag:'Удалить тег',confirmDeleteUser:'Удалить пользователя',tasksWillUnlink:'задач будут отвязаны.',userRequired:'Логин обязателен, пароль минимум 6 символов',error:'Ошибка',importConfirm:'Импорт заменит ВСЕ данные. Продолжить?',importDone:'Импорт выполнен успешно',exportError:'Ошибка экспорта',importError:'Ошибка импорта',uploadError:'Ошибка загрузки',fileTooLarge:'Файл слишком большой (макс 20МБ)',fileTypeNotAllowed:'Этот тип файла не разрешён',uploading:'Загрузка...',uploadFailed:'Ошибка загрузки',searchTasks:'Поиск задач...',nothingFound:'Ничего не найдено',andMore:'...и ещё',editEpic:'Редактировать эпик',tasksCompleted:'задач выполнено',active:'Активные',status:'Статус',date:'Дата',noActiveTasks:'Нет активных задач',subscribe:'Подписаться',unsubscribe:'Отписаться',subscribed:'Вы подписаны',notifications:'Уведомления',markAllRead:'Прочитать все',noNotifications:'Нет уведомлений',profile:'Профиль',activity:'Активность',noActivity:'Нет активности',personalTask:'Личная задача',showPersonal:'Мои',showAll:'Все',passwordChanged:'Пароль изменён',newPassword:'Новый пароль (мин. 6):',telegram:'Telegram',telegramLinked:'Привязан',telegramNotLinked:'Не привязан',generateHash:'Получить хэш',unlinkTelegram:'Отвязать',telegramBotToken:'Токен бота',telegramBotUsername:'Имя бота',saveTelegramToken:'Сохранить',private:'Личная',searchTask:'Поиск задачи...',edited:'ред.',ctrlEnter:'Ctrl+Enter отправить',pasteHint:'Ctrl+V картинка',attachFile:'Вложить файл',bold:'Жирный',italic:'Курсив',strikethrough:'Зачёркнутый',heading:'Заголовок',list:'Список',todoItem:'TODO',link:'Ссылка',code:'Код',quote:'Цитата',spoiler:'Спойлер',resetPassword:'Сменить пароль',createTask:'Создать',markdown:'markdown',deadline:'Дедлайн',deadlineLeft:'Осталось',deadlinePassed:'Просрочен',filterDeps:'Поиск задачи...',deleteCommentConfirm:'Удалить комментарий?',deleteCommentTreeConfirm:'Удалить комментарий и все ответы на него?',forgotPassword:'Забыли пароль?',resetVia:'Восстановить через',passwordResetSent:'Код отправлен в Telegram',enterResetCode:'Введите код из Telegram',resetCode:'Код',confirmAction:'Подтвердить',sortBy:'Сортировка',sortPosition:'По позиции',sortPriority:'По приоритету',sortDate:'По дате',sortTitle:'По названию',taskCreated:'создал(а) задачу',taskEdited:'обновил(а) задачу',taskMoved:'переместил(а) задачу',taskCommented:'комментарий',taskDeleted:'удалил(а) задачу',taskAssigned:'назначил(а)',protectedColumn:'Эту колонку нельзя удалить (Backlog/Done)',backlog:'Backlog',done:'Done'},
-  en:{name:'English',theme:'Theme',language:'Language',fontSize:'Font size',columns:'Columns',epics:'Epics',tags:'Tags',timezone:'Timezone',exportImport:'Export / Import',users:'Users',logout:'Logout',changePassword:'Password',search:'Search...',addTask:'+ Add task',newTask:'New task',editTask:'Edit',save:'Save',cancel:'Cancel',delete:'Delete',title:'Title',description:'Description',column:'Column',priority:'Priority',epic:'Epic',assignee:'Assignee',none:'—',low:'Low',medium:'Medium',high:'High',critical:'Critical',projectUrl:'Project link',dependsOn:'Depends on',blocks:'Blocks',created:'Created',updated:'Updated',comments:'Comments',noComments:'No comments',writeComment:'Write a comment...',send:'Send',reply:'Reply',edit:'Edit',noDescription:'No description',deleteTask:'Delete task',deleteConfirm:'Delete task?',back:'Board',notFound:'Not found',backToBoard:'Back to board',todo:'TODO',addTodoItem:'Add item...',newColumn:'New column...',newEpic:'New epic...',newTag:'New tag...',login:'Login...',password:'Password...',admin:'Admin',regular:'User',readonly:'Read-only',role:'Role',deleteColumn:'Delete column',deleteEpic:'Delete epic',deleteTag:'Delete tag',deleteUser:'Delete user',moveTasksFirst:'Move tasks out of this column first',confirmDeleteCol:'Delete column',confirmDeleteEpic:'Delete epic',confirmDeleteTag:'Delete tag',confirmDeleteUser:'Delete user',tasksWillUnlink:'tasks will be unlinked.',userRequired:'Login required, password min 6 chars',error:'Error',importConfirm:'Import will replace ALL data. Continue?',importDone:'Import completed',exportError:'Export error',importError:'Import error',uploadError:'Upload error',fileTooLarge:'File too large (max 20MB)',fileTypeNotAllowed:'File type not allowed',uploading:'Uploading...',uploadFailed:'Upload failed',searchTasks:'Search tasks...',nothingFound:'Nothing found',andMore:'...and more',editEpic:'Edit epic',tasksCompleted:'tasks completed',active:'Active',status:'Status',date:'Date',noActiveTasks:'No active tasks',subscribe:'Subscribe',unsubscribe:'Unsubscribe',subscribed:'Subscribed',notifications:'Notifications',markAllRead:'Mark all read',noNotifications:'No notifications',profile:'Profile',activity:'Activity',noActivity:'No activity',personalTask:'Personal task',showPersonal:'Mine',showAll:'All',passwordChanged:'Password changed',newPassword:'New password (min 6):',telegram:'Telegram',telegramLinked:'Linked',telegramNotLinked:'Not linked',generateHash:'Get hash',unlinkTelegram:'Unlink',telegramBotToken:'Bot token',telegramBotUsername:'Bot username',saveTelegramToken:'Save',private:'Personal',searchTask:'Search task...',edited:'edited',ctrlEnter:'Ctrl+Enter to send',pasteHint:'Ctrl+V image',attachFile:'Attach file',bold:'Bold',italic:'Italic',strikethrough:'Strikethrough',heading:'Heading',list:'List',todoItem:'TODO',link:'Link',code:'Code',quote:'Quote',spoiler:'Spoiler',resetPassword:'Reset password',createTask:'Create',markdown:'markdown',deadline:'Deadline',deadlineLeft:'left',deadlinePassed:'Overdue',filterDeps:'Search task...',deleteCommentConfirm:'Delete comment?',deleteCommentTreeConfirm:'Delete comment and all replies?',forgotPassword:'Forgot password?',resetVia:'Reset via',passwordResetSent:'Code sent to Telegram',enterResetCode:'Enter code from Telegram',resetCode:'Code',confirmAction:'Confirm',sortBy:'Sort by',sortPosition:'Position',sortPriority:'Priority',sortDate:'Date',sortTitle:'Title',taskCreated:'created task',taskEdited:'updated task',taskMoved:'moved task',taskCommented:'comment',taskDeleted:'deleted task',taskAssigned:'assigned',protectedColumn:'This column cannot be deleted (Backlog/Done)',backlog:'Backlog',done:'Done'},
-  zh:{name:'中文',theme:'主题',language:'语言',fontSize:'字体大小',columns:'列',epics:'史诗',tags:'标签',timezone:'时区',exportImport:'导出/导入',users:'用户',logout:'退出',changePassword:'密码',search:'搜索...',addTask:'+ 添加任务',newTask:'新任务',editTask:'编辑',save:'保存',cancel:'取消',delete:'删除',title:'标题',description:'描述',column:'列',priority:'优先级',epic:'史诗',assignee:'执行人',none:'—',low:'低',medium:'中',high:'高',critical:'紧急',projectUrl:'项目链接',dependsOn:'依赖于',blocks:'阻塞',created:'创建',updated:'更新',comments:'评论',noComments:'无评论',writeComment:'写评论...',send:'发送',reply:'回复',edit:'编辑',noDescription:'无描述',deleteTask:'删除任务',deleteConfirm:'删除任务?',back:'看板',notFound:'未找到',backToBoard:'返回看板',todo:'待办',addTodoItem:'添加项...',newColumn:'新列...',newEpic:'新史诗...',newTag:'新标签...',login:'登录...',password:'密码...',admin:'管理员',regular:'用户',readonly:'只读',role:'角色',deleteColumn:'删除列',deleteEpic:'删除史诗',deleteTag:'删除标签',deleteUser:'删除用户',moveTasksFirst:'先移出任务',confirmDeleteCol:'删除列',confirmDeleteEpic:'删除史诗',confirmDeleteTag:'删除标签',confirmDeleteUser:'删除用户',tasksWillUnlink:'任务将解除关联',userRequired:'需要用户名，密码至少6位',error:'错误',importConfirm:'导入将替换所有数据，继续？',importDone:'导入完成',exportError:'导出错误',importError:'导入错误',uploadError:'上传错误',fileTooLarge:'文件过大(最大20MB)',fileTypeNotAllowed:'不允许的文件类型',uploading:'上传中...',uploadFailed:'上传失败',searchTasks:'搜索任务...',nothingFound:'未找到',andMore:'...更多',editEpic:'编辑史诗',tasksCompleted:'任务已完成',active:'活跃',status:'状态',date:'日期',noActiveTasks:'无活跃任务',subscribe:'订阅',unsubscribe:'取消订阅',subscribed:'已订阅',notifications:'通知',markAllRead:'全部已读',noNotifications:'无通知',profile:'个人资料',activity:'活动',noActivity:'无活动',personalTask:'个人任务',showPersonal:'我的',showAll:'全部',passwordChanged:'密码已更改',newPassword:'新密码(最少6位):',telegram:'Telegram',telegramLinked:'已绑定',telegramNotLinked:'未绑定',generateHash:'获取哈希',unlinkTelegram:'解绑',telegramBotToken:'机器人令牌',saveTelegramToken:'保存',telegramBotUsername:'机器人用户名',private:'个人',searchTask:'搜索任务...',edited:'已编辑',ctrlEnter:'Ctrl+Enter发送',pasteHint:'Ctrl+V粘贴图片',attachFile:'附件',bold:'粗体',italic:'斜体',strikethrough:'删除线',heading:'标题',list:'列表',todoItem:'待办',link:'链接',code:'代码',quote:'引用',spoiler:'折叠',resetPassword:'重置密码',createTask:'创建',markdown:'markdown',deadline:'截止日期',deadlineLeft:'剩余',deadlinePassed:'已过期',filterDeps:'搜索任务...',deleteCommentConfirm:'删除评论？',deleteCommentTreeConfirm:'删除评论及所有回复？',forgotPassword:'忘记密码？',resetVia:'通过重置',passwordResetSent:'验证码已发送至Telegram',enterResetCode:'输入Telegram验证码',resetCode:'验证码',confirmAction:'确认',sortBy:'排序',sortPosition:'按位置',sortPriority:'按优先级',sortDate:'按日期',sortTitle:'按标题',taskCreated:'创建了任务',taskEdited:'更新了任务',taskMoved:'移动了任务',taskCommented:'评论',taskDeleted:'删除了任务',taskAssigned:'指派了',protectedColumn:'该列不能删除 (Backlog/Done)',backlog:'Backlog',done:'Done'},
-  es:{name:'Español',theme:'Tema',language:'Idioma',fontSize:'Tamaño de fuente',columns:'Columnas',epics:'Épicas',tags:'Etiquetas',timezone:'Zona horaria',exportImport:'Exportar/Importar',users:'Usuarios',logout:'Salir',changePassword:'Contraseña',search:'Buscar...',addTask:'+ Añadir tarea',newTask:'Nueva tarea',editTask:'Editar',save:'Guardar',cancel:'Cancelar',delete:'Eliminar',title:'Título',description:'Descripción',column:'Columna',priority:'Prioridad',epic:'Épica',assignee:'Asignado',none:'—',low:'Baja',medium:'Media',high:'Alta',critical:'Crítica',projectUrl:'Enlace del proyecto',dependsOn:'Depende de',blocks:'Bloquea',created:'Creada',updated:'Actualizada',comments:'Comentarios',noComments:'Sin comentarios',writeComment:'Escribir comentario...',send:'Enviar',reply:'Responder',edit:'Editar',noDescription:'Sin descripción',deleteTask:'Eliminar tarea',deleteConfirm:'¿Eliminar tarea?',back:'Tablero',notFound:'No encontrado',backToBoard:'Volver al tablero',todo:'TODO',addTodoItem:'Añadir elemento...',newColumn:'Nueva columna...',newEpic:'Nueva épica...',newTag:'Nueva etiqueta...',login:'Usuario...',password:'Contraseña...',admin:'Admin',regular:'Usuario',readonly:'Solo lectura',role:'Rol',deleteColumn:'Eliminar columna',deleteEpic:'Eliminar épica',deleteTag:'Eliminar etiqueta',deleteUser:'Eliminar usuario',moveTasksFirst:'Mueva las tareas primero',confirmDeleteCol:'Eliminar columna',confirmDeleteEpic:'Eliminar épica',confirmDeleteTag:'Eliminar etiqueta',confirmDeleteUser:'Eliminar usuario',tasksWillUnlink:'tareas serán desvinculadas.',userRequired:'Usuario requerido, contraseña mín 6 caracteres',error:'Error',importConfirm:'La importación reemplazará TODOS los datos. ¿Continuar?',importDone:'Importación completada',exportError:'Error de exportación',importError:'Error de importación',uploadError:'Error de subida',fileTooLarge:'Archivo muy grande (máx 20MB)',fileTypeNotAllowed:'Tipo de archivo no permitido',uploading:'Subiendo...',uploadFailed:'Error de subida',searchTasks:'Buscar tareas...',nothingFound:'Nada encontrado',andMore:'...y más',editEpic:'Editar épica',tasksCompleted:'tareas completadas',active:'Activas',status:'Estado',date:'Fecha',noActiveTasks:'Sin tareas activas',subscribe:'Suscribirse',unsubscribe:'Desuscribirse',subscribed:'Suscrito',notifications:'Notificaciones',markAllRead:'Marcar todo leído',noNotifications:'Sin notificaciones',profile:'Perfil',activity:'Actividad',noActivity:'Sin actividad',personalTask:'Tarea personal',showPersonal:'Mías',showAll:'Todas',passwordChanged:'Contraseña cambiada',newPassword:'Nueva contraseña (mín 6):',telegram:'Telegram',telegramLinked:'Vinculado',telegramNotLinked:'No vinculado',generateHash:'Obtener hash',unlinkTelegram:'Desvincular',telegramBotToken:'Token del bot',saveTelegramToken:'Guardar',telegramBotUsername:'Nombre del bot',private:'Personal',searchTask:'Buscar tarea...',edited:'editado',ctrlEnter:'Ctrl+Enter enviar',pasteHint:'Ctrl+V imagen',attachFile:'Adjuntar',bold:'Negrita',italic:'Cursiva',strikethrough:'Tachado',heading:'Encabezado',list:'Lista',todoItem:'TODO',link:'Enlace',code:'Código',quote:'Cita',spoiler:'Spoiler',resetPassword:'Cambiar contraseña',createTask:'Crear',markdown:'markdown',deadline:'Fecha límite',deadlineLeft:'restante',deadlinePassed:'Vencido',filterDeps:'Buscar tarea...',deleteCommentConfirm:'¿Eliminar comentario?',deleteCommentTreeConfirm:'¿Eliminar comentario y todas las respuestas?',forgotPassword:'¿Olvidó la contraseña?',resetVia:'Restablecer vía',passwordResetSent:'Código enviado a Telegram',enterResetCode:'Ingrese el código de Telegram',resetCode:'Código',confirmAction:'Confirmar',sortBy:'Ordenar por',sortPosition:'Posición',sortPriority:'Prioridad',sortDate:'Fecha',sortTitle:'Título',taskCreated:'creó tarea',taskEdited:'actualizó tarea',taskMoved:'movió tarea',taskCommented:'comentario',taskDeleted:'eliminó tarea',taskAssigned:'asignó',protectedColumn:'Esta columna no se puede eliminar (Backlog/Done)',backlog:'Backlog',done:'Done'},
-  fr:{name:'Français',theme:'Thème',language:'Langue',fontSize:'Taille police',columns:'Colonnes',epics:'Épiques',tags:'Tags',timezone:'Fuseau horaire',exportImport:'Export/Import',users:'Utilisateurs',logout:'Déconnexion',changePassword:'Mot de passe',search:'Rechercher...',addTask:'+ Ajouter tâche',newTask:'Nouvelle tâche',editTask:'Modifier',save:'Enregistrer',cancel:'Annuler',delete:'Supprimer',title:'Titre',description:'Description',column:'Colonne',priority:'Priorité',epic:'Épique',assignee:'Assigné',none:'—',low:'Basse',medium:'Moyenne',high:'Haute',critical:'Critique',projectUrl:'Lien projet',dependsOn:'Dépend de',blocks:'Bloque',created:'Créée',updated:'Mise à jour',comments:'Commentaires',noComments:'Pas de commentaires',writeComment:'Écrire un commentaire...',send:'Envoyer',reply:'Répondre',edit:'Modifier',noDescription:'Pas de description',deleteTask:'Supprimer tâche',deleteConfirm:'Supprimer la tâche?',back:'Tableau',notFound:'Non trouvé',backToBoard:'Retour au tableau',todo:'TODO',addTodoItem:'Ajouter élément...',newColumn:'Nouvelle colonne...',newEpic:'Nouvel épique...',newTag:'Nouveau tag...',login:'Login...',password:'Mot de passe...',admin:'Admin',regular:'Utilisateur',readonly:'Lecture seule',role:'Rôle',deleteColumn:'Supprimer colonne',deleteEpic:'Supprimer épique',deleteTag:'Supprimer tag',deleteUser:'Supprimer utilisateur',moveTasksFirst:'Déplacez les tâches d\'abord',confirmDeleteCol:'Supprimer colonne',confirmDeleteEpic:'Supprimer épique',confirmDeleteTag:'Supprimer tag',confirmDeleteUser:'Supprimer utilisateur',tasksWillUnlink:'tâches seront détachées.',userRequired:'Login requis, mot de passe min 6 caractères',error:'Erreur',importConfirm:'L\'import remplacera TOUTES les données. Continuer?',importDone:'Import terminé',exportError:'Erreur d\'export',importError:'Erreur d\'import',uploadError:'Erreur d\'upload',fileTooLarge:'Fichier trop grand (max 20Mo)',fileTypeNotAllowed:'Type de fichier non autorisé',uploading:'Upload...',uploadFailed:'Échec d\'upload',searchTasks:'Rechercher tâches...',nothingFound:'Rien trouvé',andMore:'...et plus',editEpic:'Modifier épique',tasksCompleted:'tâches terminées',active:'Actives',status:'Statut',date:'Date',noActiveTasks:'Pas de tâches actives',subscribe:'S\'abonner',unsubscribe:'Se désabonner',subscribed:'Abonné',notifications:'Notifications',markAllRead:'Tout marquer lu',noNotifications:'Pas de notifications',profile:'Profil',activity:'Activité',noActivity:'Pas d\'activité',personalTask:'Tâche personnelle',showPersonal:'Mes',showAll:'Toutes',passwordChanged:'Mot de passe changé',newPassword:'Nouveau mot de passe (min 6):',telegram:'Telegram',telegramLinked:'Lié',telegramNotLinked:'Non lié',generateHash:'Obtenir hash',unlinkTelegram:'Délier',telegramBotToken:'Token du bot',saveTelegramToken:'Sauvegarder',telegramBotUsername:'Nom du bot',private:'Personnel',searchTask:'Rechercher tâche...',edited:'modifié',ctrlEnter:'Ctrl+Enter envoyer',pasteHint:'Ctrl+V image',attachFile:'Joindre fichier',bold:'Gras',italic:'Italique',strikethrough:'Barré',heading:'Titre',list:'Liste',todoItem:'TODO',link:'Lien',code:'Code',quote:'Citation',spoiler:'Spoiler',resetPassword:'Changer mot de passe',createTask:'Créer',markdown:'markdown',deadline:'Échéance',deadlineLeft:'restant',deadlinePassed:'En retard',filterDeps:'Rechercher tâche...',deleteCommentConfirm:'Supprimer le commentaire?',deleteCommentTreeConfirm:'Supprimer le commentaire et toutes les réponses?',forgotPassword:'Mot de passe oublié?',resetVia:'Réinitialiser via',passwordResetSent:'Code envoyé sur Telegram',enterResetCode:'Entrez le code Telegram',resetCode:'Code',confirmAction:'Confirmer',sortBy:'Trier par',sortPosition:'Position',sortPriority:'Priorité',sortDate:'Date',sortTitle:'Titre',taskCreated:'a créé la tâche',taskEdited:'a modifié la tâche',taskMoved:'a déplacé la tâche',taskCommented:'commentaire',taskDeleted:'a supprimé la tâche',taskAssigned:'a assigné',protectedColumn:'Cette colonne ne peut pas être supprimée (Backlog/Done)',backlog:'Backlog',done:'Done'},
-  de:{name:'Deutsch',theme:'Design',language:'Sprache',fontSize:'Schriftgröße',columns:'Spalten',epics:'Epics',tags:'Tags',timezone:'Zeitzone',exportImport:'Export/Import',users:'Benutzer',logout:'Abmelden',changePassword:'Passwort',search:'Suche...',addTask:'+ Aufgabe hinzufügen',newTask:'Neue Aufgabe',editTask:'Bearbeiten',save:'Speichern',cancel:'Abbrechen',delete:'Löschen',title:'Titel',description:'Beschreibung',column:'Spalte',priority:'Priorität',epic:'Epic',assignee:'Zugewiesen',none:'—',low:'Niedrig',medium:'Mittel',high:'Hoch',critical:'Kritisch',projectUrl:'Projektlink',dependsOn:'Abhängig von',blocks:'Blockiert',created:'Erstellt',updated:'Aktualisiert',comments:'Kommentare',noComments:'Keine Kommentare',writeComment:'Kommentar schreiben...',send:'Senden',reply:'Antworten',edit:'Bearbeiten',noDescription:'Keine Beschreibung',deleteTask:'Aufgabe löschen',deleteConfirm:'Aufgabe löschen?',back:'Board',notFound:'Nicht gefunden',backToBoard:'Zurück zum Board',todo:'TODO',addTodoItem:'Element hinzufügen...',newColumn:'Neue Spalte...',newEpic:'Neues Epic...',newTag:'Neuer Tag...',login:'Login...',password:'Passwort...',admin:'Admin',regular:'Benutzer',readonly:'Nur lesen',role:'Rolle',deleteColumn:'Spalte löschen',deleteEpic:'Epic löschen',deleteTag:'Tag löschen',deleteUser:'Benutzer löschen',moveTasksFirst:'Verschieben Sie zuerst die Aufgaben',confirmDeleteCol:'Spalte löschen',confirmDeleteEpic:'Epic löschen',confirmDeleteTag:'Tag löschen',confirmDeleteUser:'Benutzer löschen',tasksWillUnlink:'Aufgaben werden getrennt.',userRequired:'Login erforderlich, Passwort min 6 Zeichen',error:'Fehler',importConfirm:'Import ersetzt ALLE Daten. Fortfahren?',importDone:'Import abgeschlossen',exportError:'Exportfehler',importError:'Importfehler',uploadError:'Uploadfehler',fileTooLarge:'Datei zu groß (max 20MB)',fileTypeNotAllowed:'Dateityp nicht erlaubt',uploading:'Hochladen...',uploadFailed:'Upload fehlgeschlagen',searchTasks:'Aufgaben suchen...',nothingFound:'Nichts gefunden',andMore:'...und mehr',editEpic:'Epic bearbeiten',tasksCompleted:'Aufgaben erledigt',active:'Aktiv',status:'Status',date:'Datum',noActiveTasks:'Keine aktiven Aufgaben',subscribe:'Abonnieren',unsubscribe:'Abbestellen',subscribed:'Abonniert',notifications:'Benachrichtigungen',markAllRead:'Alle gelesen',noNotifications:'Keine Benachrichtigungen',profile:'Profil',activity:'Aktivität',noActivity:'Keine Aktivität',personalTask:'Persönliche Aufgabe',showPersonal:'Meine',showAll:'Alle',passwordChanged:'Passwort geändert',newPassword:'Neues Passwort (min 6):',telegram:'Telegram',telegramLinked:'Verknüpft',telegramNotLinked:'Nicht verknüpft',generateHash:'Hash erhalten',unlinkTelegram:'Trennen',telegramBotToken:'Bot-Token',saveTelegramToken:'Speichern',telegramBotUsername:'Bot-Name',private:'Persönlich',searchTask:'Aufgabe suchen...',edited:'bearbeitet',ctrlEnter:'Ctrl+Enter senden',pasteHint:'Ctrl+V Bild',attachFile:'Datei anhängen',bold:'Fett',italic:'Kursiv',strikethrough:'Durchgestrichen',heading:'Überschrift',list:'Liste',todoItem:'TODO',link:'Link',code:'Code',quote:'Zitat',spoiler:'Spoiler',resetPassword:'Passwort zurücksetzen',createTask:'Erstellen',markdown:'markdown',deadline:'Frist',deadlineLeft:'verbleibend',deadlinePassed:'Überfällig',filterDeps:'Aufgabe suchen...',deleteCommentConfirm:'Kommentar löschen?',deleteCommentTreeConfirm:'Kommentar und alle Antworten löschen?',forgotPassword:'Passwort vergessen?',resetVia:'Zurücksetzen über',passwordResetSent:'Code an Telegram gesendet',enterResetCode:'Telegram-Code eingeben',resetCode:'Code',confirmAction:'Bestätigen',sortBy:'Sortieren nach',sortPosition:'Position',sortPriority:'Priorität',sortDate:'Datum',sortTitle:'Titel',taskCreated:'erstellte Aufgabe',taskEdited:'aktualisierte Aufgabe',taskMoved:'verschob Aufgabe',taskCommented:'Kommentar',taskDeleted:'löschte Aufgabe',taskAssigned:'zuwies',protectedColumn:'Diese Spalte kann nicht gelöscht werden (Backlog/Done)',backlog:'Backlog',done:'Done'},
-  pt:{name:'Português',theme:'Tema',language:'Idioma',fontSize:'Tamanho da fonte',columns:'Colunas',epics:'Épicos',tags:'Tags',timezone:'Fuso horário',exportImport:'Exportar/Importar',users:'Usuários',logout:'Sair',changePassword:'Senha',search:'Buscar...',addTask:'+ Adicionar tarefa',newTask:'Nova tarefa',editTask:'Editar',save:'Salvar',cancel:'Cancelar',delete:'Excluir',title:'Título',description:'Descrição',column:'Coluna',priority:'Prioridade',epic:'Épico',assignee:'Responsável',none:'—',low:'Baixa',medium:'Média',high:'Alta',critical:'Crítica',projectUrl:'Link do projeto',dependsOn:'Depende de',blocks:'Bloqueia',created:'Criada',updated:'Atualizada',comments:'Comentários',noComments:'Sem comentários',writeComment:'Escrever comentário...',send:'Enviar',reply:'Responder',edit:'Editar',noDescription:'Sem descrição',deleteTask:'Excluir tarefa',deleteConfirm:'Excluir tarefa?',back:'Quadro',notFound:'Não encontrado',backToBoard:'Voltar ao quadro',todo:'TODO',addTodoItem:'Adicionar item...',newColumn:'Nova coluna...',newEpic:'Novo épico...',newTag:'Nova tag...',login:'Login...',password:'Senha...',admin:'Admin',regular:'Usuário',readonly:'Somente leitura',role:'Função',deleteColumn:'Excluir coluna',deleteEpic:'Excluir épico',deleteTag:'Excluir tag',deleteUser:'Excluir usuário',moveTasksFirst:'Mova as tarefas primeiro',confirmDeleteCol:'Excluir coluna',confirmDeleteEpic:'Excluir épico',confirmDeleteTag:'Excluir tag',confirmDeleteUser:'Excluir usuário',tasksWillUnlink:'tarefas serão desvinculadas.',userRequired:'Login obrigatório, senha mín 6 caracteres',error:'Erro',importConfirm:'A importação substituirá TODOS os dados. Continuar?',importDone:'Importação concluída',exportError:'Erro de exportação',importError:'Erro de importação',uploadError:'Erro de upload',fileTooLarge:'Arquivo muito grande (máx 20MB)',fileTypeNotAllowed:'Tipo de arquivo não permitido',uploading:'Enviando...',uploadFailed:'Falha no upload',searchTasks:'Buscar tarefas...',nothingFound:'Nada encontrado',andMore:'...e mais',editEpic:'Editar épico',tasksCompleted:'tarefas concluídas',active:'Ativas',status:'Status',date:'Data',noActiveTasks:'Sem tarefas ativas',subscribe:'Inscrever',unsubscribe:'Cancelar inscrição',subscribed:'Inscrito',notifications:'Notificações',markAllRead:'Marcar tudo lido',noNotifications:'Sem notificações',profile:'Perfil',activity:'Atividade',noActivity:'Sem atividade',personalTask:'Tarefa pessoal',showPersonal:'Minhas',showAll:'Todas',passwordChanged:'Senha alterada',newPassword:'Nova senha (mín 6):',telegram:'Telegram',telegramLinked:'Vinculado',telegramNotLinked:'Não vinculado',generateHash:'Obter hash',unlinkTelegram:'Desvincular',telegramBotToken:'Token do bot',saveTelegramToken:'Salvar',telegramBotUsername:'Nome do bot',private:'Pessoal',searchTask:'Buscar tarefa...',edited:'editado',ctrlEnter:'Ctrl+Enter enviar',pasteHint:'Ctrl+V imagem',attachFile:'Anexar arquivo',bold:'Negrito',italic:'Itálico',strikethrough:'Riscado',heading:'Cabeçalho',list:'Lista',todoItem:'TODO',link:'Link',code:'Código',quote:'Citação',spoiler:'Spoiler',resetPassword:'Redefinir senha',createTask:'Criar',markdown:'markdown',deadline:'Prazo',deadlineLeft:'restante',deadlinePassed:'Atrasado',filterDeps:'Buscar tarefa...',deleteCommentConfirm:'Excluir comentário?',deleteCommentTreeConfirm:'Excluir comentário e todas as respostas?',forgotPassword:'Esqueceu a senha?',resetVia:'Redefinir via',passwordResetSent:'Código enviado ao Telegram',enterResetCode:'Digite o código do Telegram',resetCode:'Código',confirmAction:'Confirmar',sortBy:'Ordenar por',sortPosition:'Posição',sortPriority:'Prioridade',sortDate:'Data',sortTitle:'Título',taskCreated:'criou tarefa',taskEdited:'atualizou tarefa',taskMoved:'moveu tarefa',taskCommented:'comentário',taskDeleted:'excluiu tarefa',taskAssigned:'atribuiu',protectedColumn:'Esta coluna não pode ser excluída (Backlog/Done)',backlog:'Backlog',done:'Done'},
-  ja:{name:'日本語',theme:'テーマ',language:'言語',fontSize:'フォントサイズ',columns:'カラム',epics:'エピック',tags:'タグ',timezone:'タイムゾーン',exportImport:'エクスポート/インポート',users:'ユーザー',logout:'ログアウト',changePassword:'パスワード',search:'検索...',addTask:'+ タスク追加',newTask:'新規タスク',editTask:'編集',save:'保存',cancel:'キャンセル',delete:'削除',title:'タイトル',description:'説明',column:'カラム',priority:'優先度',epic:'エピック',assignee:'担当者',none:'—',low:'低',medium:'中',high:'高',critical:'緊急',projectUrl:'プロジェクトリンク',dependsOn:'依存',blocks:'ブロック',created:'作成',updated:'更新',comments:'コメント',noComments:'コメントなし',writeComment:'コメントを書く...',send:'送信',reply:'返信',edit:'編集',noDescription:'説明なし',deleteTask:'タスク削除',deleteConfirm:'タスクを削除しますか？',back:'ボード',notFound:'見つかりません',backToBoard:'ボードに戻る',todo:'TODO',addTodoItem:'項目追加...',newColumn:'新規カラム...',newEpic:'新規エピック...',newTag:'新規タグ...',login:'ログイン...',password:'パスワード...',admin:'管理者',regular:'ユーザー',readonly:'閲覧のみ',role:'役割',deleteColumn:'カラム削除',deleteEpic:'エピック削除',deleteTag:'タグ削除',deleteUser:'ユーザー削除',moveTasksFirst:'先にタスクを移動してください',confirmDeleteCol:'カラム削除',confirmDeleteEpic:'エピック削除',confirmDeleteTag:'タグ削除',confirmDeleteUser:'ユーザー削除',tasksWillUnlink:'タスクが解除されます。',userRequired:'ログイン必須、パスワード最低6文字',error:'エラー',importConfirm:'インポートで全データが置換されます。続行しますか？',importDone:'インポート完了',exportError:'エクスポートエラー',importError:'インポートエラー',uploadError:'アップロードエラー',fileTooLarge:'ファイルが大きすぎます(最大20MB)',fileTypeNotAllowed:'許可されていないファイル形式',uploading:'アップロード中...',uploadFailed:'アップロード失敗',searchTasks:'タスク検索...',nothingFound:'見つかりません',andMore:'...他',editEpic:'エピック編集',tasksCompleted:'タスク完了',active:'アクティブ',status:'ステータス',date:'日付',noActiveTasks:'アクティブタスクなし',subscribe:'購読',unsubscribe:'購読解除',subscribed:'購読中',notifications:'通知',markAllRead:'すべて既読',noNotifications:'通知なし',profile:'プロフィール',activity:'アクティビティ',noActivity:'アクティビティなし',personalTask:'個人タスク',showPersonal:'自分の',showAll:'全て',passwordChanged:'パスワード変更済',newPassword:'新パスワード(最低6文字):',telegram:'Telegram',telegramLinked:'連携済',telegramNotLinked:'未連携',generateHash:'ハッシュ取得',unlinkTelegram:'連携解除',telegramBotToken:'ボットトークン',saveTelegramToken:'保存',telegramBotUsername:'ボット名',private:'個人',searchTask:'タスク検索...',edited:'編集済',ctrlEnter:'Ctrl+Enter送信',pasteHint:'Ctrl+V画像',attachFile:'ファイル添付',bold:'太字',italic:'斜体',strikethrough:'取消線',heading:'見出し',list:'リスト',todoItem:'TODO',link:'リンク',code:'コード',quote:'引用',spoiler:'スポイラー',resetPassword:'パスワードリセット',createTask:'作成',markdown:'markdown',deadline:'期限',deadlineLeft:'残り',deadlinePassed:'期限超過',filterDeps:'タスク検索...',deleteCommentConfirm:'コメントを削除しますか？',deleteCommentTreeConfirm:'コメントとすべての返信を削除しますか？',forgotPassword:'パスワードを忘れた？',resetVia:'で復元',passwordResetSent:'コードをTelegramに送信しました',enterResetCode:'Telegramのコードを入力',resetCode:'コード',confirmAction:'確認',sortBy:'並べ替え',sortPosition:'位置順',sortPriority:'優先度順',sortDate:'日付順',sortTitle:'タイトル順',taskCreated:'タスクを作成',taskEdited:'タスクを更新',taskMoved:'タスクを移動',taskCommented:'コメント',taskDeleted:'タスクを削除',taskAssigned:'を割り当て',protectedColumn:'このカラムは削除できません (Backlog/Done)',backlog:'Backlog',done:'Done'},
-  ko:{name:'한국어',theme:'테마',language:'언어',fontSize:'글꼴 크기',columns:'컬럼',epics:'에픽',tags:'태그',timezone:'시간대',exportImport:'내보내기/가져오기',users:'사용자',logout:'로그아웃',changePassword:'비밀번호',search:'검색...',addTask:'+ 작업 추가',newTask:'새 작업',editTask:'편집',save:'저장',cancel:'취소',delete:'삭제',title:'제목',description:'설명',column:'컬럼',priority:'우선순위',epic:'에픽',assignee:'담당자',none:'—',low:'낮음',medium:'보통',high:'높음',critical:'긴급',projectUrl:'프로젝트 링크',dependsOn:'의존',blocks:'차단',created:'생성',updated:'수정',comments:'댓글',noComments:'댓글 없음',writeComment:'댓글 작성...',send:'전송',reply:'답글',edit:'편집',noDescription:'설명 없음',deleteTask:'작업 삭제',deleteConfirm:'작업을 삭제하시겠습니까?',back:'보드',notFound:'찾을 수 없음',backToBoard:'보드로 돌아가기',todo:'TODO',addTodoItem:'항목 추가...',newColumn:'새 컬럼...',newEpic:'새 에픽...',newTag:'새 태그...',login:'로그인...',password:'비밀번호...',admin:'관리자',regular:'사용자',readonly:'읽기 전용',role:'역할',deleteColumn:'컬럼 삭제',deleteEpic:'에픽 삭제',deleteTag:'태그 삭제',deleteUser:'사용자 삭제',moveTasksFirst:'먼저 작업을 이동하세요',confirmDeleteCol:'컬럼 삭제',confirmDeleteEpic:'에픽 삭제',confirmDeleteTag:'태그 삭제',confirmDeleteUser:'사용자 삭제',tasksWillUnlink:'작업이 분리됩니다.',userRequired:'로그인 필수, 비밀번호 최소 6자',error:'오류',importConfirm:'가져오기는 모든 데이터를 대체합니다. 계속하시겠습니까?',importDone:'가져오기 완료',exportError:'내보내기 오류',importError:'가져오기 오류',uploadError:'업로드 오류',fileTooLarge:'파일이 너무 큽니다(최대 20MB)',fileTypeNotAllowed:'허용되지 않는 파일 형식',uploading:'업로드 중...',uploadFailed:'업로드 실패',searchTasks:'작업 검색...',nothingFound:'찾을 수 없음',andMore:'...그 외',editEpic:'에픽 편집',tasksCompleted:'완료된 작업',active:'활성',status:'상태',date:'날짜',noActiveTasks:'활성 작업 없음',subscribe:'구독',unsubscribe:'구독 취소',subscribed:'구독 중',notifications:'알림',markAllRead:'모두 읽음',noNotifications:'알림 없음',profile:'프로필',activity:'활동',noActivity:'활동 없음',personalTask:'개인 작업',showPersonal:'내 것',showAll:'전체',passwordChanged:'비밀번호 변경됨',newPassword:'새 비밀번호(최소 6자):',telegram:'Telegram',telegramLinked:'연동됨',telegramNotLinked:'미연동',generateHash:'해시 가져오기',unlinkTelegram:'연동 해제',telegramBotToken:'봇 토큰',saveTelegramToken:'저장',telegramBotUsername:'봇 이름',private:'개인',searchTask:'작업 검색...',edited:'수정됨',ctrlEnter:'Ctrl+Enter 전송',pasteHint:'Ctrl+V 이미지',attachFile:'파일 첨부',bold:'굵게',italic:'기울임',strikethrough:'취소선',heading:'제목',list:'목록',todoItem:'TODO',link:'링크',code:'코드',quote:'인용',spoiler:'스포일러',resetPassword:'비밀번호 초기화',createTask:'생성',markdown:'markdown',deadline:'마감일',deadlineLeft:'남음',deadlinePassed:'기한초과',filterDeps:'작업 검색...',deleteCommentConfirm:'댓글을 삭제하시겠습니까?',deleteCommentTreeConfirm:'댓글과 모든 답글을 삭제하시겠습니까?',forgotPassword:'비밀번호를 잊으셨나요?',resetVia:'를 통해 재설정',passwordResetSent:'Telegram으로 코드 전송됨',enterResetCode:'Telegram 코드 입력',resetCode:'코드',confirmAction:'확인',sortBy:'정렬',sortPosition:'위치순',sortPriority:'우선순위순',sortDate:'날짜순',sortTitle:'제목순',taskCreated:'작업 생성',taskEdited:'작업 수정',taskMoved:'작업 이동',taskCommented:'댓글',taskDeleted:'작업 삭제',taskAssigned:'할당',protectedColumn:'이 컬럼은 삭제할 수 없습니다 (Backlog/Done)',backlog:'Backlog',done:'Done'},
-  ar:{name:'العربية',theme:'المظهر',language:'اللغة',fontSize:'حجم الخط',columns:'الأعمدة',epics:'الملاحم',tags:'الوسوم',timezone:'المنطقة الزمنية',exportImport:'تصدير/استيراد',users:'المستخدمون',logout:'خروج',changePassword:'كلمة المرور',search:'بحث...',addTask:'+ إضافة مهمة',newTask:'مهمة جديدة',editTask:'تعديل',save:'حفظ',cancel:'إلغاء',delete:'حذف',title:'العنوان',description:'الوصف',column:'العمود',priority:'الأولوية',epic:'الملحمة',assignee:'المسؤول',none:'—',low:'منخفضة',medium:'متوسطة',high:'عالية',critical:'حرجة',projectUrl:'رابط المشروع',dependsOn:'يعتمد على',blocks:'يحظر',created:'أنشئت',updated:'حُدّثت',comments:'التعليقات',noComments:'لا تعليقات',writeComment:'كتابة تعليق...',send:'إرسال',reply:'رد',edit:'تعديل',noDescription:'لا وصف',deleteTask:'حذف المهمة',deleteConfirm:'حذف المهمة؟',back:'اللوحة',notFound:'غير موجود',backToBoard:'العودة للوحة',todo:'المهام',addTodoItem:'إضافة عنصر...',newColumn:'عمود جديد...',newEpic:'ملحمة جديدة...',newTag:'وسم جديد...',login:'تسجيل الدخول...',password:'كلمة المرور...',admin:'مدير',regular:'مستخدم',readonly:'قراءة فقط',role:'الدور',deleteColumn:'حذف العمود',deleteEpic:'حذف الملحمة',deleteTag:'حذف الوسم',deleteUser:'حذف المستخدم',moveTasksFirst:'انقل المهام أولاً',confirmDeleteCol:'حذف العمود',confirmDeleteEpic:'حذف الملحمة',confirmDeleteTag:'حذف الوسم',confirmDeleteUser:'حذف المستخدم',tasksWillUnlink:'ستُفصل المهام.',userRequired:'اسم المستخدم مطلوب، كلمة المرور 6 أحرف على الأقل',error:'خطأ',importConfirm:'الاستيراد سيستبدل جميع البيانات. متابعة؟',importDone:'تم الاستيراد',exportError:'خطأ في التصدير',importError:'خطأ في الاستيراد',uploadError:'خطأ في الرفع',fileTooLarge:'ملف كبير جداً (حد 20 ميجا)',fileTypeNotAllowed:'نوع الملف غير مسموح',uploading:'جاري الرفع...',uploadFailed:'فشل الرفع',searchTasks:'بحث المهام...',nothingFound:'لم يتم العثور',andMore:'...والمزيد',editEpic:'تعديل الملحمة',tasksCompleted:'مهام مكتملة',active:'نشطة',status:'الحالة',date:'التاريخ',noActiveTasks:'لا مهام نشطة',subscribe:'اشتراك',unsubscribe:'إلغاء الاشتراك',subscribed:'مشترك',notifications:'الإشعارات',markAllRead:'قراءة الكل',noNotifications:'لا إشعارات',profile:'الملف الشخصي',activity:'النشاط',noActivity:'لا نشاط',personalTask:'مهمة شخصية',showPersonal:'مهامي',showAll:'الكل',passwordChanged:'تم تغيير كلمة المرور',newPassword:'كلمة مرور جديدة (6 أحرف):',telegram:'Telegram',telegramLinked:'مرتبط',telegramNotLinked:'غير مرتبط',generateHash:'الحصول على الهاش',unlinkTelegram:'إلغاء الربط',telegramBotToken:'توكن البوت',saveTelegramToken:'حفظ',telegramBotUsername:'اسم البوت',private:'شخصي',searchTask:'بحث مهمة...',edited:'معدّل',ctrlEnter:'Ctrl+Enter إرسال',pasteHint:'Ctrl+V صورة',attachFile:'إرفاق ملف',bold:'عريض',italic:'مائل',strikethrough:'مشطوب',heading:'عنوان',list:'قائمة',todoItem:'مهمة',link:'رابط',code:'كود',quote:'اقتباس',spoiler:'مخفي',resetPassword:'إعادة تعيين كلمة المرور',createTask:'إنشاء',markdown:'markdown',deadline:'الموعد النهائي',deadlineLeft:'متبقي',deadlinePassed:'متأخر',filterDeps:'بحث مهمة...',deleteCommentConfirm:'حذف التعليق؟',deleteCommentTreeConfirm:'حذف التعليق وجميع الردود؟',forgotPassword:'نسيت كلمة المرور؟',resetVia:'إعادة تعيين عبر',passwordResetSent:'تم إرسال الرمز إلى Telegram',enterResetCode:'أدخل رمز Telegram',resetCode:'الرمز',confirmAction:'تأكيد',sortBy:'ترتيب حسب',sortPosition:'الموقع',sortPriority:'الأولوية',sortDate:'التاريخ',sortTitle:'العنوان',taskCreated:'أنشأ مهمة',taskEdited:'حدّث مهمة',taskMoved:'نقل مهمة',taskCommented:'تعليق',taskDeleted:'حذف مهمة',taskAssigned:'عيّن',protectedColumn:'لا يمكن حذف هذا العمود (Backlog/Done)',backlog:'Backlog',done:'Done'}
+  ru:{name:'Русский',theme:'Тема оформления',language:'Язык',fontSize:'Размер шрифта',columns:'Колонки',epics:'Эпики',tags:'Теги',timezone:'Часовой пояс',exportImport:'Экспорт / Импорт',users:'Пользователи',logout:'Выход',changePassword:'Пароль',search:'Поиск...',addTask:'+ Добавить задачу',newTask:'Новая задача',editTask:'Редактировать',save:'Сохранить',cancel:'Отмена',delete:'Удалить',title:'Название',description:'Описание',column:'Колонка',priority:'Приоритет',epic:'Эпик',assignee:'Исполнитель',none:'—',low:'Низкий',medium:'Средний',high:'Высокий',critical:'Критический',projectUrl:'Ссылка на проект',dependsOn:'Зависит от',blocks:'Блокирует',created:'Создана',updated:'Обновлена',comments:'Комментарии',noComments:'Нет комментариев',writeComment:'Написать комментарий...',send:'Отправить',reply:'Ответить',edit:'Ред.',noDescription:'Нет описания',deleteTask:'Удалить задачу',deleteConfirm:'Удалить задачу?',back:'Доска',notFound:'Не найдено',backToBoard:'Вернуться на доску',todo:'TODO',addTodoItem:'Добавить пункт...',newColumn:'Новая колонка...',newEpic:'Новый эпик...',newTag:'Новый тег...',login:'Логин...',password:'Пароль...',admin:'Админ',regular:'Пользователь',readonly:'Только чтение',role:'Роль',deleteColumn:'Удалить колонку',deleteEpic:'Удалить эпик',deleteTag:'Удалить тег',deleteUser:'Удалить пользователя',moveTasksFirst:'Сначала переместите задачи из колонки',confirmDeleteCol:'Удалить колонку',confirmDeleteEpic:'Удалить эпик',confirmDeleteTag:'Удалить тег',confirmDeleteUser:'Удалить пользователя',tasksWillUnlink:'задач будут отвязаны.',userRequired:'Логин обязателен, пароль минимум 6 символов',error:'Ошибка',importConfirm:'Импорт заменит ВСЕ данные. Продолжить?',importDone:'Импорт выполнен успешно',exportError:'Ошибка экспорта',importError:'Ошибка импорта',uploadError:'Ошибка загрузки',fileTooLarge:'Файл слишком большой (макс 20МБ)',fileTypeNotAllowed:'Этот тип файла не разрешён',uploading:'Загрузка...',uploadFailed:'Ошибка загрузки',searchTasks:'Поиск задач...',nothingFound:'Ничего не найдено',andMore:'...и ещё',editEpic:'Редактировать эпик',tasksCompleted:'задач выполнено',active:'Активные',status:'Статус',date:'Дата',noActiveTasks:'Нет активных задач',subscribe:'Подписаться',unsubscribe:'Отписаться',subscribed:'Вы подписаны',notifications:'Уведомления',markAllRead:'Прочитать все',noNotifications:'Нет уведомлений',profile:'Профиль',activity:'Активность',noActivity:'Нет активности',personalTask:'Личная задача',showPersonal:'Мои',showAll:'Все',passwordChanged:'Пароль изменён',newPassword:'Новый пароль (мин. 6):',telegram:'Telegram',telegramLinked:'Привязан',telegramNotLinked:'Не привязан',generateHash:'Получить хэш',unlinkTelegram:'Отвязать',telegramBotToken:'Токен бота',telegramBotUsername:'Имя бота',saveTelegramToken:'Сохранить',private:'Личная',searchTask:'Поиск задачи...',edited:'ред.',ctrlEnter:'Ctrl+Enter отправить',pasteHint:'Ctrl+V картинка',attachFile:'Вложить файл',bold:'Жирный',italic:'Курсив',strikethrough:'Зачёркнутый',heading:'Заголовок',list:'Список',todoItem:'TODO',link:'Ссылка',code:'Код',quote:'Цитата',spoiler:'Спойлер',resetPassword:'Сменить пароль',createTask:'Создать',markdown:'markdown',deadline:'Дедлайн',deadlineLeft:'Осталось',deadlinePassed:'Просрочен',filterDeps:'Поиск задачи...',deleteCommentConfirm:'Удалить комментарий?',deleteCommentTreeConfirm:'Удалить комментарий и все ответы на него?',forgotPassword:'Забыли пароль?',resetVia:'Восстановить через',passwordResetSent:'Код отправлен в Telegram',enterResetCode:'Введите код из Telegram',resetCode:'Код',confirmAction:'Подтвердить',sortBy:'Сортировка',sortPosition:'По позиции',sortPriority:'По приоритету',sortDate:'По дате',sortTitle:'По названию',taskCreated:'создал(а) задачу',taskEdited:'обновил(а) задачу',taskMoved:'переместил(а) задачу',taskCommented:'комментарий',taskDeleted:'удалил(а) задачу',taskAssigned:'назначил(а)',protectedColumn:'Эту колонку нельзя удалить (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'Спринты',sprint:'Спринт',newSprint:'Новый спринт...',deleteSprint:'Удалить спринт',confirmDeleteSprint:'Удалить спринт',sprintBacklog:'Бэклог',sprintPlanning:'Планирование',sprintActive:'Активный',sprintCompleted:'Завершён',startDate:'Начало',endDate:'Конец',startSprint:'Старт спринта',completeSprint:'Завершить спринт',completeSprintConfirm:'Завершить спринт? Незавершённые задачи будут перенесены.',moveToNextSprint:'Перенести в следующий спринт',moveToBacklog:'Вернуть в бэклог',noSprints:'Нет спринтов',unassigned:'Без спринта',editSprint:'Редактировать спринт',sprintGoal:'Цель спринта'},
+  en:{name:'English',theme:'Theme',language:'Language',fontSize:'Font size',columns:'Columns',epics:'Epics',tags:'Tags',timezone:'Timezone',exportImport:'Export / Import',users:'Users',logout:'Logout',changePassword:'Password',search:'Search...',addTask:'+ Add task',newTask:'New task',editTask:'Edit',save:'Save',cancel:'Cancel',delete:'Delete',title:'Title',description:'Description',column:'Column',priority:'Priority',epic:'Epic',assignee:'Assignee',none:'—',low:'Low',medium:'Medium',high:'High',critical:'Critical',projectUrl:'Project link',dependsOn:'Depends on',blocks:'Blocks',created:'Created',updated:'Updated',comments:'Comments',noComments:'No comments',writeComment:'Write a comment...',send:'Send',reply:'Reply',edit:'Edit',noDescription:'No description',deleteTask:'Delete task',deleteConfirm:'Delete task?',back:'Board',notFound:'Not found',backToBoard:'Back to board',todo:'TODO',addTodoItem:'Add item...',newColumn:'New column...',newEpic:'New epic...',newTag:'New tag...',login:'Login...',password:'Password...',admin:'Admin',regular:'User',readonly:'Read-only',role:'Role',deleteColumn:'Delete column',deleteEpic:'Delete epic',deleteTag:'Delete tag',deleteUser:'Delete user',moveTasksFirst:'Move tasks out of this column first',confirmDeleteCol:'Delete column',confirmDeleteEpic:'Delete epic',confirmDeleteTag:'Delete tag',confirmDeleteUser:'Delete user',tasksWillUnlink:'tasks will be unlinked.',userRequired:'Login required, password min 6 chars',error:'Error',importConfirm:'Import will replace ALL data. Continue?',importDone:'Import completed',exportError:'Export error',importError:'Import error',uploadError:'Upload error',fileTooLarge:'File too large (max 20MB)',fileTypeNotAllowed:'File type not allowed',uploading:'Uploading...',uploadFailed:'Upload failed',searchTasks:'Search tasks...',nothingFound:'Nothing found',andMore:'...and more',editEpic:'Edit epic',tasksCompleted:'tasks completed',active:'Active',status:'Status',date:'Date',noActiveTasks:'No active tasks',subscribe:'Subscribe',unsubscribe:'Unsubscribe',subscribed:'Subscribed',notifications:'Notifications',markAllRead:'Mark all read',noNotifications:'No notifications',profile:'Profile',activity:'Activity',noActivity:'No activity',personalTask:'Personal task',showPersonal:'Mine',showAll:'All',passwordChanged:'Password changed',newPassword:'New password (min 6):',telegram:'Telegram',telegramLinked:'Linked',telegramNotLinked:'Not linked',generateHash:'Get hash',unlinkTelegram:'Unlink',telegramBotToken:'Bot token',telegramBotUsername:'Bot username',saveTelegramToken:'Save',private:'Personal',searchTask:'Search task...',edited:'edited',ctrlEnter:'Ctrl+Enter to send',pasteHint:'Ctrl+V image',attachFile:'Attach file',bold:'Bold',italic:'Italic',strikethrough:'Strikethrough',heading:'Heading',list:'List',todoItem:'TODO',link:'Link',code:'Code',quote:'Quote',spoiler:'Spoiler',resetPassword:'Reset password',createTask:'Create',markdown:'markdown',deadline:'Deadline',deadlineLeft:'left',deadlinePassed:'Overdue',filterDeps:'Search task...',deleteCommentConfirm:'Delete comment?',deleteCommentTreeConfirm:'Delete comment and all replies?',forgotPassword:'Forgot password?',resetVia:'Reset via',passwordResetSent:'Code sent to Telegram',enterResetCode:'Enter code from Telegram',resetCode:'Code',confirmAction:'Confirm',sortBy:'Sort by',sortPosition:'Position',sortPriority:'Priority',sortDate:'Date',sortTitle:'Title',taskCreated:'created task',taskEdited:'updated task',taskMoved:'moved task',taskCommented:'comment',taskDeleted:'deleted task',taskAssigned:'assigned',protectedColumn:'This column cannot be deleted (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'Sprints',sprint:'Sprint',newSprint:'New sprint...',deleteSprint:'Delete sprint',confirmDeleteSprint:'Delete sprint',sprintBacklog:'Backlog',sprintPlanning:'Planning',sprintActive:'Active',sprintCompleted:'Completed',startDate:'Start',endDate:'End',startSprint:'Start sprint',completeSprint:'Complete sprint',completeSprintConfirm:'Complete sprint? Incomplete tasks will be moved.',moveToNextSprint:'Move to next sprint',moveToBacklog:'Move to backlog',noSprints:'No sprints',unassigned:'Unassigned',editSprint:'Edit sprint',sprintGoal:'Sprint goal'},
+  zh:{name:'中文',theme:'主题',language:'语言',fontSize:'字体大小',columns:'列',epics:'史诗',tags:'标签',timezone:'时区',exportImport:'导出/导入',users:'用户',logout:'退出',changePassword:'密码',search:'搜索...',addTask:'+ 添加任务',newTask:'新任务',editTask:'编辑',save:'保存',cancel:'取消',delete:'删除',title:'标题',description:'描述',column:'列',priority:'优先级',epic:'史诗',assignee:'执行人',none:'—',low:'低',medium:'中',high:'高',critical:'紧急',projectUrl:'项目链接',dependsOn:'依赖于',blocks:'阻塞',created:'创建',updated:'更新',comments:'评论',noComments:'无评论',writeComment:'写评论...',send:'发送',reply:'回复',edit:'编辑',noDescription:'无描述',deleteTask:'删除任务',deleteConfirm:'删除任务?',back:'看板',notFound:'未找到',backToBoard:'返回看板',todo:'待办',addTodoItem:'添加项...',newColumn:'新列...',newEpic:'新史诗...',newTag:'新标签...',login:'登录...',password:'密码...',admin:'管理员',regular:'用户',readonly:'只读',role:'角色',deleteColumn:'删除列',deleteEpic:'删除史诗',deleteTag:'删除标签',deleteUser:'删除用户',moveTasksFirst:'先移出任务',confirmDeleteCol:'删除列',confirmDeleteEpic:'删除史诗',confirmDeleteTag:'删除标签',confirmDeleteUser:'删除用户',tasksWillUnlink:'任务将解除关联',userRequired:'需要用户名，密码至少6位',error:'错误',importConfirm:'导入将替换所有数据，继续？',importDone:'导入完成',exportError:'导出错误',importError:'导入错误',uploadError:'上传错误',fileTooLarge:'文件过大(最大20MB)',fileTypeNotAllowed:'不允许的文件类型',uploading:'上传中...',uploadFailed:'上传失败',searchTasks:'搜索任务...',nothingFound:'未找到',andMore:'...更多',editEpic:'编辑史诗',tasksCompleted:'任务已完成',active:'活跃',status:'状态',date:'日期',noActiveTasks:'无活跃任务',subscribe:'订阅',unsubscribe:'取消订阅',subscribed:'已订阅',notifications:'通知',markAllRead:'全部已读',noNotifications:'无通知',profile:'个人资料',activity:'活动',noActivity:'无活动',personalTask:'个人任务',showPersonal:'我的',showAll:'全部',passwordChanged:'密码已更改',newPassword:'新密码(最少6位):',telegram:'Telegram',telegramLinked:'已绑定',telegramNotLinked:'未绑定',generateHash:'获取哈希',unlinkTelegram:'解绑',telegramBotToken:'机器人令牌',saveTelegramToken:'保存',telegramBotUsername:'机器人用户名',private:'个人',searchTask:'搜索任务...',edited:'已编辑',ctrlEnter:'Ctrl+Enter发送',pasteHint:'Ctrl+V粘贴图片',attachFile:'附件',bold:'粗体',italic:'斜体',strikethrough:'删除线',heading:'标题',list:'列表',todoItem:'待办',link:'链接',code:'代码',quote:'引用',spoiler:'折叠',resetPassword:'重置密码',createTask:'创建',markdown:'markdown',deadline:'截止日期',deadlineLeft:'剩余',deadlinePassed:'已过期',filterDeps:'搜索任务...',deleteCommentConfirm:'删除评论？',deleteCommentTreeConfirm:'删除评论及所有回复？',forgotPassword:'忘记密码？',resetVia:'通过重置',passwordResetSent:'验证码已发送至Telegram',enterResetCode:'输入Telegram验证码',resetCode:'验证码',confirmAction:'确认',sortBy:'排序',sortPosition:'按位置',sortPriority:'按优先级',sortDate:'按日期',sortTitle:'按标题',taskCreated:'创建了任务',taskEdited:'更新了任务',taskMoved:'移动了任务',taskCommented:'评论',taskDeleted:'删除了任务',taskAssigned:'指派了',protectedColumn:'该列不能删除 (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'冲刺',sprint:'冲刺',newSprint:'新冲刺...',deleteSprint:'删除冲刺',confirmDeleteSprint:'删除冲刺',sprintBacklog:'待办列表',sprintPlanning:'计划中',sprintActive:'进行中',sprintCompleted:'已完成',startDate:'开始',endDate:'结束',startSprint:'开始冲刺',completeSprint:'完成冲刺',completeSprintConfirm:'完成冲刺？未完成的任务将被转移。',moveToNextSprint:'转移到下个冲刺',moveToBacklog:'移回待办',noSprints:'无冲刺',unassigned:'未分配',editSprint:'编辑冲刺',sprintGoal:'冲刺目标'},
+  es:{name:'Español',theme:'Tema',language:'Idioma',fontSize:'Tamaño de fuente',columns:'Columnas',epics:'Épicas',tags:'Etiquetas',timezone:'Zona horaria',exportImport:'Exportar/Importar',users:'Usuarios',logout:'Salir',changePassword:'Contraseña',search:'Buscar...',addTask:'+ Añadir tarea',newTask:'Nueva tarea',editTask:'Editar',save:'Guardar',cancel:'Cancelar',delete:'Eliminar',title:'Título',description:'Descripción',column:'Columna',priority:'Prioridad',epic:'Épica',assignee:'Asignado',none:'—',low:'Baja',medium:'Media',high:'Alta',critical:'Crítica',projectUrl:'Enlace del proyecto',dependsOn:'Depende de',blocks:'Bloquea',created:'Creada',updated:'Actualizada',comments:'Comentarios',noComments:'Sin comentarios',writeComment:'Escribir comentario...',send:'Enviar',reply:'Responder',edit:'Editar',noDescription:'Sin descripción',deleteTask:'Eliminar tarea',deleteConfirm:'¿Eliminar tarea?',back:'Tablero',notFound:'No encontrado',backToBoard:'Volver al tablero',todo:'TODO',addTodoItem:'Añadir elemento...',newColumn:'Nueva columna...',newEpic:'Nueva épica...',newTag:'Nueva etiqueta...',login:'Usuario...',password:'Contraseña...',admin:'Admin',regular:'Usuario',readonly:'Solo lectura',role:'Rol',deleteColumn:'Eliminar columna',deleteEpic:'Eliminar épica',deleteTag:'Eliminar etiqueta',deleteUser:'Eliminar usuario',moveTasksFirst:'Mueva las tareas primero',confirmDeleteCol:'Eliminar columna',confirmDeleteEpic:'Eliminar épica',confirmDeleteTag:'Eliminar etiqueta',confirmDeleteUser:'Eliminar usuario',tasksWillUnlink:'tareas serán desvinculadas.',userRequired:'Usuario requerido, contraseña mín 6 caracteres',error:'Error',importConfirm:'La importación reemplazará TODOS los datos. ¿Continuar?',importDone:'Importación completada',exportError:'Error de exportación',importError:'Error de importación',uploadError:'Error de subida',fileTooLarge:'Archivo muy grande (máx 20MB)',fileTypeNotAllowed:'Tipo de archivo no permitido',uploading:'Subiendo...',uploadFailed:'Error de subida',searchTasks:'Buscar tareas...',nothingFound:'Nada encontrado',andMore:'...y más',editEpic:'Editar épica',tasksCompleted:'tareas completadas',active:'Activas',status:'Estado',date:'Fecha',noActiveTasks:'Sin tareas activas',subscribe:'Suscribirse',unsubscribe:'Desuscribirse',subscribed:'Suscrito',notifications:'Notificaciones',markAllRead:'Marcar todo leído',noNotifications:'Sin notificaciones',profile:'Perfil',activity:'Actividad',noActivity:'Sin actividad',personalTask:'Tarea personal',showPersonal:'Mías',showAll:'Todas',passwordChanged:'Contraseña cambiada',newPassword:'Nueva contraseña (mín 6):',telegram:'Telegram',telegramLinked:'Vinculado',telegramNotLinked:'No vinculado',generateHash:'Obtener hash',unlinkTelegram:'Desvincular',telegramBotToken:'Token del bot',saveTelegramToken:'Guardar',telegramBotUsername:'Nombre del bot',private:'Personal',searchTask:'Buscar tarea...',edited:'editado',ctrlEnter:'Ctrl+Enter enviar',pasteHint:'Ctrl+V imagen',attachFile:'Adjuntar',bold:'Negrita',italic:'Cursiva',strikethrough:'Tachado',heading:'Encabezado',list:'Lista',todoItem:'TODO',link:'Enlace',code:'Código',quote:'Cita',spoiler:'Spoiler',resetPassword:'Cambiar contraseña',createTask:'Crear',markdown:'markdown',deadline:'Fecha límite',deadlineLeft:'restante',deadlinePassed:'Vencido',filterDeps:'Buscar tarea...',deleteCommentConfirm:'¿Eliminar comentario?',deleteCommentTreeConfirm:'¿Eliminar comentario y todas las respuestas?',forgotPassword:'¿Olvidó la contraseña?',resetVia:'Restablecer vía',passwordResetSent:'Código enviado a Telegram',enterResetCode:'Ingrese el código de Telegram',resetCode:'Código',confirmAction:'Confirmar',sortBy:'Ordenar por',sortPosition:'Posición',sortPriority:'Prioridad',sortDate:'Fecha',sortTitle:'Título',taskCreated:'creó tarea',taskEdited:'actualizó tarea',taskMoved:'movió tarea',taskCommented:'comentario',taskDeleted:'eliminó tarea',taskAssigned:'asignó',protectedColumn:'Esta columna no se puede eliminar (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'Sprints',sprint:'Sprint',newSprint:'Nuevo sprint...',deleteSprint:'Eliminar sprint',confirmDeleteSprint:'Eliminar sprint',sprintBacklog:'Backlog',sprintPlanning:'Planificación',sprintActive:'Activo',sprintCompleted:'Completado',startDate:'Inicio',endDate:'Fin',startSprint:'Iniciar sprint',completeSprint:'Completar sprint',completeSprintConfirm:'¿Completar sprint? Las tareas incompletas serán movidas.',moveToNextSprint:'Mover al siguiente sprint',moveToBacklog:'Mover al backlog',noSprints:'Sin sprints',unassigned:'Sin asignar',editSprint:'Editar sprint',sprintGoal:'Objetivo del sprint'},
+  fr:{name:'Français',theme:'Thème',language:'Langue',fontSize:'Taille police',columns:'Colonnes',epics:'Épiques',tags:'Tags',timezone:'Fuseau horaire',exportImport:'Export/Import',users:'Utilisateurs',logout:'Déconnexion',changePassword:'Mot de passe',search:'Rechercher...',addTask:'+ Ajouter tâche',newTask:'Nouvelle tâche',editTask:'Modifier',save:'Enregistrer',cancel:'Annuler',delete:'Supprimer',title:'Titre',description:'Description',column:'Colonne',priority:'Priorité',epic:'Épique',assignee:'Assigné',none:'—',low:'Basse',medium:'Moyenne',high:'Haute',critical:'Critique',projectUrl:'Lien projet',dependsOn:'Dépend de',blocks:'Bloque',created:'Créée',updated:'Mise à jour',comments:'Commentaires',noComments:'Pas de commentaires',writeComment:'Écrire un commentaire...',send:'Envoyer',reply:'Répondre',edit:'Modifier',noDescription:'Pas de description',deleteTask:'Supprimer tâche',deleteConfirm:'Supprimer la tâche?',back:'Tableau',notFound:'Non trouvé',backToBoard:'Retour au tableau',todo:'TODO',addTodoItem:'Ajouter élément...',newColumn:'Nouvelle colonne...',newEpic:'Nouvel épique...',newTag:'Nouveau tag...',login:'Login...',password:'Mot de passe...',admin:'Admin',regular:'Utilisateur',readonly:'Lecture seule',role:'Rôle',deleteColumn:'Supprimer colonne',deleteEpic:'Supprimer épique',deleteTag:'Supprimer tag',deleteUser:'Supprimer utilisateur',moveTasksFirst:'Déplacez les tâches d\'abord',confirmDeleteCol:'Supprimer colonne',confirmDeleteEpic:'Supprimer épique',confirmDeleteTag:'Supprimer tag',confirmDeleteUser:'Supprimer utilisateur',tasksWillUnlink:'tâches seront détachées.',userRequired:'Login requis, mot de passe min 6 caractères',error:'Erreur',importConfirm:'L\'import remplacera TOUTES les données. Continuer?',importDone:'Import terminé',exportError:'Erreur d\'export',importError:'Erreur d\'import',uploadError:'Erreur d\'upload',fileTooLarge:'Fichier trop grand (max 20Mo)',fileTypeNotAllowed:'Type de fichier non autorisé',uploading:'Upload...',uploadFailed:'Échec d\'upload',searchTasks:'Rechercher tâches...',nothingFound:'Rien trouvé',andMore:'...et plus',editEpic:'Modifier épique',tasksCompleted:'tâches terminées',active:'Actives',status:'Statut',date:'Date',noActiveTasks:'Pas de tâches actives',subscribe:'S\'abonner',unsubscribe:'Se désabonner',subscribed:'Abonné',notifications:'Notifications',markAllRead:'Tout marquer lu',noNotifications:'Pas de notifications',profile:'Profil',activity:'Activité',noActivity:'Pas d\'activité',personalTask:'Tâche personnelle',showPersonal:'Mes',showAll:'Toutes',passwordChanged:'Mot de passe changé',newPassword:'Nouveau mot de passe (min 6):',telegram:'Telegram',telegramLinked:'Lié',telegramNotLinked:'Non lié',generateHash:'Obtenir hash',unlinkTelegram:'Délier',telegramBotToken:'Token du bot',saveTelegramToken:'Sauvegarder',telegramBotUsername:'Nom du bot',private:'Personnel',searchTask:'Rechercher tâche...',edited:'modifié',ctrlEnter:'Ctrl+Enter envoyer',pasteHint:'Ctrl+V image',attachFile:'Joindre fichier',bold:'Gras',italic:'Italique',strikethrough:'Barré',heading:'Titre',list:'Liste',todoItem:'TODO',link:'Lien',code:'Code',quote:'Citation',spoiler:'Spoiler',resetPassword:'Changer mot de passe',createTask:'Créer',markdown:'markdown',deadline:'Échéance',deadlineLeft:'restant',deadlinePassed:'En retard',filterDeps:'Rechercher tâche...',deleteCommentConfirm:'Supprimer le commentaire?',deleteCommentTreeConfirm:'Supprimer le commentaire et toutes les réponses?',forgotPassword:'Mot de passe oublié?',resetVia:'Réinitialiser via',passwordResetSent:'Code envoyé sur Telegram',enterResetCode:'Entrez le code Telegram',resetCode:'Code',confirmAction:'Confirmer',sortBy:'Trier par',sortPosition:'Position',sortPriority:'Priorité',sortDate:'Date',sortTitle:'Titre',taskCreated:'a créé la tâche',taskEdited:'a modifié la tâche',taskMoved:'a déplacé la tâche',taskCommented:'commentaire',taskDeleted:'a supprimé la tâche',taskAssigned:'a assigné',protectedColumn:'Cette colonne ne peut pas être supprimée (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'Sprints',sprint:'Sprint',newSprint:'Nouveau sprint...',deleteSprint:'Supprimer sprint',confirmDeleteSprint:'Supprimer sprint',sprintBacklog:'Backlog',sprintPlanning:'Planification',sprintActive:'Actif',sprintCompleted:'Terminé',startDate:'Début',endDate:'Fin',startSprint:'Démarrer sprint',completeSprint:'Terminer sprint',completeSprintConfirm:'Terminer le sprint? Les tâches incomplètes seront déplacées.',moveToNextSprint:'Déplacer au sprint suivant',moveToBacklog:'Retourner au backlog',noSprints:'Aucun sprint',unassigned:'Non assigné',editSprint:'Modifier sprint',sprintGoal:'Objectif du sprint'},
+  de:{name:'Deutsch',theme:'Design',language:'Sprache',fontSize:'Schriftgröße',columns:'Spalten',epics:'Epics',tags:'Tags',timezone:'Zeitzone',exportImport:'Export/Import',users:'Benutzer',logout:'Abmelden',changePassword:'Passwort',search:'Suche...',addTask:'+ Aufgabe hinzufügen',newTask:'Neue Aufgabe',editTask:'Bearbeiten',save:'Speichern',cancel:'Abbrechen',delete:'Löschen',title:'Titel',description:'Beschreibung',column:'Spalte',priority:'Priorität',epic:'Epic',assignee:'Zugewiesen',none:'—',low:'Niedrig',medium:'Mittel',high:'Hoch',critical:'Kritisch',projectUrl:'Projektlink',dependsOn:'Abhängig von',blocks:'Blockiert',created:'Erstellt',updated:'Aktualisiert',comments:'Kommentare',noComments:'Keine Kommentare',writeComment:'Kommentar schreiben...',send:'Senden',reply:'Antworten',edit:'Bearbeiten',noDescription:'Keine Beschreibung',deleteTask:'Aufgabe löschen',deleteConfirm:'Aufgabe löschen?',back:'Board',notFound:'Nicht gefunden',backToBoard:'Zurück zum Board',todo:'TODO',addTodoItem:'Element hinzufügen...',newColumn:'Neue Spalte...',newEpic:'Neues Epic...',newTag:'Neuer Tag...',login:'Login...',password:'Passwort...',admin:'Admin',regular:'Benutzer',readonly:'Nur lesen',role:'Rolle',deleteColumn:'Spalte löschen',deleteEpic:'Epic löschen',deleteTag:'Tag löschen',deleteUser:'Benutzer löschen',moveTasksFirst:'Verschieben Sie zuerst die Aufgaben',confirmDeleteCol:'Spalte löschen',confirmDeleteEpic:'Epic löschen',confirmDeleteTag:'Tag löschen',confirmDeleteUser:'Benutzer löschen',tasksWillUnlink:'Aufgaben werden getrennt.',userRequired:'Login erforderlich, Passwort min 6 Zeichen',error:'Fehler',importConfirm:'Import ersetzt ALLE Daten. Fortfahren?',importDone:'Import abgeschlossen',exportError:'Exportfehler',importError:'Importfehler',uploadError:'Uploadfehler',fileTooLarge:'Datei zu groß (max 20MB)',fileTypeNotAllowed:'Dateityp nicht erlaubt',uploading:'Hochladen...',uploadFailed:'Upload fehlgeschlagen',searchTasks:'Aufgaben suchen...',nothingFound:'Nichts gefunden',andMore:'...und mehr',editEpic:'Epic bearbeiten',tasksCompleted:'Aufgaben erledigt',active:'Aktiv',status:'Status',date:'Datum',noActiveTasks:'Keine aktiven Aufgaben',subscribe:'Abonnieren',unsubscribe:'Abbestellen',subscribed:'Abonniert',notifications:'Benachrichtigungen',markAllRead:'Alle gelesen',noNotifications:'Keine Benachrichtigungen',profile:'Profil',activity:'Aktivität',noActivity:'Keine Aktivität',personalTask:'Persönliche Aufgabe',showPersonal:'Meine',showAll:'Alle',passwordChanged:'Passwort geändert',newPassword:'Neues Passwort (min 6):',telegram:'Telegram',telegramLinked:'Verknüpft',telegramNotLinked:'Nicht verknüpft',generateHash:'Hash erhalten',unlinkTelegram:'Trennen',telegramBotToken:'Bot-Token',saveTelegramToken:'Speichern',telegramBotUsername:'Bot-Name',private:'Persönlich',searchTask:'Aufgabe suchen...',edited:'bearbeitet',ctrlEnter:'Ctrl+Enter senden',pasteHint:'Ctrl+V Bild',attachFile:'Datei anhängen',bold:'Fett',italic:'Kursiv',strikethrough:'Durchgestrichen',heading:'Überschrift',list:'Liste',todoItem:'TODO',link:'Link',code:'Code',quote:'Zitat',spoiler:'Spoiler',resetPassword:'Passwort zurücksetzen',createTask:'Erstellen',markdown:'markdown',deadline:'Frist',deadlineLeft:'verbleibend',deadlinePassed:'Überfällig',filterDeps:'Aufgabe suchen...',deleteCommentConfirm:'Kommentar löschen?',deleteCommentTreeConfirm:'Kommentar und alle Antworten löschen?',forgotPassword:'Passwort vergessen?',resetVia:'Zurücksetzen über',passwordResetSent:'Code an Telegram gesendet',enterResetCode:'Telegram-Code eingeben',resetCode:'Code',confirmAction:'Bestätigen',sortBy:'Sortieren nach',sortPosition:'Position',sortPriority:'Priorität',sortDate:'Datum',sortTitle:'Titel',taskCreated:'erstellte Aufgabe',taskEdited:'aktualisierte Aufgabe',taskMoved:'verschob Aufgabe',taskCommented:'Kommentar',taskDeleted:'löschte Aufgabe',taskAssigned:'zuwies',protectedColumn:'Diese Spalte kann nicht gelöscht werden (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'Sprints',sprint:'Sprint',newSprint:'Neuer Sprint...',deleteSprint:'Sprint löschen',confirmDeleteSprint:'Sprint löschen',sprintBacklog:'Backlog',sprintPlanning:'Planung',sprintActive:'Aktiv',sprintCompleted:'Abgeschlossen',startDate:'Start',endDate:'Ende',startSprint:'Sprint starten',completeSprint:'Sprint abschließen',completeSprintConfirm:'Sprint abschließen? Unvollständige Aufgaben werden verschoben.',moveToNextSprint:'In nächsten Sprint verschieben',moveToBacklog:'Zurück zum Backlog',noSprints:'Keine Sprints',unassigned:'Nicht zugewiesen',editSprint:'Sprint bearbeiten',sprintGoal:'Sprint-Ziel'},
+  pt:{name:'Português',theme:'Tema',language:'Idioma',fontSize:'Tamanho da fonte',columns:'Colunas',epics:'Épicos',tags:'Tags',timezone:'Fuso horário',exportImport:'Exportar/Importar',users:'Usuários',logout:'Sair',changePassword:'Senha',search:'Buscar...',addTask:'+ Adicionar tarefa',newTask:'Nova tarefa',editTask:'Editar',save:'Salvar',cancel:'Cancelar',delete:'Excluir',title:'Título',description:'Descrição',column:'Coluna',priority:'Prioridade',epic:'Épico',assignee:'Responsável',none:'—',low:'Baixa',medium:'Média',high:'Alta',critical:'Crítica',projectUrl:'Link do projeto',dependsOn:'Depende de',blocks:'Bloqueia',created:'Criada',updated:'Atualizada',comments:'Comentários',noComments:'Sem comentários',writeComment:'Escrever comentário...',send:'Enviar',reply:'Responder',edit:'Editar',noDescription:'Sem descrição',deleteTask:'Excluir tarefa',deleteConfirm:'Excluir tarefa?',back:'Quadro',notFound:'Não encontrado',backToBoard:'Voltar ao quadro',todo:'TODO',addTodoItem:'Adicionar item...',newColumn:'Nova coluna...',newEpic:'Novo épico...',newTag:'Nova tag...',login:'Login...',password:'Senha...',admin:'Admin',regular:'Usuário',readonly:'Somente leitura',role:'Função',deleteColumn:'Excluir coluna',deleteEpic:'Excluir épico',deleteTag:'Excluir tag',deleteUser:'Excluir usuário',moveTasksFirst:'Mova as tarefas primeiro',confirmDeleteCol:'Excluir coluna',confirmDeleteEpic:'Excluir épico',confirmDeleteTag:'Excluir tag',confirmDeleteUser:'Excluir usuário',tasksWillUnlink:'tarefas serão desvinculadas.',userRequired:'Login obrigatório, senha mín 6 caracteres',error:'Erro',importConfirm:'A importação substituirá TODOS os dados. Continuar?',importDone:'Importação concluída',exportError:'Erro de exportação',importError:'Erro de importação',uploadError:'Erro de upload',fileTooLarge:'Arquivo muito grande (máx 20MB)',fileTypeNotAllowed:'Tipo de arquivo não permitido',uploading:'Enviando...',uploadFailed:'Falha no upload',searchTasks:'Buscar tarefas...',nothingFound:'Nada encontrado',andMore:'...e mais',editEpic:'Editar épico',tasksCompleted:'tarefas concluídas',active:'Ativas',status:'Status',date:'Data',noActiveTasks:'Sem tarefas ativas',subscribe:'Inscrever',unsubscribe:'Cancelar inscrição',subscribed:'Inscrito',notifications:'Notificações',markAllRead:'Marcar tudo lido',noNotifications:'Sem notificações',profile:'Perfil',activity:'Atividade',noActivity:'Sem atividade',personalTask:'Tarefa pessoal',showPersonal:'Minhas',showAll:'Todas',passwordChanged:'Senha alterada',newPassword:'Nova senha (mín 6):',telegram:'Telegram',telegramLinked:'Vinculado',telegramNotLinked:'Não vinculado',generateHash:'Obter hash',unlinkTelegram:'Desvincular',telegramBotToken:'Token do bot',saveTelegramToken:'Salvar',telegramBotUsername:'Nome do bot',private:'Pessoal',searchTask:'Buscar tarefa...',edited:'editado',ctrlEnter:'Ctrl+Enter enviar',pasteHint:'Ctrl+V imagem',attachFile:'Anexar arquivo',bold:'Negrito',italic:'Itálico',strikethrough:'Riscado',heading:'Cabeçalho',list:'Lista',todoItem:'TODO',link:'Link',code:'Código',quote:'Citação',spoiler:'Spoiler',resetPassword:'Redefinir senha',createTask:'Criar',markdown:'markdown',deadline:'Prazo',deadlineLeft:'restante',deadlinePassed:'Atrasado',filterDeps:'Buscar tarefa...',deleteCommentConfirm:'Excluir comentário?',deleteCommentTreeConfirm:'Excluir comentário e todas as respostas?',forgotPassword:'Esqueceu a senha?',resetVia:'Redefinir via',passwordResetSent:'Código enviado ao Telegram',enterResetCode:'Digite o código do Telegram',resetCode:'Código',confirmAction:'Confirmar',sortBy:'Ordenar por',sortPosition:'Posição',sortPriority:'Prioridade',sortDate:'Data',sortTitle:'Título',taskCreated:'criou tarefa',taskEdited:'atualizou tarefa',taskMoved:'moveu tarefa',taskCommented:'comentário',taskDeleted:'excluiu tarefa',taskAssigned:'atribuiu',protectedColumn:'Esta coluna não pode ser excluída (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'Sprints',sprint:'Sprint',newSprint:'Novo sprint...',deleteSprint:'Excluir sprint',confirmDeleteSprint:'Excluir sprint',sprintBacklog:'Backlog',sprintPlanning:'Planejamento',sprintActive:'Ativo',sprintCompleted:'Concluído',startDate:'Início',endDate:'Fim',startSprint:'Iniciar sprint',completeSprint:'Concluir sprint',completeSprintConfirm:'Concluir sprint? Tarefas incompletas serão movidas.',moveToNextSprint:'Mover para próximo sprint',moveToBacklog:'Mover para backlog',noSprints:'Sem sprints',unassigned:'Não atribuído',editSprint:'Editar sprint',sprintGoal:'Objetivo do sprint'},
+  ja:{name:'日本語',theme:'テーマ',language:'言語',fontSize:'フォントサイズ',columns:'カラム',epics:'エピック',tags:'タグ',timezone:'タイムゾーン',exportImport:'エクスポート/インポート',users:'ユーザー',logout:'ログアウト',changePassword:'パスワード',search:'検索...',addTask:'+ タスク追加',newTask:'新規タスク',editTask:'編集',save:'保存',cancel:'キャンセル',delete:'削除',title:'タイトル',description:'説明',column:'カラム',priority:'優先度',epic:'エピック',assignee:'担当者',none:'—',low:'低',medium:'中',high:'高',critical:'緊急',projectUrl:'プロジェクトリンク',dependsOn:'依存',blocks:'ブロック',created:'作成',updated:'更新',comments:'コメント',noComments:'コメントなし',writeComment:'コメントを書く...',send:'送信',reply:'返信',edit:'編集',noDescription:'説明なし',deleteTask:'タスク削除',deleteConfirm:'タスクを削除しますか？',back:'ボード',notFound:'見つかりません',backToBoard:'ボードに戻る',todo:'TODO',addTodoItem:'項目追加...',newColumn:'新規カラム...',newEpic:'新規エピック...',newTag:'新規タグ...',login:'ログイン...',password:'パスワード...',admin:'管理者',regular:'ユーザー',readonly:'閲覧のみ',role:'役割',deleteColumn:'カラム削除',deleteEpic:'エピック削除',deleteTag:'タグ削除',deleteUser:'ユーザー削除',moveTasksFirst:'先にタスクを移動してください',confirmDeleteCol:'カラム削除',confirmDeleteEpic:'エピック削除',confirmDeleteTag:'タグ削除',confirmDeleteUser:'ユーザー削除',tasksWillUnlink:'タスクが解除されます。',userRequired:'ログイン必須、パスワード最低6文字',error:'エラー',importConfirm:'インポートで全データが置換されます。続行しますか？',importDone:'インポート完了',exportError:'エクスポートエラー',importError:'インポートエラー',uploadError:'アップロードエラー',fileTooLarge:'ファイルが大きすぎます(最大20MB)',fileTypeNotAllowed:'許可されていないファイル形式',uploading:'アップロード中...',uploadFailed:'アップロード失敗',searchTasks:'タスク検索...',nothingFound:'見つかりません',andMore:'...他',editEpic:'エピック編集',tasksCompleted:'タスク完了',active:'アクティブ',status:'ステータス',date:'日付',noActiveTasks:'アクティブタスクなし',subscribe:'購読',unsubscribe:'購読解除',subscribed:'購読中',notifications:'通知',markAllRead:'すべて既読',noNotifications:'通知なし',profile:'プロフィール',activity:'アクティビティ',noActivity:'アクティビティなし',personalTask:'個人タスク',showPersonal:'自分の',showAll:'全て',passwordChanged:'パスワード変更済',newPassword:'新パスワード(最低6文字):',telegram:'Telegram',telegramLinked:'連携済',telegramNotLinked:'未連携',generateHash:'ハッシュ取得',unlinkTelegram:'連携解除',telegramBotToken:'ボットトークン',saveTelegramToken:'保存',telegramBotUsername:'ボット名',private:'個人',searchTask:'タスク検索...',edited:'編集済',ctrlEnter:'Ctrl+Enter送信',pasteHint:'Ctrl+V画像',attachFile:'ファイル添付',bold:'太字',italic:'斜体',strikethrough:'取消線',heading:'見出し',list:'リスト',todoItem:'TODO',link:'リンク',code:'コード',quote:'引用',spoiler:'スポイラー',resetPassword:'パスワードリセット',createTask:'作成',markdown:'markdown',deadline:'期限',deadlineLeft:'残り',deadlinePassed:'期限超過',filterDeps:'タスク検索...',deleteCommentConfirm:'コメントを削除しますか？',deleteCommentTreeConfirm:'コメントとすべての返信を削除しますか？',forgotPassword:'パスワードを忘れた？',resetVia:'で復元',passwordResetSent:'コードをTelegramに送信しました',enterResetCode:'Telegramのコードを入力',resetCode:'コード',confirmAction:'確認',sortBy:'並べ替え',sortPosition:'位置順',sortPriority:'優先度順',sortDate:'日付順',sortTitle:'タイトル順',taskCreated:'タスクを作成',taskEdited:'タスクを更新',taskMoved:'タスクを移動',taskCommented:'コメント',taskDeleted:'タスクを削除',taskAssigned:'を割り当て',protectedColumn:'このカラムは削除できません (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'スプリント',sprint:'スプリント',newSprint:'新規スプリント...',deleteSprint:'スプリント削除',confirmDeleteSprint:'スプリント削除',sprintBacklog:'バックログ',sprintPlanning:'計画中',sprintActive:'進行中',sprintCompleted:'完了',startDate:'開始',endDate:'終了',startSprint:'スプリント開始',completeSprint:'スプリント完了',completeSprintConfirm:'スプリントを完了しますか？未完了のタスクは移動されます。',moveToNextSprint:'次のスプリントに移動',moveToBacklog:'バックログに戻す',noSprints:'スプリントなし',unassigned:'未割当',editSprint:'スプリント編集',sprintGoal:'スプリント目標'},
+  ko:{name:'한국어',theme:'테마',language:'언어',fontSize:'글꼴 크기',columns:'컬럼',epics:'에픽',tags:'태그',timezone:'시간대',exportImport:'내보내기/가져오기',users:'사용자',logout:'로그아웃',changePassword:'비밀번호',search:'검색...',addTask:'+ 작업 추가',newTask:'새 작업',editTask:'편집',save:'저장',cancel:'취소',delete:'삭제',title:'제목',description:'설명',column:'컬럼',priority:'우선순위',epic:'에픽',assignee:'담당자',none:'—',low:'낮음',medium:'보통',high:'높음',critical:'긴급',projectUrl:'프로젝트 링크',dependsOn:'의존',blocks:'차단',created:'생성',updated:'수정',comments:'댓글',noComments:'댓글 없음',writeComment:'댓글 작성...',send:'전송',reply:'답글',edit:'편집',noDescription:'설명 없음',deleteTask:'작업 삭제',deleteConfirm:'작업을 삭제하시겠습니까?',back:'보드',notFound:'찾을 수 없음',backToBoard:'보드로 돌아가기',todo:'TODO',addTodoItem:'항목 추가...',newColumn:'새 컬럼...',newEpic:'새 에픽...',newTag:'새 태그...',login:'로그인...',password:'비밀번호...',admin:'관리자',regular:'사용자',readonly:'읽기 전용',role:'역할',deleteColumn:'컬럼 삭제',deleteEpic:'에픽 삭제',deleteTag:'태그 삭제',deleteUser:'사용자 삭제',moveTasksFirst:'먼저 작업을 이동하세요',confirmDeleteCol:'컬럼 삭제',confirmDeleteEpic:'에픽 삭제',confirmDeleteTag:'태그 삭제',confirmDeleteUser:'사용자 삭제',tasksWillUnlink:'작업이 분리됩니다.',userRequired:'로그인 필수, 비밀번호 최소 6자',error:'오류',importConfirm:'가져오기는 모든 데이터를 대체합니다. 계속하시겠습니까?',importDone:'가져오기 완료',exportError:'내보내기 오류',importError:'가져오기 오류',uploadError:'업로드 오류',fileTooLarge:'파일이 너무 큽니다(최대 20MB)',fileTypeNotAllowed:'허용되지 않는 파일 형식',uploading:'업로드 중...',uploadFailed:'업로드 실패',searchTasks:'작업 검색...',nothingFound:'찾을 수 없음',andMore:'...그 외',editEpic:'에픽 편집',tasksCompleted:'완료된 작업',active:'활성',status:'상태',date:'날짜',noActiveTasks:'활성 작업 없음',subscribe:'구독',unsubscribe:'구독 취소',subscribed:'구독 중',notifications:'알림',markAllRead:'모두 읽음',noNotifications:'알림 없음',profile:'프로필',activity:'활동',noActivity:'활동 없음',personalTask:'개인 작업',showPersonal:'내 것',showAll:'전체',passwordChanged:'비밀번호 변경됨',newPassword:'새 비밀번호(최소 6자):',telegram:'Telegram',telegramLinked:'연동됨',telegramNotLinked:'미연동',generateHash:'해시 가져오기',unlinkTelegram:'연동 해제',telegramBotToken:'봇 토큰',saveTelegramToken:'저장',telegramBotUsername:'봇 이름',private:'개인',searchTask:'작업 검색...',edited:'수정됨',ctrlEnter:'Ctrl+Enter 전송',pasteHint:'Ctrl+V 이미지',attachFile:'파일 첨부',bold:'굵게',italic:'기울임',strikethrough:'취소선',heading:'제목',list:'목록',todoItem:'TODO',link:'링크',code:'코드',quote:'인용',spoiler:'스포일러',resetPassword:'비밀번호 초기화',createTask:'생성',markdown:'markdown',deadline:'마감일',deadlineLeft:'남음',deadlinePassed:'기한초과',filterDeps:'작업 검색...',deleteCommentConfirm:'댓글을 삭제하시겠습니까?',deleteCommentTreeConfirm:'댓글과 모든 답글을 삭제하시겠습니까?',forgotPassword:'비밀번호를 잊으셨나요?',resetVia:'를 통해 재설정',passwordResetSent:'Telegram으로 코드 전송됨',enterResetCode:'Telegram 코드 입력',resetCode:'코드',confirmAction:'확인',sortBy:'정렬',sortPosition:'위치순',sortPriority:'우선순위순',sortDate:'날짜순',sortTitle:'제목순',taskCreated:'작업 생성',taskEdited:'작업 수정',taskMoved:'작업 이동',taskCommented:'댓글',taskDeleted:'작업 삭제',taskAssigned:'할당',protectedColumn:'이 컬럼은 삭제할 수 없습니다 (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'스프린트',sprint:'스프린트',newSprint:'새 스프린트...',deleteSprint:'스프린트 삭제',confirmDeleteSprint:'스프린트 삭제',sprintBacklog:'백로그',sprintPlanning:'계획',sprintActive:'진행 중',sprintCompleted:'완료',startDate:'시작',endDate:'종료',startSprint:'스프린트 시작',completeSprint:'스프린트 완료',completeSprintConfirm:'스프린트를 완료하시겠습니까? 미완료 작업이 이동됩니다.',moveToNextSprint:'다음 스프린트로 이동',moveToBacklog:'백로그로 이동',noSprints:'스프린트 없음',unassigned:'미할당',editSprint:'스프린트 편집',sprintGoal:'스프린트 목표'},
+  ar:{name:'العربية',theme:'المظهر',language:'اللغة',fontSize:'حجم الخط',columns:'الأعمدة',epics:'الملاحم',tags:'الوسوم',timezone:'المنطقة الزمنية',exportImport:'تصدير/استيراد',users:'المستخدمون',logout:'خروج',changePassword:'كلمة المرور',search:'بحث...',addTask:'+ إضافة مهمة',newTask:'مهمة جديدة',editTask:'تعديل',save:'حفظ',cancel:'إلغاء',delete:'حذف',title:'العنوان',description:'الوصف',column:'العمود',priority:'الأولوية',epic:'الملحمة',assignee:'المسؤول',none:'—',low:'منخفضة',medium:'متوسطة',high:'عالية',critical:'حرجة',projectUrl:'رابط المشروع',dependsOn:'يعتمد على',blocks:'يحظر',created:'أنشئت',updated:'حُدّثت',comments:'التعليقات',noComments:'لا تعليقات',writeComment:'كتابة تعليق...',send:'إرسال',reply:'رد',edit:'تعديل',noDescription:'لا وصف',deleteTask:'حذف المهمة',deleteConfirm:'حذف المهمة؟',back:'اللوحة',notFound:'غير موجود',backToBoard:'العودة للوحة',todo:'المهام',addTodoItem:'إضافة عنصر...',newColumn:'عمود جديد...',newEpic:'ملحمة جديدة...',newTag:'وسم جديد...',login:'تسجيل الدخول...',password:'كلمة المرور...',admin:'مدير',regular:'مستخدم',readonly:'قراءة فقط',role:'الدور',deleteColumn:'حذف العمود',deleteEpic:'حذف الملحمة',deleteTag:'حذف الوسم',deleteUser:'حذف المستخدم',moveTasksFirst:'انقل المهام أولاً',confirmDeleteCol:'حذف العمود',confirmDeleteEpic:'حذف الملحمة',confirmDeleteTag:'حذف الوسم',confirmDeleteUser:'حذف المستخدم',tasksWillUnlink:'ستُفصل المهام.',userRequired:'اسم المستخدم مطلوب، كلمة المرور 6 أحرف على الأقل',error:'خطأ',importConfirm:'الاستيراد سيستبدل جميع البيانات. متابعة؟',importDone:'تم الاستيراد',exportError:'خطأ في التصدير',importError:'خطأ في الاستيراد',uploadError:'خطأ في الرفع',fileTooLarge:'ملف كبير جداً (حد 20 ميجا)',fileTypeNotAllowed:'نوع الملف غير مسموح',uploading:'جاري الرفع...',uploadFailed:'فشل الرفع',searchTasks:'بحث المهام...',nothingFound:'لم يتم العثور',andMore:'...والمزيد',editEpic:'تعديل الملحمة',tasksCompleted:'مهام مكتملة',active:'نشطة',status:'الحالة',date:'التاريخ',noActiveTasks:'لا مهام نشطة',subscribe:'اشتراك',unsubscribe:'إلغاء الاشتراك',subscribed:'مشترك',notifications:'الإشعارات',markAllRead:'قراءة الكل',noNotifications:'لا إشعارات',profile:'الملف الشخصي',activity:'النشاط',noActivity:'لا نشاط',personalTask:'مهمة شخصية',showPersonal:'مهامي',showAll:'الكل',passwordChanged:'تم تغيير كلمة المرور',newPassword:'كلمة مرور جديدة (6 أحرف):',telegram:'Telegram',telegramLinked:'مرتبط',telegramNotLinked:'غير مرتبط',generateHash:'الحصول على الهاش',unlinkTelegram:'إلغاء الربط',telegramBotToken:'توكن البوت',saveTelegramToken:'حفظ',telegramBotUsername:'اسم البوت',private:'شخصي',searchTask:'بحث مهمة...',edited:'معدّل',ctrlEnter:'Ctrl+Enter إرسال',pasteHint:'Ctrl+V صورة',attachFile:'إرفاق ملف',bold:'عريض',italic:'مائل',strikethrough:'مشطوب',heading:'عنوان',list:'قائمة',todoItem:'مهمة',link:'رابط',code:'كود',quote:'اقتباس',spoiler:'مخفي',resetPassword:'إعادة تعيين كلمة المرور',createTask:'إنشاء',markdown:'markdown',deadline:'الموعد النهائي',deadlineLeft:'متبقي',deadlinePassed:'متأخر',filterDeps:'بحث مهمة...',deleteCommentConfirm:'حذف التعليق؟',deleteCommentTreeConfirm:'حذف التعليق وجميع الردود؟',forgotPassword:'نسيت كلمة المرور؟',resetVia:'إعادة تعيين عبر',passwordResetSent:'تم إرسال الرمز إلى Telegram',enterResetCode:'أدخل رمز Telegram',resetCode:'الرمز',confirmAction:'تأكيد',sortBy:'ترتيب حسب',sortPosition:'الموقع',sortPriority:'الأولوية',sortDate:'التاريخ',sortTitle:'العنوان',taskCreated:'أنشأ مهمة',taskEdited:'حدّث مهمة',taskMoved:'نقل مهمة',taskCommented:'تعليق',taskDeleted:'حذف مهمة',taskAssigned:'عيّن',protectedColumn:'لا يمكن حذف هذا العمود (Backlog/Done)',backlog:'Backlog',done:'Done',sprints:'سباقات',sprint:'سباق',newSprint:'سباق جديد...',deleteSprint:'حذف السباق',confirmDeleteSprint:'حذف السباق',sprintBacklog:'قائمة المهام',sprintPlanning:'تخطيط',sprintActive:'نشط',sprintCompleted:'مكتمل',startDate:'البداية',endDate:'النهاية',startSprint:'بدء السباق',completeSprint:'إنهاء السباق',completeSprintConfirm:'إنهاء السباق؟ سيتم نقل المهام غير المكتملة.',moveToNextSprint:'نقل للسباق التالي',moveToBacklog:'إعادة للقائمة',noSprints:'لا سباقات',unassigned:'غير مخصص',editSprint:'تعديل السباق',sprintGoal:'هدف السباق'}
 };
 
 let currentLang = localStorage.getItem('kanban-lang') || 'ru';
@@ -513,6 +542,7 @@ function applyI18n() {
   const s = document.getElementById('search'); if(s) s.placeholder = t('search');
   const nc = document.getElementById('new-col-name'); if(nc) nc.placeholder = t('newColumn');
   const ne = document.getElementById('epic-name'); if(ne) ne.placeholder = t('newEpic');
+  const ns = document.getElementById('sprint-name'); if(ns) ns.placeholder = t('newSprint');
   const nt = document.getElementById('tag-name'); if(nt) nt.placeholder = t('newTag');
   const nu = document.getElementById('new-user-name'); if(nu) nu.placeholder = t('login');
   const np = document.getElementById('new-user-pass'); if(np) np.placeholder = t('password');
@@ -523,7 +553,7 @@ function applyI18n() {
 }
 
 // === State ===
-let state = { columns: [], tasks: [], epics: [], tags: [], users: [] };
+let state = { columns: [], tasks: [], epics: [], sprints: [], tags: [], users: [] };
 let draggedTaskId = null;
 let searchQuery = '';
 let searchMatchIds = null;
@@ -535,6 +565,10 @@ let searchTimeout = null;
 let currentUser = null;
 let showPersonalOnly = false;
 let prevEpicId = null; // Track if we came from an epic page
+let prevPath = null; // Track previous path for back navigation
+let currentSprintId = null;
+let boardSprintFilter = null; // null = ALL, number = specific sprint ID
+let boardEpicFilter = null; // null = ALL, number = specific epic ID
 
 // === Theme ===
 function setTheme(name) {
@@ -663,6 +697,7 @@ async function loadBoard() {
   if (!state.columns) state.columns = [];
   if (!state.tasks) state.tasks = [];
   if (!state.epics) state.epics = [];
+  if (!state.sprints) state.sprints = [];
   if (!state.tags) state.tags = [];
   if (!state.users) state.users = [];
   renderCurrentView();
@@ -790,25 +825,34 @@ function route() {
   const path = location.pathname;
   const taskMatch = path.match(/^\/task\/(\d+)$/);
   const epicMatch = path.match(/^\/epic\/(\d+)$/);
+  const sprintMatch = path.match(/^\/sprint\/(\d+)$/);
   const userMatch = path.match(/^\/user\/(\d+)$/);
   if (taskMatch) {
-    // Track where we came from: if currently on epic, remember it
-    if (currentView === 'epic' && currentEpicId) prevEpicId = currentEpicId;
-    currentView = 'task'; currentTaskId = Number(taskMatch[1]); currentEpicId = null; currentProfileId = null;
+    if (currentView === 'epic' && currentEpicId) { prevEpicId = currentEpicId; prevPath = '/epic/' + currentEpicId; }
+    else if (currentView === 'sprint' && currentSprintId) { prevPath = '/sprint/' + currentSprintId; }
+    else if (currentView === 'backlog') { prevPath = '/backlog'; }
+    else { prevPath = null; }
+    currentView = 'task'; currentTaskId = Number(taskMatch[1]); currentEpicId = null; currentSprintId = null; currentProfileId = null;
   } else if (epicMatch) {
-    prevEpicId = null;
-    currentView = 'epic'; currentEpicId = Number(epicMatch[1]); currentTaskId = null; currentProfileId = null;
+    prevEpicId = null; prevPath = null;
+    currentView = 'epic'; currentEpicId = Number(epicMatch[1]); currentTaskId = null; currentSprintId = null; currentProfileId = null;
+  } else if (sprintMatch) {
+    prevEpicId = null; prevPath = null;
+    currentView = 'sprint'; currentSprintId = Number(sprintMatch[1]); currentTaskId = null; currentEpicId = null; currentProfileId = null;
+  } else if (path === '/backlog') {
+    prevEpicId = null; prevPath = null;
+    currentView = 'backlog'; currentTaskId = null; currentEpicId = null; currentSprintId = null; currentProfileId = null;
   } else if (userMatch) {
-    prevEpicId = null;
-    currentView = 'user'; currentProfileId = Number(userMatch[1]); currentTaskId = null; currentEpicId = null;
+    prevEpicId = null; prevPath = null;
+    currentView = 'user'; currentProfileId = Number(userMatch[1]); currentTaskId = null; currentEpicId = null; currentSprintId = null;
   } else {
-    prevEpicId = null;
-    currentView = 'board'; currentTaskId = null; currentEpicId = null; currentProfileId = null;
+    prevEpicId = null; prevPath = null;
+    currentView = 'board'; currentTaskId = null; currentEpicId = null; currentSprintId = null; currentProfileId = null;
   }
   renderCurrentView();
 }
 function goBack() {
-  if (prevEpicId) { const eid = prevEpicId; prevEpicId = null; navigateTo('/epic/' + eid); }
+  if (prevPath) { const p = prevPath; prevPath = null; prevEpicId = null; navigateTo(p); }
   else { navigateTo('/'); }
 }
 window.addEventListener('popstate', route);
@@ -816,6 +860,8 @@ window.addEventListener('popstate', route);
 function renderCurrentView() {
   if (currentView === 'task' && currentTaskId) { renderTaskPage(currentTaskId).then(() => highlightCode()); }
   else if (currentView === 'epic' && currentEpicId) { renderEpicPage(currentEpicId).then(() => highlightCode()); }
+  else if (currentView === 'sprint' && currentSprintId) { renderSprintPage(currentSprintId); }
+  else if (currentView === 'backlog') { renderBacklogPage(); }
   else if (currentView === 'user' && currentProfileId) { renderUserPage(currentProfileId); }
   else { renderBoard(); }
   renderSidebar();
@@ -919,6 +965,8 @@ function updateUserUI() {
   if (epicAdd) epicAdd.style.display = isAdmin() ? '' : 'none';
   const tagAdd = document.getElementById('tag-add-form');
   if (tagAdd) tagAdd.style.display = isAdmin() ? '' : 'none';
+  const sprintAdd = document.getElementById('sprint-add-form');
+  if (sprintAdd) sprintAdd.style.display = isAdmin() ? '' : 'none';
   // Export/Import section - admin only
   const eiSec = document.getElementById('export-import-section');
   if (eiSec) eiSec.style.display = isAdmin() ? '' : 'none';
@@ -966,6 +1014,17 @@ function renderSidebar() {
       <span class="dot" style="background:${e.color}"></span>
       <span style="cursor:pointer" onclick="navigateTo('/epic/${e.id}')">${esc(e.name)}</span>
       ${isAdmin() ? `<button class="btn-icon btn-sm" onclick="deleteEpic(${e.id})" title="${t('delete')}" style="color:var(--red)">&#10005;</button>` : ''}
+    </div>`).join('');
+  }
+  // Sprints
+  const sprintList = document.getElementById('sprint-list');
+  if (sprintList) {
+    const statusIcons = {planning:'&#9711;',active:'&#9654;',completed:'&#10004;'};
+    const sortedSprints = [...state.sprints].sort((a,b) => b.id - a.id);
+    sprintList.innerHTML = sortedSprints.map(sp => `<div class="entity-item">
+      <span style="font-size:.7rem;margin-right:2px">${statusIcons[sp.status]||''}</span>
+      <span style="cursor:pointer;flex:1" onclick="navigateTo('/sprint/${sp.id}')">${esc(sp.name)}</span>
+      ${isAdmin() ? `<button class="btn-icon btn-sm" onclick="deleteSprint(${sp.id})" title="${t('delete')}" style="color:var(--red)">&#10005;</button>` : ''}
     </div>`).join('');
   }
   // Tags
@@ -1072,6 +1131,12 @@ function renderBoard() {
 
 function filterTasks(tasks) {
   let result = tasks;
+  if (boardSprintFilter !== null) {
+    result = result.filter(t => t.sprint_id === boardSprintFilter);
+  }
+  if (boardEpicFilter !== null) {
+    result = result.filter(t => t.epic_id === boardEpicFilter);
+  }
   if (showPersonalOnly && currentUser) {
     result = result.filter(t => t.assignee_id === currentUser.id || (t.assignee && t.assignee.id === currentUser.id));
   }
@@ -1081,9 +1146,68 @@ function filterTasks(tasks) {
   return result;
 }
 
+function toggleHdrFilter(e, ddId, items, currentVal, setFn) {
+  e.stopPropagation();
+  // close any other open dropdown
+  document.querySelectorAll('.hdr-filter-dropdown').forEach(d => { if (d.id !== ddId) d.classList.add('hidden'); });
+  const dd = document.getElementById(ddId);
+  if (!dd) return;
+  if (dd.classList.contains('hidden')) {
+    let html = `<div class="sfd-item${currentVal===null?' active':''}" onclick="${setFn}(null)">ALL</div>`;
+    for (const it of items) {
+      html += `<div class="sfd-item${currentVal===it.id?' active':''}" onclick="${setFn}(${it.id})">${esc(it.name)}</div>`;
+    }
+    dd.innerHTML = html;
+    dd.classList.remove('hidden');
+    setTimeout(() => document.addEventListener('click', closeHdrFilters, {once:true}), 0);
+  } else {
+    dd.classList.add('hidden');
+  }
+}
+function closeHdrFilters() {
+  document.querySelectorAll('.hdr-filter-dropdown').forEach(d => d.classList.add('hidden'));
+}
+function toggleSprintFilter(e) {
+  const sprints = [...state.sprints].sort((a,b) => b.id - a.id);
+  toggleHdrFilter(e, 'sprint-filter-dropdown', sprints, boardSprintFilter, 'setSprintFilter');
+}
+function toggleEpicFilter(e) {
+  const epics = [...state.epics].sort((a,b) => b.id - a.id);
+  toggleHdrFilter(e, 'epic-filter-dropdown', epics, boardEpicFilter, 'setEpicFilter');
+}
+function setSprintFilter(sprintId) {
+  boardSprintFilter = sprintId;
+  const label = document.getElementById('sprint-filter-label');
+  if (label) {
+    if (sprintId === null) { label.textContent = 'ALL'; }
+    else { const sp = state.sprints.find(s => s.id === sprintId); label.textContent = sp ? sp.name : 'ALL'; }
+  }
+  closeHdrFilters();
+  if (currentView === 'board') renderBoard();
+}
+function setEpicFilter(epicId) {
+  boardEpicFilter = epicId;
+  const label = document.getElementById('epic-filter-label');
+  if (label) {
+    if (epicId === null) { label.textContent = 'ALL'; }
+    else { const ep = state.epics.find(e => e.id === epicId); label.textContent = ep ? ep.name : 'ALL'; }
+  }
+  closeHdrFilters();
+  if (currentView === 'board') renderBoard();
+}
+function resetBoardFilters() {
+  boardSprintFilter = null;
+  boardEpicFilter = null;
+  const sl = document.getElementById('sprint-filter-label');
+  const el = document.getElementById('epic-filter-label');
+  if (sl) sl.textContent = 'ALL';
+  if (el) el.textContent = 'ALL';
+}
+
 function renderCard(task) {
   const pClass = task.priority > 0 ? `<div class="card-priority priority-${task.priority}"></div>` : '';
   const epicHtml = task.epic ? `<span class="card-epic" style="background:${task.epic.color};color:${contrastColor(task.epic.color)}" onclick="event.stopPropagation();navigateTo('/epic/${task.epic.id}')">${esc(task.epic.name)}</span>` : '';
+  const sprintHtml = task.sprint ? `<span class="card-epic" style="background:var(--accent);color:#fff;font-size:.7rem" onclick="event.stopPropagation();navigateTo('/sprint/${task.sprint.id}')">${esc(task.sprint.name)}</span>` : '';
   const tagsHtml = (task.tags || []).map(tg => `<span class="card-tag" style="background:${tg.color};color:${contrastColor(tg.color)}">${esc(tg.name)}</span>`).join('');
   const assigneeHtml = task.assignee ? `<span class="card-assignee">&#128100; ${esc(task.assignee.username)}</span>` : '';
   const todoInfo = countTodos(task.todo);
@@ -1097,11 +1221,11 @@ function renderCard(task) {
     onclick="navigateTo('/task/${task.id}')"
     ondragstart="onDragStart(event, ${task.id})" ondragend="onDragEnd(event)">
     ${pClass}
-    <div class="card-title">${esc(task.title)}</div>
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <span class="card-id">#${task.id}</span>
-      <div class="card-meta">${deadlineHtml}${epicHtml}${tagsHtml}${assigneeHtml}${todoHtml}${linkHtml}${commentsHtml}</div>
+      <div class="card-title" style="margin-bottom:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(task.title)}</div>
+      <span class="card-id" style="margin-left:8px;flex-shrink:0">#${task.id}</span>
     </div>
+    <div class="card-meta">${sprintHtml}${deadlineHtml}${epicHtml}${tagsHtml}${assigneeHtml}${todoHtml}${linkHtml}${commentsHtml}</div>
   </div>`;
 }
 
@@ -1133,8 +1257,16 @@ function formatDuration(ms) {
 }
 
 // === Drag & Drop ===
-function onDragStart(e, taskId) { draggedTaskId = taskId; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
-function onDragEnd(e) { e.target.classList.remove('dragging'); draggedTaskId = null; }
+let dragScrollRAF = null;
+function dragAutoScroll(e) {
+  const edge = 60, speed = 18;
+  const y = e.clientY;
+  const h = window.innerHeight;
+  if (y < edge) { window.scrollBy(0, -speed); dragScrollRAF = requestAnimationFrame(() => {}); }
+  else if (y > h - edge) { window.scrollBy(0, speed); dragScrollRAF = requestAnimationFrame(() => {}); }
+}
+function onDragStart(e, taskId) { draggedTaskId = taskId; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; document.addEventListener('dragover', dragAutoScroll); }
+function onDragEnd(e) { e.target.classList.remove('dragging'); draggedTaskId = null; document.removeEventListener('dragover', dragAutoScroll); if (dragScrollRAF) { cancelAnimationFrame(dragScrollRAF); dragScrollRAF = null; } }
 function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
 async function onDrop(e, colId) {
   e.preventDefault();
@@ -1209,6 +1341,7 @@ async function renderTaskPage(taskId) {
         <div class="task-info-item"><label>${t('column')}</label><span class="value">${col ? esc(col.name) : '?'}</span></div>
         <div class="task-info-item"><label>${t('priority')}</label><span class="value" style="color:${prioColors[task.priority] || ''}">${t(prioLabels[task.priority] || 'none')}</span></div>`;
   if (task.epic) html += `<div class="task-info-item"><label>${t('epic')}</label><span class="value"><a href="/epic/${task.epic.id}" onclick="navigateTo('/epic/${task.epic.id}');return false;" style="color:${task.epic.color}">${esc(task.epic.name)}</a></span></div>`;
+  if (task.sprint) html += `<div class="task-info-item"><label>${t('sprint')}</label><span class="value"><a href="/sprint/${task.sprint.id}" onclick="navigateTo('/sprint/${task.sprint.id}');return false;" style="color:var(--accent2)">${esc(task.sprint.name)}</a></span></div>`;
   if (task.assignee) html += `<div class="task-info-item"><label>${t('assignee')}</label><span class="value"><a href="/user/${task.assignee.id}" onclick="navigateTo('/user/${task.assignee.id}');return false;">&#128100; ${esc(task.assignee.username)}</a></span></div>`;
   if (task.deadline) {
     const dl = new Date(task.deadline);
@@ -1505,7 +1638,7 @@ async function deleteTodoItem(taskId, index) {
 function taskToReq(task) {
   return {
     title: task.title, description: task.description, todo: task.todo, project_url: task.project_url,
-    column_id: task.column_id, epic_id: task.epic_id, assignee_id: task.assignee_id,
+    column_id: task.column_id, epic_id: task.epic_id, sprint_id: task.sprint_id, assignee_id: task.assignee_id,
     priority: task.priority, tag_ids: (task.tags||[]).map(t=>t.id),
     depends_on_ids: (task.depends_on||[]).map(d=>d.id),
     deadline: task.deadline || ''
@@ -1859,10 +1992,17 @@ function showTaskModal(task, defaultColId, defaultEpicId) {
           <option value="">${t('none')}</option>
           ${state.epics.map(e => `<option value="${e.id}" ${(isEdit?task.epic_id===e.id:defaultEpicId===e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}
         </select></div>
+        <div class="field"><label>${t('sprint')}</label><select id="task-sprint">
+          <option value="">${t('none')}</option>
+          ${[...state.sprints].filter(sp => sp.status !== 'completed').sort((a,b) => b.id - a.id).map(sp => `<option value="${sp.id}" ${(isEdit&&task.sprint_id===sp.id)?'selected':''}>${esc(sp.name)}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="field-row">
         <div class="field"><label>${t('assignee')}</label><select id="task-assignee">
           <option value="">${t('none')}</option>
           ${state.users.map(u => `<option value="${u.id}" ${(isEdit&&task.assignee_id===u.id)?'selected':''}>${esc(u.username)}</option>`).join('')}
         </select></div>
+        <div class="field"><label>${t('deadline')}</label><input type="datetime-local" id="task-deadline" value="${isEdit && task.deadline ? escAttr(task.deadline.slice(0,16)) : ''}" style="color-scheme:dark"></div>
       </div>
       <div class="field"><label>${t('description')} <small style="color:var(--fg3)">(${t('markdown')})</small></label>
         ${insertMdToolbar('task-desc')}
@@ -1871,10 +2011,7 @@ function showTaskModal(task, defaultColId, defaultEpicId) {
       <div class="field"><label>${t('todo')}</label>
         <textarea id="task-todo" rows="3" placeholder="- [ ] item">${isEdit ? esc(task.todo) : ''}</textarea>
       </div>
-      <div class="field-row">
-        <div class="field"><label>${t('projectUrl')}</label><input id="task-url" value="${isEdit ? escAttr(task.project_url) : ''}"></div>
-        <div class="field"><label>${t('deadline')}</label><input type="datetime-local" id="task-deadline" value="${isEdit && task.deadline ? escAttr(task.deadline.slice(0,16)) : ''}" style="color-scheme:dark"></div>
-      </div>
+      <div class="field"><label>${t('projectUrl')}</label><input id="task-url" value="${isEdit ? escAttr(task.project_url) : ''}"></div>
       <div class="field"><label>${t('tags')}</label>
         <div class="checkbox-group">${state.tags.map(tg => {
           const sel = isEdit && task.tags && task.tags.some(tt => tt.id === tg.id);
@@ -1947,6 +2084,7 @@ async function saveTask(taskId, btn) {
   const colId = parseInt(document.getElementById('task-col').value);
   const priority = parseInt(document.getElementById('task-prio').value);
   const epicVal = document.getElementById('task-epic').value;
+  const sprintVal = document.getElementById('task-sprint').value;
   const assigneeVal = document.getElementById('task-assignee').value;
   const desc = document.getElementById('task-desc').value;
   const todo = document.getElementById('task-todo').value;
@@ -1964,6 +2102,7 @@ async function saveTask(taskId, btn) {
   const body = {
     title, description: desc, todo, project_url: url, column_id: colId,
     epic_id: epicVal ? parseInt(epicVal) : null,
+    sprint_id: sprintVal ? parseInt(sprintVal) : null,
     assignee_id: assigneeVal ? parseInt(assigneeVal) : null,
     priority, tag_ids: tagIds, depends_on_ids: depIds,
     deadline: deadlineVal || ''
@@ -2029,6 +2168,281 @@ async function deleteEpic(id) {
   const cnt = state.tasks.filter(t => t.epic_id === id).length;
   if (!confirm(t('confirmDeleteEpic') + '? ' + cnt + ' ' + t('tasksWillUnlink'))) return;
   try { await api('/api/epics/' + id, 'DELETE'); await loadBoard(); } catch(e) { alert(t('error')); }
+}
+
+// --- Sprints ---
+async function addSprint() {
+  const nameEl = document.getElementById('sprint-name');
+  if (!nameEl || !nameEl.value.trim()) return;
+  try { await api('/api/sprints', 'POST', { name: nameEl.value.trim() }); nameEl.value = ''; await loadBoard(); } catch(e) { alert(t('error')); }
+}
+async function deleteSprint(id) {
+  const cnt = state.tasks.filter(t => t.sprint_id === id).length;
+  if (!confirm(t('confirmDeleteSprint') + '? ' + cnt + ' ' + t('tasksWillUnlink'))) return;
+  try { await api('/api/sprints/' + id, 'DELETE'); await loadBoard(); } catch(e) { alert(t('error')); }
+}
+function showEditSprint(sprintId) {
+  const sp = state.sprints.find(s => s.id === sprintId);
+  if (!sp) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h2>${t('editSprint')}</h2><button class="btn-icon" onclick="this.closest('.modal-overlay').remove()">&#10005;</button></div>
+    <div class="modal-body">
+      <div class="field"><label>${t('title')}</label><input id="sprint-edit-name" value="${escAttr(sp.name)}"></div>
+      <div class="field-row">
+        <div class="field"><label>${t('startDate')}</label><input type="date" id="sprint-edit-start" value="${sp.start_date}" style="color-scheme:dark"></div>
+        <div class="field"><label>${t('endDate')}</label><input type="date" id="sprint-edit-end" value="${sp.end_date}" style="color-scheme:dark"></div>
+      </div>
+      <div class="field"><label>${t('status')}</label><select id="sprint-edit-status">
+        <option value="planning" ${sp.status==='planning'?'selected':''}>${t('sprintPlanning')}</option>
+        <option value="active" ${sp.status==='active'?'selected':''}>${t('sprintActive')}</option>
+        <option value="completed" ${sp.status==='completed'?'selected':''}>${t('sprintCompleted')}</option>
+      </select></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">${t('cancel')}</button>
+      <button class="btn btn-primary" onclick="saveSprintEdit(${sprintId})">${t('save')}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+async function saveSprintEdit(sprintId) {
+  const name = document.getElementById('sprint-edit-name').value.trim();
+  const startDate = document.getElementById('sprint-edit-start').value;
+  const endDate = document.getElementById('sprint-edit-end').value;
+  const status = document.getElementById('sprint-edit-status').value;
+  if (!name) return;
+  try { await api('/api/sprints/' + sprintId, 'PUT', { name, start_date: startDate, end_date: endDate, status }); document.querySelector('.modal-overlay').remove(); await loadBoard(); if (currentView === 'sprint') renderSprintPage(sprintId); } catch(e) { alert(t('error')); }
+}
+
+async function renderSprintPage(sprintId) {
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="epic-page"><p>Loading...</p></div>';
+  let data;
+  try { data = await api('/api/sprints/' + sprintId); } catch { app.innerHTML = `<div class="epic-page"><p>${t('notFound')}</p><a href="/" onclick="navigateTo('/');return false;">${t('backToBoard')}</a></div>`; return; }
+  const sprint = data.sprint;
+  const tasks = data.tasks || [];
+  const firstCol = state.columns.length ? state.columns[0] : null;
+  const lastCol = state.columns.length ? state.columns[state.columns.length-1] : null;
+  const doneCount = lastCol ? tasks.filter(t => t.column_id === lastCol.id).length : 0;
+  const pct = tasks.length ? Math.round(doneCount / tasks.length * 100) : 0;
+
+  const activeTasks = tasks.filter(t => {
+    if (firstCol && t.column_id === firstCol.id) return false;
+    if (lastCol && t.column_id === lastCol.id) return false;
+    return true;
+  });
+  const backlogTasks = firstCol ? tasks.filter(t => t.column_id === firstCol.id) : [];
+  const doneTasks = lastCol ? tasks.filter(t => t.column_id === lastCol.id) : [];
+
+  const statusLabels = {planning: t('sprintPlanning'), active: t('sprintActive'), completed: t('sprintCompleted')};
+  const statusColors = {planning: 'var(--fg3)', active: 'var(--green)', completed: 'var(--blue)'};
+  const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
+
+  function renderSprintTaskRow(task) {
+    const colName = state.columns.find(c => c.id === task.column_id);
+    let colSelect = '';
+    if (!isReadonly() && state.columns.length > 1) {
+      const opts = state.columns.map(c => `<option value="${c.id}" ${c.id === task.column_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+      colSelect = `<select class="epic-task-col-select" onclick="event.stopPropagation()" onchange="event.stopPropagation();moveSprintTask(${task.id},+this.value,${sprintId})" style="background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:2px 6px;color:var(--fg);font-size:.78rem;cursor:pointer">${opts}</select>`;
+    }
+    return `<div class="epic-task-row" onclick="navigateTo('/task/${task.id}')">
+      <span class="card-id">#${task.id}</span>
+      <span class="epic-task-title">${esc(task.title)}</span>
+      ${task.priority > 0 ? `<span class="epic-task-prio" style="color:${prioColors[task.priority]}">P${task.priority}</span>` : ''}
+      ${colSelect || `<span class="epic-task-status">${colName ? esc(colName.name) : ''}</span>`}
+    </div>`;
+  }
+
+  let html = `<div class="epic-page">
+    <div class="epic-page-header">
+      <h2>&#127947; ${esc(sprint.name)}</h2>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="color:${statusColors[sprint.status]||'var(--fg3)'};font-size:.85rem;font-weight:600">${statusLabels[sprint.status]||sprint.status}</span>
+        ${sprint.start_date ? `<span style="font-size:.78rem;color:var(--fg3)">${sprint.start_date} &ndash; ${sprint.end_date}</span>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="navigateTo('/')">${t('back')}</button>
+        ${!isReadonly() ? `<button class="btn btn-ghost btn-sm" onclick="showEditSprint(${sprint.id})">${t('editSprint')}</button>` : ''}
+        ${!isReadonly() && sprint.status === 'planning' ? `<button class="btn btn-primary btn-sm" onclick="startSprint(${sprint.id})">${t('startSprint')}</button>` : ''}
+        ${!isReadonly() && sprint.status === 'active' ? `<button class="btn btn-primary btn-sm" onclick="showCompleteSprint(${sprint.id})">${t('completeSprint')}</button>` : ''}
+      </div>
+    </div>
+    <div class="epic-progress" style="margin-bottom:16px">
+      <span class="epic-progress-text">${doneCount}/${tasks.length} ${t('tasksCompleted')} (${pct}%)</span>
+      <div class="epic-progress-bar"><div class="epic-progress-fill" style="width:${pct}%;background:var(--accent)"></div></div>
+    </div>`;
+
+  // Active tasks
+  html += `<h3 style="margin-bottom:8px">${t('active')} (${activeTasks.length})</h3><div class="epic-task-list">`;
+  for (const task of activeTasks) html += renderSprintTaskRow(task);
+  if (!activeTasks.length) html += `<p style="color:var(--fg3)">${t('noActiveTasks')}</p>`;
+  html += '</div>';
+
+  if (backlogTasks.length) {
+    html += `<div class="task-page-section" style="margin-top:16px;opacity:.7"><h3 style="margin-bottom:8px">${t('backlog')} (${backlogTasks.length})</h3><div class="epic-task-list">${backlogTasks.map(renderSprintTaskRow).join('')}</div></div>`;
+  }
+  if (doneTasks.length) {
+    html += `<div class="task-page-section" style="margin-top:16px;opacity:.5"><h3 style="margin-bottom:8px">${t('done')} (${doneTasks.length})</h3><div class="epic-task-list">${doneTasks.map(renderSprintTaskRow).join('')}</div></div>`;
+  }
+  html += '</div>';
+  app.innerHTML = html;
+}
+
+async function moveSprintTask(taskId, colId, sprintId) {
+  try {
+    await api('/api/tasks/move', 'POST', { task_id: taskId, column_id: colId, position: 0 });
+    const task = state.tasks.find(t => t.id === taskId);
+    if (task) task.column_id = colId;
+    renderSprintPage(sprintId);
+  } catch(e) { console.error(e); }
+}
+
+async function startSprint(sprintId) {
+  const today = new Date().toISOString().slice(0,10);
+  const twoWeeks = new Date(Date.now() + 14*86400000).toISOString().slice(0,10);
+  const sp = state.sprints.find(s => s.id === sprintId);
+  try {
+    await api('/api/sprints/' + sprintId, 'PUT', {
+      name: sp.name,
+      start_date: sp.start_date || today,
+      end_date: sp.end_date || twoWeeks,
+      status: 'active'
+    });
+    await loadBoard();
+    renderSprintPage(sprintId);
+  } catch(e) { alert(t('error')); }
+}
+
+function showCompleteSprint(sprintId) {
+  const otherSprints = [...state.sprints].filter(s => s.id !== sprintId && s.status !== 'completed').sort((a,b) => b.id - a.id);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  let opts = `<option value="">${t('moveToBacklog')}</option>`;
+  for (const sp of otherSprints) {
+    opts += `<option value="${sp.id}">${esc(sp.name)}</option>`;
+  }
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h2>${t('completeSprint')}</h2><button class="btn-icon" onclick="this.closest('.modal-overlay').remove()">&#10005;</button></div>
+    <div class="modal-body">
+      <p style="margin-bottom:12px">${t('completeSprintConfirm')}</p>
+      <div class="field"><label>${t('moveToNextSprint')}</label><select id="complete-sprint-target">${opts}</select></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">${t('cancel')}</button>
+      <button class="btn btn-primary" onclick="doCompleteSprint(${sprintId})">${t('completeSprint')}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function doCompleteSprint(sprintId) {
+  const targetEl = document.getElementById('complete-sprint-target');
+  const targetVal = targetEl ? targetEl.value : '';
+  const body = {};
+  if (targetVal) body.move_to_sprint_id = parseInt(targetVal);
+  try {
+    await api('/api/sprints/' + sprintId + '/complete', 'POST', body);
+    document.querySelector('.modal-overlay').remove();
+    await loadBoard();
+    renderSprintPage(sprintId);
+  } catch(e) { alert(t('error')); }
+}
+
+// --- Backlog Page (Sprint Planning) ---
+function renderBacklogPage() {
+  const app = document.getElementById('app');
+  const firstCol = state.columns.length ? state.columns[0] : null;
+  const backlogColId = firstCol ? firstCol.id : null;
+
+  // Group tasks: unassigned (no sprint) and per-sprint
+  const unassignedTasks = state.tasks.filter(t => !t.sprint_id);
+  const activeSprints = [...state.sprints].filter(s => s.status !== 'completed').sort((a,b) => b.id - a.id);
+
+  let html = `<div class="epic-page">
+    <div class="epic-page-header">
+      <h2>&#128203; ${t('sprintBacklog')}</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="navigateTo('/')">${t('back')}</button>
+      </div>
+    </div>`;
+
+  // Render each active sprint section
+  for (const sprint of activeSprints) {
+    const sprintTasks = state.tasks.filter(t => t.sprint_id === sprint.id);
+    const lastCol = state.columns.length ? state.columns[state.columns.length-1] : null;
+    const doneCount = lastCol ? sprintTasks.filter(t => t.column_id === lastCol.id).length : 0;
+    const pct = sprintTasks.length ? Math.round(doneCount / sprintTasks.length * 100) : 0;
+    const statusLabels = {planning: t('sprintPlanning'), active: t('sprintActive'), completed: t('sprintCompleted')};
+    const statusColors = {planning: 'var(--fg3)', active: 'var(--green)', completed: 'var(--blue)'};
+
+    html += `<div class="task-page-section" style="margin-bottom:16px;border:1px solid var(--bg4);border-radius:var(--radius-lg);padding:12px"
+      ondragover="event.preventDefault();this.style.borderColor='var(--accent)'" ondragleave="this.style.borderColor='var(--bg4)'"
+      ondrop="event.preventDefault();this.style.borderColor='var(--bg4)';dropToSprint(event,${sprint.id})">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="margin:0;cursor:pointer" onclick="navigateTo('/sprint/${sprint.id}')">
+          &#127947; ${esc(sprint.name)}
+          <span style="font-size:.78rem;color:${statusColors[sprint.status]||'var(--fg3)'};font-weight:normal;margin-left:6px">${statusLabels[sprint.status]||sprint.status}</span>
+        </h3>
+        <span style="font-size:.78rem;color:var(--fg3)">${doneCount}/${sprintTasks.length} (${pct}%)</span>
+      </div>
+      <div class="epic-task-list">`;
+    for (const task of sprintTasks) {
+      html += renderBacklogTaskRow(task);
+    }
+    if (!sprintTasks.length) html += `<p style="color:var(--fg3);font-size:.82rem;padding:4px 0">${t('noActiveTasks')}</p>`;
+    html += '</div></div>';
+  }
+
+  // Unassigned tasks (backlog)
+  html += `<div class="task-page-section" style="border:1px solid var(--bg4);border-radius:var(--radius-lg);padding:12px"
+    ondragover="event.preventDefault();this.style.borderColor='var(--accent)'" ondragleave="this.style.borderColor='var(--bg4)'"
+    ondrop="event.preventDefault();this.style.borderColor='var(--bg4)';dropToSprint(event,null)">
+    <h3 style="margin-bottom:8px">${t('unassigned')} (${unassignedTasks.length})</h3>
+    <div class="epic-task-list">`;
+  for (const task of unassignedTasks) {
+    html += renderBacklogTaskRow(task);
+  }
+  if (!unassignedTasks.length) html += `<p style="color:var(--fg3);font-size:.82rem;padding:4px 0">${t('noActiveTasks')}</p>`;
+  html += '</div></div></div>';
+  app.innerHTML = html;
+}
+
+function renderBacklogTaskRow(task) {
+  const colName = state.columns.find(c => c.id === task.column_id);
+  const prioColors = ['','var(--blue)','var(--green)','var(--orange)','var(--red)'];
+  const epicBadge = task.epic ? `<span class="card-epic" style="background:${task.epic.color};color:${contrastColor(task.epic.color)};font-size:.7rem;padding:1px 5px">${esc(task.epic.name)}</span>` : '';
+  return `<div class="epic-task-row" draggable="true" data-task-id="${task.id}"
+    ondragstart="event.dataTransfer.setData('text/plain','${task.id}');document.addEventListener('dragover',dragAutoScroll)"
+    ondragend="document.removeEventListener('dragover',dragAutoScroll)"
+    onclick="navigateTo('/task/${task.id}')">
+    <span class="card-id">#${task.id}</span>
+    <span class="epic-task-title">${esc(task.title)}</span>
+    ${epicBadge}
+    ${task.priority > 0 ? `<span class="epic-task-prio" style="color:${prioColors[task.priority]}">P${task.priority}</span>` : ''}
+    <span class="epic-task-status">${colName ? esc(colName.name) : ''}</span>
+  </div>`;
+}
+
+async function dropToSprint(event, sprintId) {
+  const taskId = parseInt(event.dataTransfer.getData('text/plain'));
+  if (!taskId) return;
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  // Update task sprint_id
+  try {
+    await api('/api/tasks/' + taskId, 'PUT', {
+      title: task.title, description: task.description, todo: task.todo, project_url: task.project_url,
+      column_id: task.column_id, epic_id: task.epic_id, sprint_id: sprintId,
+      assignee_id: task.assignee_id, priority: task.priority,
+      tag_ids: (task.tags||[]).map(t => t.id), depends_on_ids: (task.depends_on||[]).map(d => d.id),
+      deadline: task.deadline || ''
+    });
+    task.sprint_id = sprintId;
+    task.sprint = sprintId ? state.sprints.find(s => s.id === sprintId) || null : null;
+    renderBacklogPage();
+  } catch(e) { alert(t('error') + ': ' + e.message); }
 }
 function showEditEpic(epicId) {
   const epic = state.epics.find(e => e.id === epicId);
