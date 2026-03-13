@@ -121,10 +121,8 @@ a{color:var(--accent2);text-decoration:none}
 .card-link{font-size:.72rem;color:var(--accent2);display:flex;align-items:center;gap:2px}
 .card-assignee{font-size:.72rem;color:var(--accent2);display:flex;align-items:center;gap:2px;background:var(--bg4);padding:1px 6px;border-radius:8px}
 .card-private{font-size:.72rem;color:var(--orange);display:flex;align-items:center;gap:2px}
-.drop-zone{min-height:40px;border:2px dashed var(--bg4);border-radius:var(--radius);margin:4px 0;transition:all .15s}
-.drop-zone.over{border-color:var(--accent);background:rgba(124,111,247,.08)}
-.add-task-btn{width:100%;padding:8px;background:transparent;border:1px dashed var(--bg4);border-radius:var(--radius);color:var(--fg3);cursor:pointer;font-family:inherit;font-size:.82rem;transition:all .15s;margin-top:4px}
-.add-task-btn:hover{border-color:var(--accent);color:var(--accent2)}
+.col-add-btn{background:transparent;border:1px solid var(--bg4);border-radius:var(--radius);color:var(--fg3);cursor:pointer;font-size:.9rem;width:24px;height:24px;display:flex;align-items:center;justify-content:center;transition:all .15s;padding:0;line-height:1}
+.col-add-btn:hover{border-color:var(--accent);color:var(--accent2)}
 
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
 .modal{background:var(--bg2);border-radius:var(--radius-lg);width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.5)}
@@ -1080,14 +1078,10 @@ function renderBoard() {
     const colTasks = state.tasks.filter(t => t.column_id === col.id).sort((a,b) => a.position - b.position || a.id - b.id);
     const filtered = filterTasks(colTasks);
     html += `<div class="column" data-col="${col.id}" ondragover="onDragOver(event)" ondrop="onDrop(event, ${col.id})">
-      <div class="col-header"><span class="col-title">${esc(col.name)} <span class="col-count">${filtered.length}</span></span></div>
+      <div class="col-header"><span class="col-title">${esc(col.name)} <span class="col-count">${filtered.length}</span></span>${!isReadonly() ? `<button class="col-add-btn" onclick="showCreateTask(${col.id})" title="${t('addTask')}">+</button>` : ''}</div>
       <div class="col-body">`;
     for (const task of filtered) {
       html += renderCard(task);
-    }
-    html += `<div class="drop-zone" ondragover="onDragOver(event)" ondrop="onDrop(event, ${col.id})"></div>`;
-    if (!isReadonly()) {
-      html += `<button class="add-task-btn" onclick="showCreateTask(${col.id})">${t('addTask')}</button>`;
     }
     html += '</div></div>';
   }
@@ -1159,11 +1153,10 @@ function formatDuration(ms) {
 
 // === Drag & Drop ===
 function onDragStart(e, taskId) { draggedTaskId = taskId; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; }
-function onDragEnd(e) { e.target.classList.remove('dragging'); draggedTaskId = null; document.querySelectorAll('.drop-zone.over').forEach(z => z.classList.remove('over')); }
-function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; const dz = e.target.closest('.drop-zone'); if (dz) dz.classList.add('over'); }
+function onDragEnd(e) { e.target.classList.remove('dragging'); draggedTaskId = null; }
+function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
 async function onDrop(e, colId) {
   e.preventDefault();
-  document.querySelectorAll('.drop-zone.over').forEach(z => z.classList.remove('over'));
   if (!draggedTaskId) return;
   const taskId = draggedTaskId;
   draggedTaskId = null;
@@ -1184,12 +1177,9 @@ async function onDrop(e, colId) {
     // Surgical DOM update: move the card element
     const draggedCard = document.querySelector(`.card[data-task="${taskId}"]`);
     if (draggedCard && colBody) {
-      const dropZone = colBody.querySelector('.drop-zone');
       const targetCards = Array.from(colBody.querySelectorAll('.card'));
       if (pos < targetCards.length) {
         colBody.insertBefore(draggedCard, targetCards[pos]);
-      } else if (dropZone) {
-        colBody.insertBefore(draggedCard, dropZone);
       } else {
         colBody.appendChild(draggedCard);
       }
@@ -1630,7 +1620,8 @@ async function renderEpicPage(epicId) {
       <h2><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${epic.color};margin-right:6px;vertical-align:middle"></span>${esc(epic.name)}</h2>
       <div style="display:flex;gap:6px">
         <button class="btn btn-ghost btn-sm" onclick="navigateTo('/')">${t('back')}</button>
-        ${!isReadonly() ? `<button class="btn btn-ghost btn-sm" onclick="showEditEpic(${epic.id})">${t('editEpic')}</button>` : ''}
+        ${!isReadonly() ? `<button class="btn btn-ghost btn-sm" onclick="showCreateTask(null, ${epic.id})">${t('addTask')}</button>
+        <button class="btn btn-ghost btn-sm" onclick="showEditEpic(${epic.id})">${t('editEpic')}</button>` : ''}
       </div>
     </div>`;
   if (epic.description) {
@@ -1850,8 +1841,8 @@ document.addEventListener('click', function(e) {
 });
 
 // === CRUD: Create/Edit Task ===
-function showCreateTask(colId) {
-  showTaskModal(null, colId);
+function showCreateTask(colId, epicId) {
+  showTaskModal(null, colId, epicId);
 }
 function showEditTask(taskId) {
   const task = state.tasks.find(t => t.id === taskId);
@@ -1859,7 +1850,7 @@ function showEditTask(taskId) {
   api('/api/tasks/' + taskId).then(t => showTaskModal(t, t.column_id));
 }
 
-function showTaskModal(task, defaultColId) {
+function showTaskModal(task, defaultColId, defaultEpicId) {
   const isEdit = !!task;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -1885,7 +1876,7 @@ function showTaskModal(task, defaultColId) {
       <div class="field-row">
         <div class="field"><label>${t('epic')}</label><select id="task-epic">
           <option value="">${t('none')}</option>
-          ${state.epics.map(e => `<option value="${e.id}" ${(isEdit&&task.epic_id===e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}
+          ${state.epics.map(e => `<option value="${e.id}" ${(isEdit?task.epic_id===e.id:defaultEpicId===e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}
         </select></div>
         <div class="field"><label>${t('assignee')}</label><select id="task-assignee">
           <option value="">${t('none')}</option>

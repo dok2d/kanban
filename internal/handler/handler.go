@@ -83,7 +83,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data:")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:")
 
 	// Public paths: login page, login API, static assets, setup
 	path := r.URL.Path
@@ -362,14 +362,14 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	h.logf("image upload: content-length=%d", r.ContentLength)
+	log.Printf("[upload] image: content-length=%d", r.ContentLength)
 	r.Body = http.MaxBytesReader(w, r.Body, 15*1024*1024)
 	var req struct {
 		Data string `json:"data"`
 		Mime string `json:"mime"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logf("image upload: decode error: %v", err)
+		log.Printf("[upload] image: decode error: %v", err)
 		http.Error(w, "bad request or body too large", 400)
 		return
 	}
@@ -381,7 +381,7 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		req.Mime = "image/png"
 	}
 	if !allowedImageMIME[req.Mime] {
-		h.logf("image upload: unsupported mime: %s", req.Mime)
+		log.Printf("[upload] image: unsupported mime: %s", req.Mime)
 		http.Error(w, "unsupported image type", 400)
 		return
 	}
@@ -390,9 +390,9 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid base64", 400)
 		return
 	}
-	h.logf("image upload: base64=%d bytes, decoded=%d bytes, mime=%s", len(req.Data), len(raw), req.Mime)
+	log.Printf("[upload] image: decoded=%d bytes, mime=%s", len(raw), req.Mime)
 	if len(raw) > 20*1024*1024 {
-		h.logf("image upload: rejected, decoded size %d > 20MB", len(raw))
+		log.Printf("[upload] image: rejected, size %d > 20MB", len(raw))
 		http.Error(w, "image too large (max 20MB)", 413)
 		return
 	}
@@ -401,7 +401,7 @@ func (h *Handler) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	h.logf("image upload: saved id=%d, size=%d", id, len(raw))
+	log.Printf("[upload] image: saved id=%d, size=%d", id, len(raw))
 	jsonResp(w, map[string]any{"id": id, "url": "/api/images/" + strconv.FormatInt(id, 10)})
 }
 
@@ -432,7 +432,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	h.logf("file upload: content-length=%d", r.ContentLength)
+	log.Printf("[upload] file: content-length=%d", r.ContentLength)
 	r.Body = http.MaxBytesReader(w, r.Body, 20*1024*1024)
 	var req struct {
 		Data     string `json:"data"`
@@ -440,7 +440,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		Mime     string `json:"mime"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logf("file upload: decode error: %v", err)
+		log.Printf("[upload] file: decode error: %v", err)
 		http.Error(w, "bad request or body too large", 400)
 		return
 	}
@@ -451,7 +451,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	// Security: check extension
 	ext := strings.ToLower(filepath.Ext(req.Filename))
 	if blockedExtensions[ext] {
-		h.logf("file upload: blocked extension: %s", ext)
+		log.Printf("[upload] file: blocked extension: %s", ext)
 		http.Error(w, "file type not allowed", 400)
 		return
 	}
@@ -460,7 +460,7 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		req.Mime = "application/octet-stream"
 	}
 	if !allowedFileMIME[req.Mime] {
-		h.logf("file upload: blocked mime: %s", req.Mime)
+		log.Printf("[upload] file: blocked mime: %s", req.Mime)
 		http.Error(w, "file MIME type not allowed", 400)
 		return
 	}
@@ -469,9 +469,9 @@ func (h *Handler) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid base64", 400)
 		return
 	}
-	h.logf("file upload: filename=%s, base64=%d bytes, decoded=%d bytes, mime=%s", req.Filename, len(req.Data), len(raw), req.Mime)
+	log.Printf("[upload] file: name=%s, decoded=%d bytes, mime=%s", req.Filename, len(raw), req.Mime)
 	if len(raw) > 20*1024*1024 {
-		h.logf("file upload: rejected, decoded size %d > 20MB", len(raw))
+		log.Printf("[upload] file: rejected, size %d > 20MB", len(raw))
 		http.Error(w, "file too large (max 20MB)", 413)
 		return
 	}
