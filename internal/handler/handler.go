@@ -296,6 +296,17 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/auth/oidc/login", h.handleOIDCLogin)
 	h.mux.HandleFunc("/api/auth/oidc/callback", h.handleOIDCCallback)
 
+	// Ecosystem: Mail
+	h.mux.HandleFunc("/api/mail", h.handleMail)
+	h.mux.HandleFunc("/api/mail/", h.handleMailMessage)
+
+	// Ecosystem: Calendar
+	h.mux.HandleFunc("/api/calendar", h.handleCalendar)
+	h.mux.HandleFunc("/api/calendar/", h.handleCalendarEvent)
+
+	// Ecosystem: Chat
+	h.mux.HandleFunc("/api/chat", h.handleChat)
+
 	// Admin settings
 	h.mux.HandleFunc("/api/settings/telegram", h.handleTelegramSettings)
 	h.mux.HandleFunc("/api/settings/telegram/status", h.handleTelegramStatus)
@@ -315,7 +326,7 @@ func (h *Handler) routes() {
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" || r.URL.Path == "/backlog" || r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") || strings.HasPrefix(r.URL.Path, "/sprint/") || strings.HasPrefix(r.URL.Path, "/user/") {
+	if r.URL.Path == "/" || r.URL.Path == "/backlog" || r.URL.Path == "/admin" || r.URL.Path == "/mail" || r.URL.Path == "/calendar" || r.URL.Path == "/chat" || strings.HasPrefix(r.URL.Path, "/task/") || strings.HasPrefix(r.URL.Path, "/epic/") || strings.HasPrefix(r.URL.Path, "/sprint/") || strings.HasPrefix(r.URL.Path, "/user/") || strings.HasPrefix(r.URL.Path, "/mail/") {
 		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 		http.ServeFile(w, r, "web/templates/index.html")
 		return
@@ -2679,4 +2690,227 @@ func extractID(path, prefix string) int64 {
 	s = strings.TrimSuffix(s, "/")
 	id, _ := strconv.ParseInt(s, 10, 64)
 	return id
+}
+
+// === Ecosystem: Mail ===
+
+func (h *Handler) handleMail(w http.ResponseWriter, r *http.Request) {
+	user := h.getUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		folder := r.URL.Query().Get("folder")
+		var msgs []model.MailMessage
+		var err error
+		if folder == "sent" {
+			msgs, err = h.store.ListMailSent(user.ID)
+		} else {
+			msgs, err = h.store.ListMailInbox(user.ID)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if msgs == nil {
+			msgs = []model.MailMessage{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(msgs)
+	case http.MethodPost:
+		var req struct {
+			ToID    int64  `json:"to_id"`
+			Subject string `json:"subject"`
+			Body    string `json:"body"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if req.ToID == 0 || req.Subject == "" {
+			http.Error(w, "to_id and subject required", http.StatusBadRequest)
+			return
+		}
+		id, err := h.store.SendMail(user.ID, req.ToID, req.Subject, req.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int64{"id": id})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleMailMessage(w http.ResponseWriter, r *http.Request) {
+	user := h.getUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := extractID(r.URL.Path, "/api/mail/")
+	if id == 0 {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		msg, err := h.store.GetMailMessage(id, user.ID)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if msg.ToID == user.ID && !msg.IsRead {
+			h.store.MarkMailRead(id, user.ID)
+			msg.IsRead = true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(msg)
+	case http.MethodDelete:
+		if err := h.store.DeleteMail(id, user.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// === Ecosystem: Calendar ===
+
+func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
+	user := h.getUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		from := r.URL.Query().Get("from")
+		to := r.URL.Query().Get("to")
+		if from == "" || to == "" {
+			now := time.Now()
+			from = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+			to = time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		}
+		evts, err := h.store.ListCalendarEvents(user.ID, from, to)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if evts == nil {
+			evts = []model.CalendarEvent{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(evts)
+	case http.MethodPost:
+		var e model.CalendarEvent
+		if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if e.Title == "" || e.StartDate == "" {
+			http.Error(w, "title and start_date required", http.StatusBadRequest)
+			return
+		}
+		e.UserID = user.ID
+		if e.EndDate == "" {
+			e.EndDate = e.StartDate
+		}
+		id, err := h.store.CreateCalendarEvent(e)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int64{"id": id})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleCalendarEvent(w http.ResponseWriter, r *http.Request) {
+	user := h.getUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := extractID(r.URL.Path, "/api/calendar/")
+	if id == 0 {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodPut:
+		var e model.CalendarEvent
+		if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		e.ID = id
+		e.UserID = user.ID
+		if err := h.store.UpdateCalendarEvent(e); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		if err := h.store.DeleteCalendarEvent(id, user.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// === Ecosystem: Chat ===
+
+func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
+	user := h.getUser(r)
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		afterStr := r.URL.Query().Get("after")
+		afterID, _ := strconv.ParseInt(afterStr, 10, 64)
+		msgs, err := h.store.ListChatMessages(afterID, 100)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if msgs == nil {
+			msgs = []model.ChatMessage{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(msgs)
+	case http.MethodPost:
+		var req struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Text) == "" {
+			http.Error(w, "text required", http.StatusBadRequest)
+			return
+		}
+		id, err := h.store.SendChatMessage(user.ID, strings.TrimSpace(req.Text))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int64{"id": id})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }

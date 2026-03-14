@@ -189,7 +189,41 @@ func (s *Store) migrate() error {
 			end_date TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL DEFAULT 'planning'
 		)`,
+		// Mail messages
+		`CREATE TABLE IF NOT EXISTS mail_messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			from_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			to_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			subject TEXT NOT NULL DEFAULT '',
+			body TEXT NOT NULL DEFAULT '',
+			is_read INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		// Calendar events
+		`CREATE TABLE IF NOT EXISTS calendar_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			title TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			start_date TEXT NOT NULL,
+			end_date TEXT NOT NULL DEFAULT '',
+			start_time TEXT NOT NULL DEFAULT '',
+			end_time TEXT NOT NULL DEFAULT '',
+			color TEXT NOT NULL DEFAULT '#7c6ff7',
+			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		// Chat messages
+		`CREATE TABLE IF NOT EXISTS chat_messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			text TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
 		// indexes for FK lookups
+		`CREATE INDEX IF NOT EXISTS idx_mail_to ON mail_messages(to_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_mail_from ON mail_messages(from_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_calendar_user ON calendar_events(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_comments_task_id ON comments(task_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id)`,
@@ -2183,4 +2217,190 @@ func (s *Store) DatabaseChecksum() string {
 	s.db.QueryRow("SELECT COALESCE(MAX(updated_at),'') FROM comments").Scan(&lastComment)
 	checksum += fmt.Sprintf("lt:%s;lc:%s", lastTask, lastComment)
 	return checksum
+}
+
+// --- Mail ---
+
+func (s *Store) ListMailInbox(userID int64) ([]model.MailMessage, error) {
+	rows, err := s.db.Query(`SELECT m.id, m.from_id, m.to_id, m.subject, m.body, m.is_read, m.created_at,
+		u.id, u.username, u.role FROM mail_messages m
+		JOIN users u ON u.id = m.from_id
+		WHERE m.to_id=? ORDER BY m.created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var msgs []model.MailMessage
+	for rows.Next() {
+		var m model.MailMessage
+		var cat string
+		var fu model.User
+		if err := rows.Scan(&m.ID, &m.FromID, &m.ToID, &m.Subject, &m.Body, &m.IsRead, &cat, &fu.ID, &fu.Username, &fu.Role); err != nil {
+			return nil, err
+		}
+		m.CreatedAt = parseTime(cat)
+		m.FromUser = &fu
+		msgs = append(msgs, m)
+	}
+	return msgs, rows.Err()
+}
+
+func (s *Store) ListMailSent(userID int64) ([]model.MailMessage, error) {
+	rows, err := s.db.Query(`SELECT m.id, m.from_id, m.to_id, m.subject, m.body, m.is_read, m.created_at,
+		u.id, u.username, u.role FROM mail_messages m
+		JOIN users u ON u.id = m.to_id
+		WHERE m.from_id=? ORDER BY m.created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var msgs []model.MailMessage
+	for rows.Next() {
+		var m model.MailMessage
+		var cat string
+		var tu model.User
+		if err := rows.Scan(&m.ID, &m.FromID, &m.ToID, &m.Subject, &m.Body, &m.IsRead, &cat, &tu.ID, &tu.Username, &tu.Role); err != nil {
+			return nil, err
+		}
+		m.CreatedAt = parseTime(cat)
+		m.ToUser = &tu
+		msgs = append(msgs, m)
+	}
+	return msgs, rows.Err()
+}
+
+func (s *Store) GetMailMessage(id, userID int64) (*model.MailMessage, error) {
+	var m model.MailMessage
+	var cat string
+	var fu, tu model.User
+	err := s.db.QueryRow(`SELECT m.id, m.from_id, m.to_id, m.subject, m.body, m.is_read, m.created_at,
+		f.id, f.username, f.role, t.id, t.username, t.role
+		FROM mail_messages m JOIN users f ON f.id=m.from_id JOIN users t ON t.id=m.to_id
+		WHERE m.id=? AND (m.from_id=? OR m.to_id=?)`, id, userID, userID).Scan(
+		&m.ID, &m.FromID, &m.ToID, &m.Subject, &m.Body, &m.IsRead, &cat,
+		&fu.ID, &fu.Username, &fu.Role, &tu.ID, &tu.Username, &tu.Role)
+	if err != nil {
+		return nil, err
+	}
+	m.CreatedAt = parseTime(cat)
+	m.FromUser = &fu
+	m.ToUser = &tu
+	return &m, nil
+}
+
+func (s *Store) SendMail(fromID, toID int64, subject, body string) (int64, error) {
+	r, err := s.db.Exec("INSERT INTO mail_messages(from_id,to_id,subject,body) VALUES(?,?,?,?)", fromID, toID, subject, body)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastInsertId()
+}
+
+func (s *Store) MarkMailRead(id, userID int64) error {
+	_, err := s.db.Exec("UPDATE mail_messages SET is_read=1 WHERE id=? AND to_id=?", id, userID)
+	return err
+}
+
+func (s *Store) DeleteMail(id, userID int64) error {
+	_, err := s.db.Exec("DELETE FROM mail_messages WHERE id=? AND (from_id=? OR to_id=?)", id, userID, userID)
+	return err
+}
+
+func (s *Store) CountUnreadMail(userID int64) (int, error) {
+	var cnt int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM mail_messages WHERE to_id=? AND is_read=0", userID).Scan(&cnt)
+	return cnt, err
+}
+
+// --- Calendar ---
+
+func (s *Store) ListCalendarEvents(userID int64, from, to string) ([]model.CalendarEvent, error) {
+	rows, err := s.db.Query(`SELECT id, user_id, title, description, start_date, end_date, start_time, end_time, color, created_at
+		FROM calendar_events WHERE user_id=? AND start_date<=? AND (end_date>=? OR (end_date='' AND start_date>=?))
+		ORDER BY start_date, start_time`, userID, to, from, from)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var evts []model.CalendarEvent
+	for rows.Next() {
+		var e model.CalendarEvent
+		var cat string
+		if err := rows.Scan(&e.ID, &e.UserID, &e.Title, &e.Description, &e.StartDate, &e.EndDate, &e.StartTime, &e.EndTime, &e.Color, &cat); err != nil {
+			return nil, err
+		}
+		e.CreatedAt = parseTime(cat)
+		evts = append(evts, e)
+	}
+	return evts, rows.Err()
+}
+
+func (s *Store) CreateCalendarEvent(e model.CalendarEvent) (int64, error) {
+	r, err := s.db.Exec(`INSERT INTO calendar_events(user_id,title,description,start_date,end_date,start_time,end_time,color) VALUES(?,?,?,?,?,?,?,?)`,
+		e.UserID, e.Title, e.Description, e.StartDate, e.EndDate, e.StartTime, e.EndTime, e.Color)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastInsertId()
+}
+
+func (s *Store) UpdateCalendarEvent(e model.CalendarEvent) error {
+	_, err := s.db.Exec(`UPDATE calendar_events SET title=?,description=?,start_date=?,end_date=?,start_time=?,end_time=?,color=? WHERE id=? AND user_id=?`,
+		e.Title, e.Description, e.StartDate, e.EndDate, e.StartTime, e.EndTime, e.Color, e.ID, e.UserID)
+	return err
+}
+
+func (s *Store) DeleteCalendarEvent(id, userID int64) error {
+	_, err := s.db.Exec("DELETE FROM calendar_events WHERE id=? AND user_id=?", id, userID)
+	return err
+}
+
+// --- Chat ---
+
+func (s *Store) ListChatMessages(afterID int64, limit int) ([]model.ChatMessage, error) {
+	q := `SELECT c.id, c.user_id, c.text, c.created_at, u.id, u.username, u.role
+		FROM chat_messages c JOIN users u ON u.id=c.user_id`
+	var rows *sql.Rows
+	var err error
+	if afterID > 0 {
+		q += " WHERE c.id>? ORDER BY c.id ASC LIMIT ?"
+		rows, err = s.db.Query(q, afterID, limit)
+	} else {
+		q += " ORDER BY c.id DESC LIMIT ?"
+		rows, err = s.db.Query(q, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var msgs []model.ChatMessage
+	for rows.Next() {
+		var m model.ChatMessage
+		var cat string
+		var u model.User
+		if err := rows.Scan(&m.ID, &m.UserID, &m.Text, &cat, &u.ID, &u.Username, &u.Role); err != nil {
+			return nil, err
+		}
+		m.CreatedAt = parseTime(cat)
+		m.User = &u
+		msgs = append(msgs, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Reverse if we fetched DESC (initial load)
+	if afterID <= 0 {
+		for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+			msgs[i], msgs[j] = msgs[j], msgs[i]
+		}
+	}
+	return msgs, nil
+}
+
+func (s *Store) SendChatMessage(userID int64, text string) (int64, error) {
+	r, err := s.db.Exec("INSERT INTO chat_messages(user_id,text) VALUES(?,?)", userID, text)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastInsertId()
 }

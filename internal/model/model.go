@@ -125,6 +125,42 @@ type ActivityEntry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// MailMessage represents an internal mail message
+type MailMessage struct {
+	ID        int64     `json:"id"`
+	FromID    int64     `json:"from_id"`
+	ToID      int64     `json:"to_id"`
+	Subject   string    `json:"subject"`
+	Body      string    `json:"body"`
+	IsRead    bool      `json:"is_read"`
+	CreatedAt time.Time `json:"created_at"`
+	FromUser  *User     `json:"from_user,omitempty"`
+	ToUser    *User     `json:"to_user,omitempty"`
+}
+
+// CalendarEvent represents a calendar event
+type CalendarEvent struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	StartDate   string    `json:"start_date"` // YYYY-MM-DD
+	EndDate     string    `json:"end_date"`   // YYYY-MM-DD
+	StartTime   string    `json:"start_time"` // HH:MM or empty for all-day
+	EndTime     string    `json:"end_time"`   // HH:MM or empty for all-day
+	Color       string    `json:"color"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// ChatMessage represents a chat message
+type ChatMessage struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"created_at"`
+	User      *User     `json:"user,omitempty"`
+}
+
 // ExportUser contains user data for export (password hash omitted by default for security)
 type ExportUser struct {
 	ID           int64  `json:"id"`
