@@ -142,19 +142,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if path == "/login" || path == "/api/auth/login" || path == "/api/auth/setup" ||
 		path == "/api/auth/reset-request" || path == "/api/auth/reset-confirm" ||
+		path == "/wap/login" ||
 		strings.HasPrefix(path, "/static/") {
 		h.mux.ServeHTTP(w, r)
 		return
 	}
 
+	// Determine login redirect target based on WAP or regular path
+	loginRedirect := "/login"
+	if strings.HasPrefix(path, "/wap/") {
+		loginRedirect = "/wap/login"
+	}
+
 	// Check if any users exist — if not, redirect to setup
 	cnt, _ := h.store.UserCount()
 	if cnt == 0 {
-		if path == "/" || strings.HasPrefix(path, "/api/") {
+		if path == "/" || strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/wap/") {
 			if strings.HasPrefix(path, "/api/") {
 				http.Error(w, "setup required", http.StatusUnauthorized)
 			} else {
-				http.Redirect(w, r, "/login", http.StatusFound)
+				http.Redirect(w, r, loginRedirect, http.StatusFound)
 			}
 			return
 		}
@@ -166,7 +173,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(path, "/api/") {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		} else {
-			http.Redirect(w, r, "/login", http.StatusFound)
+			http.Redirect(w, r, loginRedirect, http.StatusFound)
 		}
 		return
 	}
@@ -178,7 +185,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(path, "/api/") {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		} else {
-			http.Redirect(w, r, "/login", http.StatusFound)
+			http.Redirect(w, r, loginRedirect, http.StatusFound)
 		}
 		return
 	}
@@ -273,6 +280,14 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/settings/timezone", h.handleTimezoneSettings)
 
 	h.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+
+	// WAP routes
+	h.mux.HandleFunc("/wap/login", h.handleWapLogin)
+	h.mux.HandleFunc("/wap/column/", h.handleWapColumn)
+	h.mux.HandleFunc("/wap/task/", h.handleWapTask)
+	h.mux.HandleFunc("/wap/backlog", h.handleWapBacklog)
+	h.mux.HandleFunc("/wap/", h.handleWapBoard)
+
 	h.mux.HandleFunc("/", h.handleIndex)
 }
 
