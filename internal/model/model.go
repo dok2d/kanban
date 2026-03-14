@@ -155,10 +155,21 @@ type CalendarEvent struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+// ChatChannel represents a group or channel
+type ChatChannel struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"` // "group" or "channel"
+	CreatedBy   int64     `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+	MemberCount int       `json:"member_count,omitempty"`
+}
+
 // ChatMessage represents a chat message
 type ChatMessage struct {
 	ID        int64     `json:"id"`
 	UserID    int64     `json:"user_id"`
+	ChannelID int64     `json:"channel_id"`
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
 	User      *User     `json:"user,omitempty"`
