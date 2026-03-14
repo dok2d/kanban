@@ -144,11 +144,14 @@ type CalendarEvent struct {
 	UserID      int64     `json:"user_id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
-	StartDate   string    `json:"start_date"` // YYYY-MM-DD
-	EndDate     string    `json:"end_date"`   // YYYY-MM-DD
-	StartTime   string    `json:"start_time"` // HH:MM or empty for all-day
-	EndTime     string    `json:"end_time"`   // HH:MM or empty for all-day
+	StartDate   string    `json:"start_date"`  // YYYY-MM-DD
+	EndDate     string    `json:"end_date"`    // YYYY-MM-DD
+	StartTime   string    `json:"start_time"`  // HH:MM or empty for all-day
+	EndTime     string    `json:"end_time"`    // HH:MM or empty for all-day
 	Color       string    `json:"color"`
+	IsShared    bool      `json:"is_shared"`
+	Recurrence  string    `json:"recurrence"`  // "" | "daily" | "weekly" | "monthly" | "yearly"
+	ReminderMin int       `json:"reminder_min"` // minutes before event, 0=no reminder
 	CreatedAt   time.Time `json:"created_at"`
 }
 

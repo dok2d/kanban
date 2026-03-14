@@ -128,6 +128,7 @@ func New(store *db.Store, dbPath string) *Handler {
 	h.routes()
 	h.initTelegramBot()
 	go h.runBackupScheduler()
+	go h.runCalendarReminders()
 	return h
 }
 
@@ -312,6 +313,7 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/settings/telegram/status", h.handleTelegramStatus)
 	h.mux.HandleFunc("/api/settings/timezone", h.handleTimezoneSettings)
 	h.mux.HandleFunc("/api/settings/sso", h.handleSSOSettings)
+	h.mux.HandleFunc("/api/settings/ecosystem", h.handleEcosystemSettings)
 
 	h.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 
@@ -2802,6 +2804,12 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Expand recurring events
+		recEvts, err := h.store.ListRecurringEvents(user.ID)
+		if err == nil {
+			expanded := expandRecurringEvents(recEvts, from, to)
+			evts = append(evts, expanded...)
+		}
 		if evts == nil {
 			evts = []model.CalendarEvent{}
 		}
@@ -2862,6 +2870,148 @@ func (h *Handler) handleCalendarEvent(w http.ResponseWriter, r *http.Request) {
 		if err := h.store.DeleteCalendarEvent(id, user.ID); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// expandRecurringEvents generates virtual occurrences of recurring events within the date range
+func expandRecurringEvents(events []model.CalendarEvent, from, to string) []model.CalendarEvent {
+	fromDate, err1 := time.Parse("2006-01-02", from)
+	toDate, err2 := time.Parse("2006-01-02", to)
+	if err1 != nil || err2 != nil {
+		return nil
+	}
+	var result []model.CalendarEvent
+	for _, e := range events {
+		origDate, err := time.Parse("2006-01-02", e.StartDate)
+		if err != nil {
+			continue
+		}
+		// Duration of the event in days
+		dur := 0
+		if e.EndDate != "" && e.EndDate != e.StartDate {
+			endDate, err := time.Parse("2006-01-02", e.EndDate)
+			if err == nil {
+				dur = int(endDate.Sub(origDate).Hours() / 24)
+			}
+		}
+		// Generate occurrences
+		cur := origDate
+		for i := 0; i < 366; i++ { // limit iterations
+			switch e.Recurrence {
+			case "daily":
+				cur = origDate.AddDate(0, 0, i)
+			case "weekly":
+				cur = origDate.AddDate(0, 0, i*7)
+			case "monthly":
+				cur = origDate.AddDate(0, i, 0)
+			case "yearly":
+				cur = origDate.AddDate(i, 0, 0)
+			default:
+				continue
+			}
+			if cur.After(toDate) {
+				break
+			}
+			endCur := cur.AddDate(0, 0, dur)
+			// Skip the original occurrence (already in the normal list)
+			if cur.Equal(origDate) {
+				continue
+			}
+			if endCur.Before(fromDate) {
+				continue
+			}
+			occ := e
+			occ.StartDate = cur.Format("2006-01-02")
+			occ.EndDate = endCur.Format("2006-01-02")
+			result = append(result, occ)
+		}
+	}
+	return result
+}
+
+// === Calendar Reminders (Telegram) ===
+
+func (h *Handler) runCalendarReminders() {
+	sentReminders := make(map[int64]bool)
+	for {
+		time.Sleep(60 * time.Second)
+		now := time.Now()
+		dateStr := now.Format("2006-01-02")
+		// Check events starting in the next 24 hours
+		futureTime := now.Add(24 * time.Hour)
+		timeFrom := now.Format("15:04")
+		timeTo := futureTime.Format("15:04")
+		if timeFrom > timeTo {
+			timeTo = "23:59"
+		}
+		events, err := h.store.ListUpcomingReminders(dateStr, timeFrom, timeTo)
+		if err != nil {
+			continue
+		}
+		for _, e := range events {
+			if sentReminders[e.ID] {
+				continue
+			}
+			// Parse event start time
+			parts := strings.SplitN(e.StartTime, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			hour, _ := strconv.Atoi(parts[0])
+			min, _ := strconv.Atoi(parts[1])
+			evtTime := time.Date(now.Year(), now.Month(), now.Day(), hour, min, 0, 0, now.Location())
+			diff := evtTime.Sub(now).Minutes()
+			if diff > 0 && diff <= float64(e.ReminderMin) {
+				sentReminders[e.ID] = true
+				text := fmt.Sprintf("📅 %s\n%s %s", e.Title, e.StartDate, e.StartTime)
+				if e.Description != "" {
+					text += "\n" + e.Description
+				}
+				h.sendTelegramNotification(e.UserID, text)
+			}
+		}
+		// Clean up old entries daily
+		if now.Hour() == 0 && now.Minute() == 0 {
+			sentReminders = make(map[int64]bool)
+		}
+	}
+}
+
+// === Ecosystem Settings ===
+
+func (h *Handler) handleEcosystemSettings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		eco := map[string]bool{
+			"mail":     h.store.GetSetting("eco_mail_enabled") != "false",
+			"calendar": h.store.GetSetting("eco_calendar_enabled") != "false",
+			"chat":     h.store.GetSetting("eco_chat_enabled") != "false",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(eco)
+	case http.MethodPost:
+		user := h.currentUser(r)
+		if user == nil || user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		var req map[string]bool
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		for _, key := range []string{"mail", "calendar", "chat"} {
+			if v, ok := req[key]; ok {
+				val := "true"
+				if !v {
+					val = "false"
+				}
+				h.store.SetSetting("eco_"+key+"_enabled", val)
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
