@@ -968,6 +968,11 @@ async function init() {
     updateUserUI();
     applyDirection();
     await loadBoard();
+    // Default sprint filter to oldest active sprint
+    const activeSprints = (state.sprints || []).filter(s => s.status === 'active').sort((a, b) => a.id - b.id);
+    if (activeSprints.length > 0) {
+      setSprintFilter(activeSprints[0].id);
+    }
     route();
     applyI18n();
     initTimezoneSelect();
