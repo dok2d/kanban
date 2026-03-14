@@ -1,0 +1,4 @@
+.git
+*.md
+fly.toml
+kanban.sh
