@@ -1,0 +1,17 @@
+Offline Go module cache
+=======================
+
+This directory contains pre-downloaded Go module archives used for
+offline/airgapped builds when the Go module proxy is unavailable.
+
+Contents:
+  go-sqlite3-v1.14.22.zip  — github.com/mattn/go-sqlite3 v1.14.22
+
+Usage (manual build without network):
+
+  mkdir -p $(go env GOMODCACHE)/cache/download/github.com/mattn/go-sqlite3/@v
+  cp vendor-cache/go-sqlite3-v1.14.22.zip \
+     $(go env GOMODCACHE)/cache/download/github.com/mattn/go-sqlite3/@v/v1.14.22.zip
+  GOFLAGS=-mod=mod GONOSUMCHECK=github.com/mattn/go-sqlite3 go build ./cmd/server
+
+Or use GOPROXY=file:// to point Go at a local module mirror.
