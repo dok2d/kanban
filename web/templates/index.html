@@ -488,6 +488,10 @@ a{color:var(--accent2);text-decoration:none}
     <h3>Telegram</h3>
     <div id="telegram-content"></div>
   </div>
+  <div class="sidebar-section" id="sso-section" style="display:none">
+    <h3>SSO</h3>
+    <div id="sso-content"></div>
+  </div>
   <div class="sidebar-section" id="users-section" style="display:none">
     <h3 data-i18n="users"></h3>
     <div class="entity-list" id="user-list"></div>
@@ -1013,6 +1017,9 @@ function updateUserUI() {
   // Backup section - admin only
   const bkSec = document.getElementById('backup-section');
   if (bkSec) { bkSec.style.display = isAdmin() ? '' : 'none'; if (isAdmin()) loadBackups(); }
+  // SSO section - admin only
+  const ssoSec = document.getElementById('sso-section');
+  if (ssoSec) { ssoSec.style.display = isAdmin() ? '' : 'none'; if (isAdmin()) renderSSOSection(); }
   // Telegram section: always for admin, only if configured for others
   const tgSec = document.getElementById('telegram-section');
   if (tgSec) {
@@ -1170,6 +1177,125 @@ async function generateTelegramHash() {
 }
 async function unlinkTelegram() {
   try { await api('/api/user/telegram/unlink', 'POST'); currentUser.telegram_id = 0; renderTelegramSection(); } catch(e) { alert(t('error')); }
+}
+
+// === SSO Settings (admin) ===
+function renderSSOSection() {
+  const el = document.getElementById('sso-content');
+  if (!el || !isAdmin()) return;
+  api('/api/settings/sso').then(cfg => {
+    el.innerHTML = `
+      <details style="margin-bottom:12px">
+        <summary style="cursor:pointer;font-size:.85rem;font-weight:600;color:var(--fg2);margin-bottom:8px">LDAP / Active Directory</summary>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <label style="font-size:.78rem;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="sso-ldap-enabled" ${cfg.ldap_enabled?'checked':''}>
+            Включить LDAP
+          </label>
+          ${ssoField('sso-ldap-label','Название кнопки','LDAP / Active Directory',cfg.ldap_label||'')}
+          ${ssoField('sso-ldap-host','Хост','ldap.example.com',cfg.ldap_host||'')}
+          ${ssoField('sso-ldap-port','Порт','389',cfg.ldap_port||'')}
+          <label style="font-size:.78rem;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="sso-ldap-use-tls" ${cfg.ldap_use_tls?'checked':''}>
+            LDAPS (TLS)
+          </label>
+          <label style="font-size:.78rem;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="sso-ldap-start-tls" ${cfg.ldap_start_tls?'checked':''}>
+            StartTLS
+          </label>
+          <label style="font-size:.78rem;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="sso-ldap-skip-verify" ${cfg.ldap_skip_verify?'checked':''}>
+            Не проверять сертификат
+          </label>
+          ${ssoField('sso-ldap-bind-dn','Bind DN','cn=admin,dc=example,dc=com',cfg.ldap_bind_dn||'')}
+          ${ssoField('sso-ldap-bind-password','Bind Password','',cfg.ldap_bind_password?'********':'','password')}
+          ${ssoField('sso-ldap-base-dn','Base DN','dc=example,dc=com',cfg.ldap_base_dn||'')}
+          ${ssoField('sso-ldap-user-filter','Фильтр пользователя','(&(objectClass=user)(sAMAccountName=%s))',cfg.ldap_user_filter||'')}
+          ${ssoField('sso-ldap-username-attr','Атрибут логина','sAMAccountName',cfg.ldap_username_attr||'')}
+          ${ssoField('sso-ldap-admin-group','Группа админов (DN)','cn=kanban-admins,ou=groups,dc=example,dc=com',cfg.ldap_admin_group||'')}
+          ${ssoField('sso-ldap-member-attr','Атрибут членства','member',cfg.ldap_member_attr||'')}
+          <label style="font-size:.78rem;color:var(--fg2)">Роль по умолчанию</label>
+          <select id="sso-ldap-default-role" style="background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-size:.82rem">
+            <option value="regular" ${cfg.ldap_default_role!=='readonly'?'selected':''}>Regular</option>
+            <option value="readonly" ${cfg.ldap_default_role==='readonly'?'selected':''}>Read-only</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="saveSSOLdap()">Сохранить LDAP</button>
+        </div>
+      </details>
+      <details>
+        <summary style="cursor:pointer;font-size:.85rem;font-weight:600;color:var(--fg2);margin-bottom:8px">OpenID Connect (OIDC)</summary>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <label style="font-size:.78rem;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="sso-oidc-enabled" ${cfg.oidc_enabled?'checked':''}>
+            Включить OIDC
+          </label>
+          ${ssoField('sso-oidc-label','Название кнопки','SSO (OpenID Connect)',cfg.oidc_label||'')}
+          ${ssoField('sso-oidc-provider-url','Provider URL','https://accounts.google.com',cfg.oidc_provider_url||'')}
+          ${ssoField('sso-oidc-client-id','Client ID','',cfg.oidc_client_id||'')}
+          ${ssoField('sso-oidc-client-secret','Client Secret','',cfg.oidc_client_secret?'********':'','password')}
+          ${ssoField('sso-oidc-redirect-url','Redirect URL','https://kanban.example.com/api/auth/oidc/callback',cfg.oidc_redirect_url||'')}
+          ${ssoField('sso-oidc-scopes','Scopes (через запятую)','openid,profile,email',cfg.oidc_scopes||'')}
+          ${ssoField('sso-oidc-username-claim','Claim для логина','preferred_username',cfg.oidc_username_claim||'')}
+          ${ssoField('sso-oidc-admin-claim','Claim для роли админа','groups',cfg.oidc_admin_claim||'')}
+          ${ssoField('sso-oidc-admin-value','Значение для админа','kanban-admins',cfg.oidc_admin_value||'')}
+          <label style="font-size:.78rem;color:var(--fg2)">Роль по умолчанию</label>
+          <select id="sso-oidc-default-role" style="background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-size:.82rem">
+            <option value="regular" ${cfg.oidc_default_role!=='readonly'?'selected':''}>Regular</option>
+            <option value="readonly" ${cfg.oidc_default_role==='readonly'?'selected':''}>Read-only</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="saveSSOOidc()">Сохранить OIDC</button>
+        </div>
+      </details>`;
+  }).catch(() => { el.innerHTML = '<div style="color:var(--red);font-size:.82rem">Ошибка загрузки настроек SSO</div>'; });
+}
+
+function ssoField(id, label, placeholder, value, type) {
+  return `<label style="font-size:.78rem;color:var(--fg2)">${esc(label)}</label>
+    <input type="${type||'text'}" id="${id}" placeholder="${escAttr(placeholder||'')}" value="${escAttr(value||'')}"
+      style="background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:6px 8px;color:var(--fg);font-size:.82rem;outline:none">`;
+}
+
+function ssoVal(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
+function ssoChecked(id) { const e = document.getElementById(id); return e ? e.checked : false; }
+
+async function saveSSOLdap() {
+  const data = {
+    ldap_enabled: ssoChecked('sso-ldap-enabled') ? 'true' : 'false',
+    ldap_label: ssoVal('sso-ldap-label'),
+    ldap_host: ssoVal('sso-ldap-host'),
+    ldap_port: ssoVal('sso-ldap-port'),
+    ldap_use_tls: ssoChecked('sso-ldap-use-tls') ? 'true' : 'false',
+    ldap_start_tls: ssoChecked('sso-ldap-start-tls') ? 'true' : 'false',
+    ldap_skip_verify: ssoChecked('sso-ldap-skip-verify') ? 'true' : 'false',
+    ldap_bind_dn: ssoVal('sso-ldap-bind-dn'),
+    ldap_base_dn: ssoVal('sso-ldap-base-dn'),
+    ldap_user_filter: ssoVal('sso-ldap-user-filter'),
+    ldap_username_attr: ssoVal('sso-ldap-username-attr'),
+    ldap_default_role: ssoVal('sso-ldap-default-role'),
+    ldap_admin_group: ssoVal('sso-ldap-admin-group'),
+    ldap_member_attr: ssoVal('sso-ldap-member-attr'),
+  };
+  const pw = ssoVal('sso-ldap-bind-password');
+  if (pw && pw !== '********') data.ldap_bind_password = pw;
+  try { await api('/api/settings/sso', 'POST', data); alert('LDAP настройки сохранены'); } catch(e) { alert('Ошибка: ' + e.message); }
+}
+
+async function saveSSOOidc() {
+  const data = {
+    oidc_enabled: ssoChecked('sso-oidc-enabled') ? 'true' : 'false',
+    oidc_label: ssoVal('sso-oidc-label'),
+    oidc_provider_url: ssoVal('sso-oidc-provider-url'),
+    oidc_client_id: ssoVal('sso-oidc-client-id'),
+    oidc_redirect_url: ssoVal('sso-oidc-redirect-url'),
+    oidc_scopes: ssoVal('sso-oidc-scopes'),
+    oidc_username_claim: ssoVal('sso-oidc-username-claim'),
+    oidc_default_role: ssoVal('sso-oidc-default-role'),
+    oidc_admin_claim: ssoVal('sso-oidc-admin-claim'),
+    oidc_admin_value: ssoVal('sso-oidc-admin-value'),
+  };
+  const secret = ssoVal('sso-oidc-client-secret');
+  if (secret && secret !== '********') data.oidc_client_secret = secret;
+  try { await api('/api/settings/sso', 'POST', data); alert('OIDC настройки сохранены'); } catch(e) { alert('Ошибка: ' + e.message); }
 }
 
 // === Board rendering ===

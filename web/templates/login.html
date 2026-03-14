@@ -21,6 +21,11 @@ body{font-family:'Source Sans 3',-apple-system,BlinkMacSystemFont,'Segoe UI',san
 .btn:hover{background:var(--accent2)}
 .error{color:var(--red);font-size:.82rem;text-align:center;margin-top:12px;min-height:1.2em}
 .setup-note{text-align:center;color:var(--fg3);font-size:.78rem;margin-top:16px}
+.sso-divider{display:flex;align-items:center;gap:12px;margin:20px 0 12px;color:var(--fg3);font-size:.78rem}
+.sso-divider::before,.sso-divider::after{content:'';flex:1;height:1px;background:var(--bg4)}
+.btn-sso{display:block;width:100%;padding:10px;border:1px solid var(--bg4);border-radius:var(--radius);cursor:pointer;font-size:.9rem;font-family:inherit;font-weight:600;transition:all .15s;background:var(--bg3);color:var(--fg);margin-top:8px;text-align:center;text-decoration:none}
+.btn-sso:hover{border-color:var(--accent);background:var(--bg4)}
+.btn-sso svg{vertical-align:middle;margin-right:6px}
 </style>
 </head>
 <body>
@@ -49,6 +54,7 @@ body{font-family:'Source Sans 3',-apple-system,BlinkMacSystemFont,'Segoe UI',san
     <div class="setup-note" id="setup-note" style="display:none">
       Первый запуск — создайте учётную запись администратора
     </div>
+    <div id="sso-buttons" style="display:none"></div>
   </div>
 
   <div id="reset-form" style="display:none">
@@ -214,12 +220,43 @@ async function confirmReset() {
   } catch(e) { errEl.textContent = 'Ошибка: ' + e.message; }
 }
 
+// SSO buttons
+async function loadSSOConfig() {
+  try {
+    const r = await fetch('/api/auth/sso/config');
+    if (!r.ok) return;
+    const cfg = await r.json();
+    const container = document.getElementById('sso-buttons');
+    let html = '';
+    if (cfg.oidc_enabled || cfg.ldap_enabled) {
+      html += '<div class="sso-divider">или</div>';
+    }
+    if (cfg.oidc_enabled) {
+      html += `<a href="/api/auth/oidc/login" class="btn-sso"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>${escHTML(cfg.oidc_label)}</a>`;
+    }
+    if (cfg.ldap_enabled) {
+      html += `<div class="setup-note" style="margin-top:8px;color:var(--fg3)">${escHTML(cfg.ldap_label)} — используйте доменный логин и пароль выше</div>`;
+    }
+    if (html) {
+      container.innerHTML = html;
+      container.style.display = '';
+    }
+  } catch {}
+}
+
+function escHTML(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
 // Enter to submit
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter') submit();
 });
 
 checkSetup();
+loadSSOConfig();
 </script>
 </body>
 </html>
