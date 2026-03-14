@@ -105,11 +105,24 @@ var blockedExtensions = map[string]bool{
 }
 
 type Handler struct {
-	store   *db.Store
-	mux     *http.ServeMux
-	verbose bool
-	tgBot   *TelegramBot
-	dataDir string
+	store    *db.Store
+	mux      *http.ServeMux
+	verbose  bool
+	tgBot    *TelegramBot
+	dataDir  string
+	demoMode bool
+}
+
+// demoBlockedPaths lists API endpoints that the demo user cannot access (write operations).
+var demoBlockedPaths = map[string]bool{
+	"/api/user/telegram/link":   true,
+	"/api/user/telegram/unlink": true,
+	"/api/user/password":        true,
+	"/api/settings/telegram":    true,
+	"/api/settings/timezone":    true,
+	"/api/users":                true, // POST (create user) — GET is allowed below
+	"/api/import":               true,
+	"/api/backups":              true, // POST (create backup)
 }
 
 func New(store *db.Store, dbPath string) *Handler {
@@ -123,6 +136,41 @@ func New(store *db.Store, dbPath string) *Handler {
 func (h *Handler) SetVerbose(v bool) {
 	h.verbose = v
 	h.store.SetVerbose(v)
+}
+
+// EnableDemoMode activates demo mode: creates a "demo" user (password "demo")
+// if it doesn't exist and restricts sensitive operations for that user.
+func (h *Handler) EnableDemoMode() {
+	h.demoMode = true
+
+	// Ensure demo user exists
+	_, err := h.store.AuthenticateUser("demo", "demo")
+	if err != nil {
+		// User doesn't exist or wrong password — create
+		cnt, _ := h.store.UserCount()
+		role := "regular"
+		if cnt == 0 {
+			role = "admin" // first user must be admin
+		}
+		_, createErr := h.store.CreateUser("demo", "demo", role)
+		if createErr != nil {
+			// Might already exist with a different password — that's fine
+			log.Printf("[demo] note: demo user already exists or creation failed: %v", createErr)
+		} else {
+			log.Printf("[demo] created demo user (role=%s)", role)
+		}
+	}
+
+	log.Println("[demo] demo mode enabled — demo/demo credentials active")
+}
+
+// isDemoUser checks if the current user is the demo user.
+func (h *Handler) isDemoUser(r *http.Request) bool {
+	if !h.demoMode {
+		return false
+	}
+	user := h.currentUser(r)
+	return user != nil && strings.EqualFold(user.Username, "demo")
 }
 
 func (h *Handler) logf(format string, args ...any) {
@@ -142,6 +190,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if path == "/login" || path == "/api/auth/login" || path == "/api/auth/setup" ||
 		path == "/api/auth/reset-request" || path == "/api/auth/reset-confirm" ||
+		path == "/api/demo" ||
 		strings.HasPrefix(path, "/static/") {
 		h.mux.ServeHTTP(w, r)
 		return
@@ -195,6 +244,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Demo mode: block sensitive operations for the demo user
+	if h.demoMode && strings.EqualFold(user.Username, "demo") && r.Method != http.MethodGet {
+		if demoBlockedPaths[path] {
+			http.Error(w, "эта функция отключена в демо-режиме", http.StatusForbidden)
+			return
+		}
+		// Block /api/users/{id} PUT/DELETE and /api/backups/{file} DELETE
+		if strings.HasPrefix(path, "/api/users/") || strings.HasPrefix(path, "/api/backups/") {
+			http.Error(w, "эта функция отключена в демо-режиме", http.StatusForbidden)
+			return
+		}
+	}
+
 	// Store user in request context
 	_ = user
 	h.mux.ServeHTTP(w, r)
@@ -213,6 +275,9 @@ func (h *Handler) currentUser(r *http.Request) *model.User {
 }
 
 func (h *Handler) routes() {
+	// Demo mode status (public)
+	h.mux.HandleFunc("/api/demo", h.handleDemoStatus)
+
 	// Auth routes (public)
 	h.mux.HandleFunc("/api/auth/login", h.handleLogin)
 	h.mux.HandleFunc("/api/auth/logout", h.handleLogout)
@@ -1583,17 +1648,22 @@ func (h *Handler) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	tgConfigured := h.store.GetSetting("telegram_bot_token") != ""
 	tgBotUsername := h.store.GetSetting("telegram_bot_username")
 	jsonResp(w, map[string]any{
-		"id":                   fullUser.ID,
-		"username":             fullUser.Username,
-		"role":                 fullUser.Role,
-		"is_admin":             fullUser.IsAdmin,
-		"created_at":           fullUser.CreatedAt,
-		"telegram_id":          fullUser.TelegramID,
-		"link_hash":            fullUser.LinkHash,
-		"unread":               unread,
-		"telegram_configured":  tgConfigured,
+		"id":                    fullUser.ID,
+		"username":              fullUser.Username,
+		"role":                  fullUser.Role,
+		"is_admin":              fullUser.IsAdmin,
+		"created_at":            fullUser.CreatedAt,
+		"telegram_id":           fullUser.TelegramID,
+		"link_hash":             fullUser.LinkHash,
+		"unread":                unread,
+		"telegram_configured":   tgConfigured,
 		"telegram_bot_username": tgBotUsername,
+		"demo_mode":             h.demoMode && strings.EqualFold(fullUser.Username, "demo"),
 	})
+}
+
+func (h *Handler) handleDemoStatus(w http.ResponseWriter, r *http.Request) {
+	jsonResp(w, map[string]any{"demo_mode": h.demoMode})
 }
 
 func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {

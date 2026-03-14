@@ -17,6 +17,7 @@ func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	dbPath := flag.String("db", "/data/kanban.db", "sqlite database path")
 	verbose := flag.Bool("verbose", false, "enable verbose logging")
+	demo := flag.Bool("demo", false, "enable demo mode (auto-create demo/demo user, restrict sensitive operations)")
 	flag.Parse()
 
 	store, err := db.New(*dbPath)
@@ -29,6 +30,9 @@ func main() {
 	if *verbose {
 		h.SetVerbose(true)
 		log.Println("verbose logging enabled")
+	}
+	if *demo {
+		h.EnableDemoMode()
 	}
 
 	srv := &http.Server{

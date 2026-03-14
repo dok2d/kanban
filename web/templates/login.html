@@ -49,6 +49,9 @@ body{font-family:'Source Sans 3',-apple-system,BlinkMacSystemFont,'Segoe UI',san
     <div class="setup-note" id="setup-note" style="display:none">
       Первый запуск — создайте учётную запись администратора
     </div>
+    <div class="setup-note" id="demo-hint" style="display:none">
+      Демо-режим — войдите как <b>demo</b> / <b>demo</b>
+    </div>
   </div>
 
   <div id="reset-form" style="display:none">
@@ -220,6 +223,15 @@ document.addEventListener('keydown', e => {
 });
 
 checkSetup();
+
+// Show demo hint if demo mode is active
+fetch('/api/demo').then(r=>r.json()).then(d=>{
+  if(d.demo_mode){
+    document.getElementById('demo-hint').style.display='';
+    document.getElementById('username').value='demo';
+    document.getElementById('password').value='demo';
+  }
+}).catch(()=>{});
 </script>
 </body>
 </html>
