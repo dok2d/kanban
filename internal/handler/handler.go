@@ -2695,7 +2695,7 @@ func extractID(path, prefix string) int64 {
 // === Ecosystem: Mail ===
 
 func (h *Handler) handleMail(w http.ResponseWriter, r *http.Request) {
-	user := h.getUser(r)
+	user := h.currentUser(r)
 	if user == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -2746,7 +2746,7 @@ func (h *Handler) handleMail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleMailMessage(w http.ResponseWriter, r *http.Request) {
-	user := h.getUser(r)
+	user := h.currentUser(r)
 	if user == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -2783,7 +2783,7 @@ func (h *Handler) handleMailMessage(w http.ResponseWriter, r *http.Request) {
 // === Ecosystem: Calendar ===
 
 func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
-	user := h.getUser(r)
+	user := h.currentUser(r)
 	if user == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -2834,7 +2834,7 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleCalendarEvent(w http.ResponseWriter, r *http.Request) {
-	user := h.getUser(r)
+	user := h.currentUser(r)
 	if user == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -2872,7 +2872,7 @@ func (h *Handler) handleCalendarEvent(w http.ResponseWriter, r *http.Request) {
 // === Ecosystem: Chat ===
 
 func (h *Handler) handleChat(w http.ResponseWriter, r *http.Request) {
-	user := h.getUser(r)
+	user := h.currentUser(r)
 	if user == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
