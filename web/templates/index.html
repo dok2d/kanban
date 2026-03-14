@@ -1071,8 +1071,8 @@ function renderSidebar() {
   renderTelegramSection();
 }
 
-function renderTelegramSection() {
-  const el = document.getElementById('telegram-content') || document.getElementById('admin-telegram-content');
+function renderTelegramSection(targetEl) {
+  const el = targetEl || document.getElementById('telegram-content') || document.getElementById('admin-telegram-content');
   if (!el) return;
   let html = '';
   if (isAdmin()) {
@@ -1146,8 +1146,8 @@ async function unlinkTelegram() {
 }
 
 // === SSO Settings (admin) ===
-function renderSSOSection() {
-  const el = document.getElementById('sso-content') || document.getElementById('admin-sso-content');
+function renderSSOSection(targetEl) {
+  const el = targetEl || document.getElementById('sso-content') || document.getElementById('admin-sso-content');
   if (!el || !isAdmin()) return;
   api('/api/settings/sso').then(cfg => {
     el.innerHTML = `
@@ -2686,9 +2686,9 @@ function renderAdminSections() {
   // Backups
   loadBackups();
   // Telegram
-  renderTelegramSection();
+  renderTelegramSection(document.getElementById('admin-telegram-content'));
   // SSO
-  renderSSOSection();
+  renderSSOSection(document.getElementById('admin-sso-content'));
 }
 
 function renderBacklogPage() {
