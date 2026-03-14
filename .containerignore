@@ -2,5 +2,6 @@
 *.md
 deploy/
 backups/
+vendor-cache/
 kanban.sh
 .containerignore
