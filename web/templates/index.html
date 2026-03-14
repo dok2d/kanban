@@ -199,6 +199,85 @@ a{color:var(--accent2);text-decoration:none}
 .admin-page h2{font-size:1.2rem;margin-bottom:20px;display:flex;align-items:center;gap:10px}
 .admin-section{background:var(--bg2);border-radius:var(--radius-lg);padding:16px 20px;margin-bottom:16px}
 .admin-section h3{font-size:.95rem;margin-bottom:12px;color:var(--fg)}
+.admin-tabs{display:flex;gap:2px;margin-bottom:20px;background:var(--bg3);border-radius:var(--radius-lg);padding:3px;overflow-x:auto}
+.admin-tab{padding:8px 16px;border:none;background:transparent;color:var(--fg2);cursor:pointer;font-size:.85rem;font-weight:600;border-radius:var(--radius);transition:all .15s;white-space:nowrap}
+.admin-tab:hover{color:var(--fg)}
+.admin-tab.active{background:var(--accent);color:#fff}
+.admin-tab-content{display:none}
+.admin-tab-content.active{display:block}
+
+/* === Mail === */
+.mail-page{max-width:900px;margin:0 auto;padding:20px 24px}
+.mail-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:8px;flex-wrap:wrap}
+.mail-header h2{font-size:1.2rem;display:flex;align-items:center;gap:8px}
+.mail-tabs{display:flex;gap:2px;background:var(--bg3);border-radius:var(--radius);padding:2px}
+.mail-tab{padding:6px 14px;border:none;background:transparent;color:var(--fg2);cursor:pointer;font-size:.82rem;font-weight:600;border-radius:var(--radius);transition:all .15s}
+.mail-tab.active{background:var(--accent);color:#fff}
+.mail-list{display:flex;flex-direction:column;gap:2px}
+.mail-item{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg2);border-radius:var(--radius);cursor:pointer;transition:all .15s;border-left:3px solid transparent}
+.mail-item:hover{background:var(--bg3)}
+.mail-item.unread{border-left-color:var(--accent);font-weight:600}
+.mail-item .mail-from{font-size:.85rem;min-width:120px;color:var(--fg)}
+.mail-item .mail-subj{font-size:.85rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg2)}
+.mail-item .mail-date{font-size:.75rem;color:var(--fg3);white-space:nowrap}
+.mail-item .mail-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0}
+.mail-item .mail-dot.read{background:transparent}
+.mail-view{background:var(--bg2);border-radius:var(--radius-lg);padding:20px}
+.mail-view-header{margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--bg3)}
+.mail-view-header h3{font-size:1.1rem;margin-bottom:8px}
+.mail-view-meta{font-size:.82rem;color:var(--fg3);display:flex;gap:16px;flex-wrap:wrap}
+.mail-compose{background:var(--bg2);border-radius:var(--radius-lg);padding:20px;display:flex;flex-direction:column;gap:12px}
+.mail-empty{text-align:center;padding:40px;color:var(--fg3);font-size:.9rem}
+
+/* === Calendar === */
+.cal-page{max-width:1000px;margin:0 auto;padding:20px 24px}
+.cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:8px;flex-wrap:wrap}
+.cal-header h2{font-size:1.2rem;display:flex;align-items:center;gap:8px}
+.cal-nav{display:flex;align-items:center;gap:8px}
+.cal-nav button{background:transparent;border:1px solid var(--bg4);color:var(--fg2);width:32px;height:32px;border-radius:var(--radius);cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center}
+.cal-nav button:hover{background:var(--bg3);color:var(--fg)}
+.cal-nav .cal-month-label{font-size:1rem;font-weight:600;min-width:160px;text-align:center}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--bg4);border-radius:var(--radius-lg);overflow:hidden}
+.cal-day-header{background:var(--bg3);padding:8px;text-align:center;font-size:.78rem;font-weight:600;color:var(--fg2)}
+.cal-day{background:var(--bg2);min-height:90px;padding:4px 6px;position:relative;cursor:pointer;transition:background .15s}
+.cal-day:hover{background:var(--bg3)}
+.cal-day.other-month{opacity:.4}
+.cal-day.today{background:var(--bg3)}
+.cal-day.today .cal-day-num{color:var(--accent2);font-weight:700}
+.cal-day-num{font-size:.78rem;color:var(--fg2);margin-bottom:2px}
+.cal-event{font-size:.7rem;padding:1px 4px;border-radius:3px;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;font-weight:500}
+.cal-event:hover{opacity:.8}
+.cal-deadline{font-size:.68rem;padding:1px 4px;border-radius:3px;margin-bottom:1px;background:var(--red);color:#fff;opacity:.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* === Chat === */
+.chat-page{display:flex;flex-direction:column;height:calc(100vh - 52px);max-width:900px;margin:0 auto;padding:0 24px}
+.chat-header{display:flex;align-items:center;justify-content:space-between;padding:12px 0;gap:8px}
+.chat-header h2{font-size:1.2rem;display:flex;align-items:center;gap:8px}
+.chat-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:8px 0}
+.chat-messages::-webkit-scrollbar{width:4px}
+.chat-messages::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+.chat-msg{display:flex;gap:8px;padding:6px 10px;border-radius:var(--radius);transition:background .1s}
+.chat-msg:hover{background:var(--bg3)}
+.chat-msg-avatar{width:32px;height:32px;border-radius:50%;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:var(--fg2);flex-shrink:0}
+.chat-msg-body{flex:1;min-width:0}
+.chat-msg-header{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.chat-msg-user{font-size:.82rem;font-weight:600;color:var(--accent2)}
+.chat-msg-time{font-size:.7rem;color:var(--fg3)}
+.chat-msg-text{font-size:.88rem;color:var(--fg);line-height:1.4;word-wrap:break-word}
+.chat-msg-text .md-content{padding:0;background:transparent;min-height:auto}
+.chat-input{display:flex;gap:8px;padding:12px 0;align-items:flex-end}
+.chat-input textarea{flex:1;background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius-lg);padding:10px 14px;color:var(--fg);font-family:inherit;font-size:.88rem;resize:none;min-height:42px;max-height:120px;outline:none;transition:border .15s}
+.chat-input textarea:focus{border-color:var(--accent)}
+.chat-input button{padding:10px 18px;height:42px}
+.chat-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--fg3);font-size:.9rem}
+
+/* Eco sidebar additions */
+.eco-separator{height:1px;background:var(--bg4);margin:8px 16px}
+.eco-settings{padding:8px 16px;display:flex;flex-direction:column;gap:8px}
+.eco-settings label{font-size:.75rem;color:var(--fg3);font-weight:600}
+.eco-settings select{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--radius);padding:4px 6px;color:var(--fg);font-size:.78rem;outline:none;width:100%}
+.eco-user-section{padding:8px 16px;display:flex;flex-direction:column;gap:6px}
+.eco-badge{background:var(--red);color:#fff;font-size:.65rem;padding:0 5px;border-radius:8px;font-weight:700;min-width:16px;text-align:center;line-height:16px}
 .task-page{max-width:800px;margin:0 auto;padding:30px 24px}
 .task-page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px}
 .task-page-header h2{font-size:1.3rem;display:flex;align-items:center;gap:10px}
@@ -398,11 +477,48 @@ a{color:var(--accent2);text-decoration:none}
 
 <div class="eco-sidebar" id="eco-sidebar">
   <nav class="eco-nav">
-    <a class="eco-nav-item" href="#" onclick="return false;" style="opacity:.4;cursor:default"><span class="eco-icon">&#9993;</span><span data-i18n="ecoMail"></span></a>
-    <a class="eco-nav-item" href="#" onclick="return false;" style="opacity:.4;cursor:default"><span class="eco-icon">&#128197;</span><span data-i18n="ecoCalendar"></span></a>
-    <a class="eco-nav-item active" href="/" onclick="closeEcoSidebar();resetBoardFilters();navigateTo('/');return false;"><span class="eco-icon">&#9744;</span><span data-i18n="ecoKanban"></span></a>
-    <a class="eco-nav-item" href="#" onclick="return false;" style="opacity:.4;cursor:default"><span class="eco-icon">&#128172;</span><span data-i18n="ecoChat"></span></a>
+    <a class="eco-nav-item" data-eco="mail" href="/mail" onclick="closeEcoSidebar();navigateTo('/mail');return false;"><span class="eco-icon">&#9993;</span><span data-i18n="ecoMail"></span><span id="eco-mail-badge" class="eco-badge" style="display:none"></span></a>
+    <a class="eco-nav-item" data-eco="calendar" href="/calendar" onclick="closeEcoSidebar();navigateTo('/calendar');return false;"><span class="eco-icon">&#128197;</span><span data-i18n="ecoCalendar"></span></a>
+    <a class="eco-nav-item" data-eco="kanban" href="/" onclick="closeEcoSidebar();resetBoardFilters();navigateTo('/');return false;"><span class="eco-icon">&#9744;</span><span data-i18n="ecoKanban"></span></a>
+    <a class="eco-nav-item" data-eco="chat" href="/chat" onclick="closeEcoSidebar();navigateTo('/chat');return false;"><span class="eco-icon">&#128172;</span><span data-i18n="ecoChat"></span></a>
   </nav>
+  <div class="eco-separator"></div>
+  <div class="eco-settings">
+    <label data-i18n="theme"></label>
+    <div class="theme-list" id="eco-theme-list">
+      <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">&#9790;</button>
+      <button class="theme-btn" data-theme="light" onclick="setTheme('light')">&#9788;</button>
+      <button class="theme-btn" data-theme="ocean" onclick="setTheme('ocean')">Ocean</button>
+      <button class="theme-btn" data-theme="forest" onclick="setTheme('forest')">Forest</button>
+      <button class="theme-btn" data-theme="nord" onclick="setTheme('nord')">Nord</button>
+      <button class="theme-btn" data-theme="dracula" onclick="setTheme('dracula')">Dracula</button>
+      <button class="theme-btn" data-theme="solarized" onclick="setTheme('solarized')">Solarized</button>
+      <button class="theme-btn" data-theme="spacedust" onclick="setTheme('spacedust')">Spacedust</button>
+    </div>
+    <label data-i18n="language"></label>
+    <select id="eco-lang-select" onchange="setLang(this.value)"></select>
+    <label data-i18n="fontSize"></label>
+    <div class="font-size-ctrl">
+      <button onclick="changeFontSize(-1)">-</button>
+      <span id="eco-font-size-label">14px</span>
+      <button onclick="changeFontSize(1)">+</button>
+    </div>
+    <label data-i18n="timezone"></label>
+    <select class="tz-select" id="eco-tz-select" onchange="setTimezone(this.value)"></select>
+  </div>
+  <div class="eco-separator"></div>
+  <div class="eco-user-section">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">
+      <span id="eco-user-label" style="font-size:.82rem;color:var(--fg2);cursor:pointer" onclick="if(currentUser)navigateTo('/user/'+currentUser.id)"></span>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="changeOwnPassword()" style="font-size:.75rem" data-i18n="changePassword"></button>
+        <button class="btn btn-ghost btn-sm" onclick="logout()" style="font-size:.75rem" data-i18n="logout"></button>
+      </div>
+    </div>
+    <div id="eco-admin-link" style="display:none;margin-top:4px">
+      <button class="btn btn-ghost btn-sm" onclick="closeEcoSidebar();navigateTo('/admin')" style="width:100%;font-size:.78rem">&#9881; <span data-i18n="administration"></span></button>
+    </div>
+  </div>
 </div>
 
 <div class="header">
@@ -434,31 +550,6 @@ a{color:var(--accent2);text-decoration:none}
 <div id="app"></div>
 
 <div class="sidebar" id="sidebar">
-  <div class="sidebar-section">
-    <h3 data-i18n="theme"></h3>
-    <div class="theme-list" id="theme-list">
-      <button class="theme-btn" data-theme="dark" onclick="setTheme('dark')">&#9790;</button>
-      <button class="theme-btn" data-theme="light" onclick="setTheme('light')">&#9788;</button>
-      <button class="theme-btn" data-theme="ocean" onclick="setTheme('ocean')">Ocean</button>
-      <button class="theme-btn" data-theme="forest" onclick="setTheme('forest')">Forest</button>
-      <button class="theme-btn" data-theme="nord" onclick="setTheme('nord')">Nord</button>
-      <button class="theme-btn" data-theme="dracula" onclick="setTheme('dracula')">Dracula</button>
-      <button class="theme-btn" data-theme="solarized" onclick="setTheme('solarized')">Solarized</button>
-      <button class="theme-btn" data-theme="spacedust" onclick="setTheme('spacedust')">Spacedust</button>
-    </div>
-  </div>
-  <div class="sidebar-section">
-    <h3 data-i18n="language"></h3>
-    <select class="lang-select" id="lang-select" onchange="setLang(this.value)"></select>
-  </div>
-  <div class="sidebar-section">
-    <h3 data-i18n="fontSize"></h3>
-    <div class="font-size-ctrl">
-      <button onclick="changeFontSize(-1)">-</button>
-      <span id="font-size-label">14px</span>
-      <button onclick="changeFontSize(1)">+</button>
-    </div>
-  </div>
   <div class="sidebar-section" id="epics-section">
     <h3 data-i18n="epics"></h3>
     <div class="entity-list" id="epic-list"></div>
@@ -485,25 +576,9 @@ a{color:var(--accent2);text-decoration:none}
       <button class="btn btn-primary btn-sm" onclick="addTag()">+</button>
     </div>
   </div>
-  <div class="sidebar-section">
-    <h3 data-i18n="timezone"></h3>
-    <select class="tz-select" id="tz-select" onchange="setTimezone(this.value)"></select>
-  </div>
   <div class="sidebar-section" id="telegram-section" style="display:none">
     <h3>Telegram</h3>
     <div id="telegram-content"></div>
-  </div>
-  <div class="sidebar-section" id="admin-link-section" style="display:none">
-    <button class="btn btn-ghost btn-sm" onclick="toggleSidebar();navigateTo('/admin')" style="width:100%">&#9881; <span data-i18n="administration"></span></button>
-  </div>
-  <div class="sidebar-section">
-    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-      <span id="current-user-label" style="font-size:.82rem;color:var(--fg2);cursor:pointer" onclick="if(currentUser)navigateTo('/user/'+currentUser.id)"></span>
-      <div style="display:flex;gap:4px">
-        <button class="btn btn-ghost btn-sm" onclick="changeOwnPassword()" data-i18n="changePassword"></button>
-        <button class="btn btn-ghost btn-sm" onclick="logout()" data-i18n="logout"></button>
-      </div>
-    </div>
   </div>
 </div>
 
