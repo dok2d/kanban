@@ -223,6 +223,8 @@ func (s *Store) migrate() error {
 		"ALTER TABLE users ADD COLUMN reset_code TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE users ADD COLUMN reset_code_expires DATETIME",
 		"ALTER TABLE tasks ADD COLUMN sprint_id INTEGER REFERENCES sprints(id)",
+		"ALTER TABLE users ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'local'",
+		"ALTER TABLE users ADD COLUMN external_id TEXT NOT NULL DEFAULT ''",
 	}
 	for _, q := range alters {
 		s.db.Exec(q) // ignore "duplicate column" errors
@@ -1630,6 +1632,66 @@ func (s *Store) UpdateUserRole(id int64, role string) error {
 	}
 	_, err := s.db.Exec("UPDATE users SET role=?,is_admin=? WHERE id=?", role, isAdmin, id)
 	return err
+}
+
+// FindOrCreateSSOUser finds a user by auth provider and external ID,
+// or creates a new one if not found. Used for LDAP/OIDC authentication.
+func (s *Store) FindOrCreateSSOUser(provider, externalID, username, role string) (*model.User, error) {
+	// Try to find by provider + external_id
+	var u model.User
+	var admin int
+	var dbRole string
+	err := s.db.QueryRow(
+		"SELECT id,username,is_admin,role,created_at FROM users WHERE auth_provider=? AND external_id=?",
+		provider, externalID,
+	).Scan(&u.ID, &u.Username, &admin, &dbRole, &u.CreatedAt)
+	if err == nil {
+		u.IsAdmin = admin == 1
+		u.Role = dbRole
+		// Update username if changed in external provider
+		if u.Username != username {
+			s.db.Exec("UPDATE users SET username=? WHERE id=?", username, u.ID)
+			u.Username = username
+		}
+		return &u, nil
+	}
+
+	// Try to find by username (link existing local account)
+	err = s.db.QueryRow(
+		"SELECT id,username,is_admin,role,created_at FROM users WHERE LOWER(username)=LOWER(?) AND auth_provider='local'",
+		username,
+	).Scan(&u.ID, &u.Username, &admin, &dbRole, &u.CreatedAt)
+	if err == nil {
+		// Link existing account to SSO provider
+		s.db.Exec("UPDATE users SET auth_provider=?,external_id=? WHERE id=?", provider, externalID, u.ID)
+		u.IsAdmin = admin == 1
+		u.Role = dbRole
+		return &u, nil
+	}
+
+	// Create new user
+	isAdmin := 0
+	if role == "admin" {
+		isAdmin = 1
+	}
+	// SSO users get a random placeholder password (they authenticate externally)
+	placeholder, _ := auth.GenerateToken()
+	placeholderHash, _ := auth.HashPassword(placeholder)
+
+	r, err := s.db.Exec(
+		"INSERT INTO users(username,password_hash,is_admin,role,auth_provider,external_id) VALUES(?,?,?,?,?,?)",
+		username, placeholderHash, isAdmin, role, provider, externalID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create SSO user: %w", err)
+	}
+	id, _ := r.LastInsertId()
+	return &model.User{
+		ID:       id,
+		Username: username,
+		Role:     role,
+		IsAdmin:  isAdmin == 1,
+	}, nil
 }
 
 func (s *Store) UpdateUserTelegram(id int64, chatID int64) error {

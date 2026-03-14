@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"kanban/internal/auth"
 	"kanban/internal/db"
 	"kanban/internal/model"
 	"log"
@@ -105,15 +106,17 @@ var blockedExtensions = map[string]bool{
 }
 
 type Handler struct {
-	store   *db.Store
-	mux     *http.ServeMux
-	verbose bool
-	tgBot   *TelegramBot
-	dataDir string
+	store        *db.Store
+	mux          *http.ServeMux
+	verbose      bool
+	tgBot        *TelegramBot
+	dataDir      string
+	oidcProvider *auth.OIDCProvider
+	oidcStates   map[string]time.Time // CSRF state tokens for OIDC
 }
 
 func New(store *db.Store, dbPath string) *Handler {
-	h := &Handler{store: store, mux: http.NewServeMux(), dataDir: filepath.Dir(dbPath)}
+	h := &Handler{store: store, mux: http.NewServeMux(), dataDir: filepath.Dir(dbPath), oidcStates: make(map[string]time.Time)}
 	h.routes()
 	h.initTelegramBot()
 	go h.runBackupScheduler()
@@ -142,6 +145,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if path == "/login" || path == "/api/auth/login" || path == "/api/auth/setup" ||
 		path == "/api/auth/reset-request" || path == "/api/auth/reset-confirm" ||
+		path == "/api/auth/sso/config" ||
+		path == "/api/auth/oidc/login" || path == "/api/auth/oidc/callback" ||
 		path == "/wap/login" ||
 		strings.HasPrefix(path, "/static/") {
 		h.mux.ServeHTTP(w, r)
@@ -274,10 +279,16 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/user/telegram/unlink", h.handleTelegramUnlink)
 	h.mux.HandleFunc("/api/user/password", h.handleChangeOwnPassword)
 
+	// SSO routes (public — handle auth flow)
+	h.mux.HandleFunc("/api/auth/sso/config", h.handleSSOConfig)
+	h.mux.HandleFunc("/api/auth/oidc/login", h.handleOIDCLogin)
+	h.mux.HandleFunc("/api/auth/oidc/callback", h.handleOIDCCallback)
+
 	// Admin settings
 	h.mux.HandleFunc("/api/settings/telegram", h.handleTelegramSettings)
 	h.mux.HandleFunc("/api/settings/telegram/status", h.handleTelegramStatus)
 	h.mux.HandleFunc("/api/settings/timezone", h.handleTimezoneSettings)
+	h.mux.HandleFunc("/api/settings/sso", h.handleSSOSettings)
 
 	h.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 
@@ -1544,7 +1555,28 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+
+	// Try local auth first
 	user, err := h.store.AuthenticateUser(req.Username, req.Password)
+
+	// If local auth fails and LDAP is enabled, try LDAP
+	if err != nil && h.store.GetSetting("ldap_enabled") == "true" {
+		ldapCfg := h.buildLDAPConfig()
+		if ldapCfg != nil {
+			ldapResult, ldapErr := auth.LDAPAuthenticate(ldapCfg, req.Username, req.Password)
+			if ldapErr == nil {
+				role := ldapCfg.DefaultRole
+				if role == "" {
+					role = "regular"
+				}
+				if ldapResult.IsAdmin {
+					role = "admin"
+				}
+				user, err = h.store.FindOrCreateSSOUser("ldap", ldapResult.DN, ldapResult.Username, role)
+			}
+		}
+	}
+
 	if err != nil {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
@@ -2285,6 +2317,312 @@ func (h *Handler) sendDailyBackup(lastChecksum string) string {
 	}
 	log.Printf("[backup] sent daily backup to %d admin(s)", len(adminChatIDs))
 	return checksum
+}
+
+// --- SSO ---
+
+// handleSSOConfig returns which SSO methods are enabled (public endpoint for login page).
+func (h *Handler) handleSSOConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	jsonResp(w, map[string]any{
+		"ldap_enabled": h.store.GetSetting("ldap_enabled") == "true",
+		"ldap_label":   h.ssoLabel("ldap_label", "LDAP / Active Directory"),
+		"oidc_enabled": h.store.GetSetting("oidc_enabled") == "true",
+		"oidc_label":   h.ssoLabel("oidc_label", "SSO (OpenID Connect)"),
+	})
+}
+
+func (h *Handler) ssoLabel(key, fallback string) string {
+	if v := h.store.GetSetting(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// handleOIDCLogin starts the OIDC authorization flow.
+func (h *Handler) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
+	if h.store.GetSetting("oidc_enabled") != "true" {
+		http.Error(w, "OIDC not enabled", http.StatusBadRequest)
+		return
+	}
+	provider, err := h.getOIDCProvider()
+	if err != nil {
+		log.Printf("[oidc] provider error: %v", err)
+		http.Error(w, "OIDC configuration error", http.StatusInternalServerError)
+		return
+	}
+	// Generate state token for CSRF protection
+	stateBytes := make([]byte, 16)
+	rand.Read(stateBytes)
+	state := fmt.Sprintf("%x", stateBytes)
+
+	// Clean old states and store new one
+	now := time.Now()
+	for k, exp := range h.oidcStates {
+		if now.After(exp) {
+			delete(h.oidcStates, k)
+		}
+	}
+	h.oidcStates[state] = now.Add(10 * time.Minute)
+
+	authURL := provider.AuthorizationURL(state)
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+// handleOIDCCallback handles the OIDC callback after user authenticates with the provider.
+func (h *Handler) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	if h.store.GetSetting("oidc_enabled") != "true" {
+		http.Error(w, "OIDC not enabled", http.StatusBadRequest)
+		return
+	}
+
+	// Verify state
+	state := r.URL.Query().Get("state")
+	expiry, ok := h.oidcStates[state]
+	if !ok || time.Now().After(expiry) {
+		http.Error(w, "invalid or expired state", http.StatusBadRequest)
+		return
+	}
+	delete(h.oidcStates, state)
+
+	// Check for error from provider
+	if errParam := r.URL.Query().Get("error"); errParam != "" {
+		desc := r.URL.Query().Get("error_description")
+		log.Printf("[oidc] provider error: %s: %s", errParam, desc)
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "missing authorization code", http.StatusBadRequest)
+		return
+	}
+
+	provider, err := h.getOIDCProvider()
+	if err != nil {
+		http.Error(w, "OIDC configuration error", http.StatusInternalServerError)
+		return
+	}
+
+	result, err := provider.ExchangeCode(code)
+	if err != nil {
+		log.Printf("[oidc] code exchange error: %v", err)
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	if result.Username == "" {
+		log.Printf("[oidc] empty username from provider")
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	// Determine role
+	defaultRole := h.store.GetSetting("oidc_default_role")
+	if defaultRole == "" {
+		defaultRole = "regular"
+	}
+	role := defaultRole
+	if result.IsAdmin {
+		role = "admin"
+	}
+
+	externalID := result.Username
+	if result.Email != "" {
+		externalID = result.Email
+	}
+
+	user, err := h.store.FindOrCreateSSOUser("oidc", externalID, result.Username, role)
+	if err != nil {
+		log.Printf("[oidc] user creation error: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	token, err := h.store.CreateSession(user.ID)
+	if err != nil {
+		http.Error(w, "session error", http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   sessionMaxAgeSec,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// handleSSOSettings manages SSO configuration (admin only).
+func (h *Handler) handleSSOSettings(w http.ResponseWriter, r *http.Request) {
+	user := h.currentUser(r)
+	if user == nil || user.Role != "admin" {
+		http.Error(w, "admin required", http.StatusForbidden)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		jsonResp(w, map[string]any{
+			// LDAP settings
+			"ldap_enabled":       h.store.GetSetting("ldap_enabled") == "true",
+			"ldap_label":         h.store.GetSetting("ldap_label"),
+			"ldap_host":          h.store.GetSetting("ldap_host"),
+			"ldap_port":          h.store.GetSetting("ldap_port"),
+			"ldap_use_tls":       h.store.GetSetting("ldap_use_tls") == "true",
+			"ldap_start_tls":     h.store.GetSetting("ldap_start_tls") == "true",
+			"ldap_skip_verify":   h.store.GetSetting("ldap_skip_verify") == "true",
+			"ldap_bind_dn":       h.store.GetSetting("ldap_bind_dn"),
+			"ldap_bind_password": h.store.GetSetting("ldap_bind_password") != "",
+			"ldap_base_dn":       h.store.GetSetting("ldap_base_dn"),
+			"ldap_user_filter":   h.store.GetSetting("ldap_user_filter"),
+			"ldap_username_attr": h.store.GetSetting("ldap_username_attr"),
+			"ldap_default_role":  h.store.GetSetting("ldap_default_role"),
+			"ldap_admin_group":   h.store.GetSetting("ldap_admin_group"),
+			"ldap_member_attr":   h.store.GetSetting("ldap_member_attr"),
+			// OIDC settings
+			"oidc_enabled":       h.store.GetSetting("oidc_enabled") == "true",
+			"oidc_label":         h.store.GetSetting("oidc_label"),
+			"oidc_provider_url":  h.store.GetSetting("oidc_provider_url"),
+			"oidc_client_id":     h.store.GetSetting("oidc_client_id"),
+			"oidc_client_secret": h.store.GetSetting("oidc_client_secret") != "",
+			"oidc_redirect_url":  h.store.GetSetting("oidc_redirect_url"),
+			"oidc_scopes":        h.store.GetSetting("oidc_scopes"),
+			"oidc_username_claim": h.store.GetSetting("oidc_username_claim"),
+			"oidc_default_role":  h.store.GetSetting("oidc_default_role"),
+			"oidc_admin_claim":   h.store.GetSetting("oidc_admin_claim"),
+			"oidc_admin_value":   h.store.GetSetting("oidc_admin_value"),
+		})
+
+	case http.MethodPost:
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		// Allowed SSO settings keys
+		allowed := map[string]bool{
+			"ldap_enabled": true, "ldap_label": true,
+			"ldap_host": true, "ldap_port": true,
+			"ldap_use_tls": true, "ldap_start_tls": true, "ldap_skip_verify": true,
+			"ldap_bind_dn": true, "ldap_bind_password": true,
+			"ldap_base_dn": true, "ldap_user_filter": true, "ldap_username_attr": true,
+			"ldap_default_role": true, "ldap_admin_group": true, "ldap_member_attr": true,
+			"oidc_enabled": true, "oidc_label": true,
+			"oidc_provider_url": true, "oidc_client_id": true, "oidc_client_secret": true,
+			"oidc_redirect_url": true, "oidc_scopes": true, "oidc_username_claim": true,
+			"oidc_default_role": true, "oidc_admin_claim": true, "oidc_admin_value": true,
+		}
+
+		for key, val := range req {
+			if !allowed[key] {
+				continue
+			}
+			if err := h.store.SetSetting(key, val); err != nil {
+				http.Error(w, "save error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// Reset cached OIDC provider on config change
+		h.oidcProvider = nil
+
+		log.Printf("[sso] settings updated by user %s", user.Username)
+		jsonResp(w, map[string]string{"status": "ok"})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) buildLDAPConfig() *auth.LDAPConfig {
+	host := h.store.GetSetting("ldap_host")
+	if host == "" {
+		return nil
+	}
+	port := 389
+	if p := h.store.GetSetting("ldap_port"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil {
+			port = v
+		}
+	}
+	userFilter := h.store.GetSetting("ldap_user_filter")
+	if userFilter == "" {
+		userFilter = "(&(objectClass=user)(sAMAccountName=%s))"
+	}
+	usernameAttr := h.store.GetSetting("ldap_username_attr")
+	if usernameAttr == "" {
+		usernameAttr = "sAMAccountName"
+	}
+	defaultRole := h.store.GetSetting("ldap_default_role")
+	if defaultRole == "" {
+		defaultRole = "regular"
+	}
+
+	return &auth.LDAPConfig{
+		Host:         host,
+		Port:         port,
+		UseTLS:       h.store.GetSetting("ldap_use_tls") == "true",
+		StartTLS:     h.store.GetSetting("ldap_start_tls") == "true",
+		SkipVerify:   h.store.GetSetting("ldap_skip_verify") == "true",
+		BindDN:       h.store.GetSetting("ldap_bind_dn"),
+		BindPassword: h.store.GetSetting("ldap_bind_password"),
+		BaseDN:       h.store.GetSetting("ldap_base_dn"),
+		UserFilter:   userFilter,
+		UsernameAttr: usernameAttr,
+		DefaultRole:  defaultRole,
+		AdminGroup:   h.store.GetSetting("ldap_admin_group"),
+		MemberAttr:   h.store.GetSetting("ldap_member_attr"),
+	}
+}
+
+func (h *Handler) getOIDCProvider() (*auth.OIDCProvider, error) {
+	if h.oidcProvider != nil {
+		return h.oidcProvider, nil
+	}
+
+	providerURL := h.store.GetSetting("oidc_provider_url")
+	if providerURL == "" {
+		return nil, fmt.Errorf("OIDC provider URL not configured")
+	}
+
+	scopes := h.store.GetSetting("oidc_scopes")
+	var scopeList []string
+	if scopes != "" {
+		for _, s := range strings.Split(scopes, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				scopeList = append(scopeList, s)
+			}
+		}
+	}
+
+	cfg := &auth.OIDCConfig{
+		ProviderURL:   providerURL,
+		ClientID:      h.store.GetSetting("oidc_client_id"),
+		ClientSecret:  h.store.GetSetting("oidc_client_secret"),
+		RedirectURL:   h.store.GetSetting("oidc_redirect_url"),
+		Scopes:        scopeList,
+		UsernameClaim: h.store.GetSetting("oidc_username_claim"),
+		DefaultRole:   h.store.GetSetting("oidc_default_role"),
+		AdminClaim:    h.store.GetSetting("oidc_admin_claim"),
+		AdminValue:    h.store.GetSetting("oidc_admin_value"),
+	}
+
+	provider := auth.NewOIDCProvider(cfg)
+	if err := provider.Discover(); err != nil {
+		return nil, err
+	}
+	h.oidcProvider = provider
+	return provider, nil
 }
 
 // helpers
