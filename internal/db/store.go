@@ -915,6 +915,18 @@ func (s *Store) GetCommentTaskID(commentID int64) (int64, error) {
 	return taskID, err
 }
 
+func (s *Store) GetCommentAuthorID(commentID int64) (int64, error) {
+	var authorID sql.NullInt64
+	err := s.db.QueryRow("SELECT author_id FROM comments WHERE id=?", commentID).Scan(&authorID)
+	if err != nil {
+		return 0, err
+	}
+	if !authorID.Valid {
+		return 0, nil
+	}
+	return authorID.Int64, nil
+}
+
 func (s *Store) taskTags(taskID int64) []model.Tag {
 	rows, err := s.db.Query(`SELECT t.id,t.name,t.color FROM tags t
 		JOIN task_tags tt ON tt.tag_id=t.id WHERE tt.task_id=?`, taskID)
@@ -1159,7 +1171,11 @@ func (s *Store) CleanupOrphanFiles() (int, error) {
 }
 
 // SearchTasks searches across tasks (title, description, todo), comments, epics, tags.
-func (s *Store) SearchTasks(query string) ([]int64, error) {
+// When isRegex is true, it loads all tasks and filters in Go using regexp.
+func (s *Store) SearchTasks(query string, isRegex bool) ([]int64, error) {
+	if isRegex {
+		return s.searchTasksRegex(query)
+	}
 	like := "%" + query + "%"
 	rows, err := s.db.Query(`
 		SELECT DISTINCT t.id FROM tasks t
@@ -1184,6 +1200,79 @@ func (s *Store) SearchTasks(query string) ([]int64, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+func (s *Store) searchTasksRegex(pattern string) ([]int64, error) {
+	re, err := regexp.Compile("(?i)" + pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex: %w", err)
+	}
+
+	rows, err := s.db.Query(`
+		SELECT DISTINCT t.id, t.title, t.description, t.todo, t.project_url,
+		       COALESCE(e.name,''), COALESCE(e.description,'')
+		FROM tasks t
+		LEFT JOIN epics e ON e.id = t.epic_id
+		ORDER BY t.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	matchedIDs := make(map[int64]bool)
+	for rows.Next() {
+		var id int64
+		var title, desc, todo, url, epicName, epicDesc string
+		if err := rows.Scan(&id, &title, &desc, &todo, &url, &epicName, &epicDesc); err != nil {
+			return nil, err
+		}
+		if re.MatchString(title) || re.MatchString(desc) || re.MatchString(todo) ||
+			re.MatchString(url) || re.MatchString(epicName) || re.MatchString(epicDesc) {
+			matchedIDs[id] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Also search comments and tags
+	cRows, err := s.db.Query("SELECT task_id, text FROM comments")
+	if err == nil {
+		defer cRows.Close()
+		for cRows.Next() {
+			var taskID int64
+			var text string
+			if cRows.Scan(&taskID, &text) == nil && re.MatchString(text) {
+				matchedIDs[taskID] = true
+			}
+		}
+	}
+
+	tRows, err := s.db.Query(`SELECT tt.task_id, tg.name FROM task_tags tt JOIN tags tg ON tg.id = tt.tag_id`)
+	if err == nil {
+		defer tRows.Close()
+		for tRows.Next() {
+			var taskID int64
+			var name string
+			if tRows.Scan(&taskID, &name) == nil && re.MatchString(name) {
+				matchedIDs[taskID] = true
+			}
+		}
+	}
+
+	ids := make([]int64, 0, len(matchedIDs))
+	for id := range matchedIDs {
+		ids = append(ids, id)
+	}
+	// Sort for deterministic results
+	for i := 0; i < len(ids); i++ {
+		for j := i + 1; j < len(ids); j++ {
+			if ids[j] < ids[i] {
+				ids[i], ids[j] = ids[j], ids[i]
+			}
+		}
+	}
+	return ids, nil
 }
 
 // --- Export / Import ---
@@ -1235,8 +1324,8 @@ func (s *Store) ExportAll() (*model.ExportData, error) {
 	subs := s.exportSubscriptions()
 
 	// Export files and images
-	files := s.exportFiles("files")
-	images := s.exportFiles("images")
+	files := s.exportFiles()
+	images := s.exportImages()
 
 	return &model.ExportData{
 		Columns:       cols,
@@ -1325,8 +1414,8 @@ func (s *Store) exportSubscriptions() []model.ExportSubscription {
 	return subs
 }
 
-func (s *Store) exportFiles(table string) []model.ExportFile {
-	rows, err := s.db.Query(fmt.Sprintf("SELECT id,filename,mime,data FROM %s", table))
+func (s *Store) exportFiles() []model.ExportFile {
+	rows, err := s.db.Query("SELECT id,filename,mime,data FROM files")
 	if err != nil {
 		return nil
 	}
@@ -1340,6 +1429,24 @@ func (s *Store) exportFiles(table string) []model.ExportFile {
 		files = append(files, f)
 	}
 	return files
+}
+
+func (s *Store) exportImages() []model.ExportFile {
+	rows, err := s.db.Query("SELECT id,mime,data FROM images")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var images []model.ExportFile
+	for rows.Next() {
+		var f model.ExportFile
+		if err := rows.Scan(&f.ID, &f.Mime, &f.Data); err != nil {
+			continue
+		}
+		f.Filename = "" // images table has no filename column
+		images = append(images, f)
+	}
+	return images
 }
 
 func (s *Store) flatComments(taskID int64) []model.Comment {
@@ -2052,7 +2159,7 @@ func (s *Store) ImportAll(data *model.ExportData) error {
 	if len(data.Images) > 0 {
 		tx.Exec("DELETE FROM images")
 		for _, f := range data.Images {
-			tx.Exec("INSERT INTO images(id,filename,data,mime,size) VALUES(?,?,?,?,?)", f.ID, f.Filename, f.Data, f.Mime, len(f.Data))
+			tx.Exec("INSERT INTO images(id,data,mime) VALUES(?,?,?)", f.ID, f.Data, f.Mime)
 		}
 	}
 

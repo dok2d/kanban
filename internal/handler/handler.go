@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -17,8 +18,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 )
+
+type contextKey string
+
+const userContextKey contextKey = "user"
 
 const (
 	sessionCookie = "kanban_session"
@@ -112,6 +119,7 @@ type Handler struct {
 	tgBot        *TelegramBot
 	dataDir      string
 	oidcProvider *auth.OIDCProvider
+	oidcMu       sync.Mutex           // protects oidcStates
 	oidcStates   map[string]time.Time // CSRF state tokens for OIDC
 }
 
@@ -208,11 +216,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store user in request context
-	_ = user
-	h.mux.ServeHTTP(w, r)
+	ctx := context.WithValue(r.Context(), userContextKey, user)
+	h.mux.ServeHTTP(w, r.WithContext(ctx))
 }
 
 func (h *Handler) currentUser(r *http.Request) *model.User {
+	if user, ok := r.Context().Value(userContextKey).(*model.User); ok {
+		return user
+	}
+	// Fallback for public routes that bypass ServeHTTP auth
 	cookie, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return nil
@@ -854,6 +866,11 @@ func (h *Handler) handleCompleteSprint(w http.ResponseWriter, r *http.Request, s
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	user := h.currentUser(r)
+	if user == nil || user.Role != "admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	if sprintID == 0 {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
@@ -1222,6 +1239,17 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodPut:
+		user := h.currentUser(r)
+		if user == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		// Only author or admin can edit
+		authorID, _ := h.store.GetCommentAuthorID(id)
+		if authorID != user.ID && user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		var req struct {
 			Text string `json:"text"`
 		}
@@ -1234,18 +1262,26 @@ func (h *Handler) handleComment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Process mentions in edited comment
-		user := h.currentUser(r)
-		if user != nil {
-			taskID, err := h.store.GetCommentTaskID(id)
-			if err == nil {
-				task, _ := h.store.GetTask(taskID)
-				if task != nil {
-					h.processMentions(req.Text, user, &taskID, task.Title)
-				}
+		taskID, err := h.store.GetCommentTaskID(id)
+		if err == nil {
+			task, _ := h.store.GetTask(taskID)
+			if task != nil {
+				h.processMentions(req.Text, user, &taskID, task.Title)
 			}
 		}
 		jsonResp(w, map[string]string{"status": "ok"})
 	case http.MethodDelete:
+		user := h.currentUser(r)
+		if user == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		// Only author or admin can delete
+		authorID, _ := h.store.GetCommentAuthorID(id)
+		if authorID != user.ID && user.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		if err := h.store.DeleteComment(id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -1292,7 +1328,7 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ids, err := h.store.SearchTasks(q)
+	ids, err := h.store.SearchTasks(q, isRegex)
 	if err != nil {
 		h.logf("search error: %v", err)
 		http.Error(w, "search error", http.StatusInternalServerError)
@@ -2195,10 +2231,11 @@ func (h *Handler) describeTaskChanges(oldTask, newTask *model.Task) string {
 }
 
 func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "…"
+	runes := []rune(s)
+	return string(runes[:maxLen]) + "…"
 }
 
 func (h *Handler) handleTimezoneSettings(w http.ResponseWriter, r *http.Request) {
@@ -2360,6 +2397,7 @@ func (h *Handler) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	state := fmt.Sprintf("%x", stateBytes)
 
 	// Clean old states and store new one
+	h.oidcMu.Lock()
 	now := time.Now()
 	for k, exp := range h.oidcStates {
 		if now.After(exp) {
@@ -2367,6 +2405,7 @@ func (h *Handler) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.oidcStates[state] = now.Add(10 * time.Minute)
+	h.oidcMu.Unlock()
 
 	authURL := provider.AuthorizationURL(state)
 	http.Redirect(w, r, authURL, http.StatusFound)
@@ -2381,12 +2420,16 @@ func (h *Handler) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Verify state
 	state := r.URL.Query().Get("state")
+	h.oidcMu.Lock()
 	expiry, ok := h.oidcStates[state]
+	if ok {
+		delete(h.oidcStates, state)
+	}
+	h.oidcMu.Unlock()
 	if !ok || time.Now().After(expiry) {
 		http.Error(w, "invalid or expired state", http.StatusBadRequest)
 		return
 	}
-	delete(h.oidcStates, state)
 
 	// Check for error from provider
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
