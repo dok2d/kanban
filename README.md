@@ -1,6 +1,6 @@
 # Kanban — Personal Task Board
 
-[Русская версия](README.RUS.md)
+[Русская версия](README.RUS.md) | [Documentation](docs/README.md)
 
 Minimalist self-hosted Kanban board with sprints, epics, tags, comments, notifications, Telegram integration, and drag-and-drop.
 
@@ -104,7 +104,7 @@ Three roles are available:
 
 Sessions are cookie-based (90-day expiry) with PBKDF2-HMAC-SHA256 password hashing.
 
-Password recovery is available for users with linked Telegram — a 6-digit code is sent to the bot.
+Password recovery is available for users with linked Telegram — an 8-digit code is sent to the bot.
 
 ## Telegram Integration
 
