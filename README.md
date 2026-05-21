@@ -1,290 +1,73 @@
 # Kanban — Personal Task Board
 
-[Русская версия](README.RUS.md) | [Documentation](docs/README.md)
+[Русская версия](README.RUS.md)
 
-Minimalist self-hosted Kanban board with sprints, epics, tags, comments, notifications, Telegram integration, and drag-and-drop.
+Self-hosted Kanban board that runs anywhere with zero external dependencies. One binary, one SQLite file, one container — full project management for small teams.
 
-## Stack
+## Why Kanban
 
-- **Go 1.22** — stdlib `net/http` for server, templates, and routing
-- **SQLite** (single external dependency via `mattn/go-sqlite3`)
-- **Vanilla JS** — no frontend frameworks
-- **Podman** — rootless container with hardening
-
-## Features
-
-- Kanban board with drag-and-drop cards between columns
-- Create / edit / delete tasks with inline editing
-- Priorities (none, low, medium, high, critical)
-- Optional deadline with visual indicator on cards
-- Sprints with planning/active/completed statuses and backlog view
-- Board filters by sprint and epic in header (⬡ kanban / Sprint / Epic)
-- Sprint completion with automatic task migration to next sprint
-- Epics with color coding and progress tracking
-- Tags (multiple per task)
-- Nested comments with replies (Markdown, @mentions)
-- Task dependencies with search/filter (depends on / blocks)
-- Markdown descriptions with syntax highlighting
-- Interactive TODO checklists on tasks
-- File attachments and image paste (Ctrl+V)
-- Search across tasks, comments, tags, and epics (plaintext / regex)
-- Column management (create, reorder, delete)
-- Three roles: Admin, User, Read-only
-- Notification system (in-app + Telegram)
-- Task subscriptions for update tracking
-- Telegram bot integration for push notifications
-- User activity feed with detailed change history
-- 8 themes (dark, light, ocean, forest, nord, dracula, solarized, spacedust)
-- 10 languages (Russian, English, Chinese, Spanish, French, German, Portuguese, Japanese, Korean, Arabic)
-- Adjustable font size
-- Timezone selector
-- Export / import board as JSON
-- All static assets served locally (no external CDN)
-- Mobile responsive
+- **Zero dependencies** — Go + SQLite, no Redis, no Postgres, no message queue
+- **One command to run** — `./kanban.sh build && ./kanban.sh run`, open browser
+- **Batteries included** — sprints, epics, tags, file attachments, Markdown, comments with @mentions, search (text + regex), drag-and-drop, Telegram notifications
+- **Hardened by default** — rootless Podman, read-only FS, all capabilities dropped, 127.0.0.1 only
+- **Works offline** — all static assets bundled, no external CDN calls
+- **8 themes, 10 languages** — dark/light/ocean/forest/nord/dracula/solarized/spacedust, from English to Arabic
 
 ## Quick Start
 
 ```bash
-# Build
 ./kanban.sh build
-
-# Run
 ./kanban.sh run
-
-# Open http://127.0.0.1:8080
+# → http://127.0.0.1:8080
 ```
 
-On first launch you will be prompted to create an admin account.
+First launch opens the admin setup page. Create an account and start using the board immediately.
 
-## Commands
-
-| Command               | Description                          |
-|-----------------------|--------------------------------------|
-| `./kanban.sh build`   | Build container image                |
-| `./kanban.sh run`     | Start container                      |
-| `./kanban.sh stop`    | Stop container                       |
-| `./kanban.sh restart` | Restart container                    |
-| `./kanban.sh logs`    | View logs                            |
-| `./kanban.sh backup`  | Backup DB to ./backups/              |
-| `./kanban.sh status`  | Container status                     |
-| `./kanban.sh deploy`  | Install systemd + nginx configs      |
-
-### Flags (for `run` and `deploy`)
-
-| Flag              | Description                           | Default               |
-|-------------------|---------------------------------------|-----------------------|
-| `--host <value>`  | FQDN or IP address                    | `kanban.local`        |
-| `--port <port>`   | Listen port (nginx + container)       | `443` (TLS) / `80` (HTTP) |
-| `--tls`           | Enable TLS (HTTPS)                    | enabled               |
-| `--no-tls`        | HTTP only, no TLS                     | —                     |
-| `--cert <path>`   | Path to TLS certificate               | `/etc/nginx/ssl/kanban.crt` |
-| `--key  <path>`   | Path to TLS private key               | `/etc/nginx/ssl/kanban.key` |
-
-Flags can also be set via environment variables: `KANBAN_HOST`, `KANBAN_PORT`, `KANBAN_TLS`, `KANBAN_SSL_CERT`, `KANBAN_SSL_KEY`.
+To deploy on a server with TLS behind nginx:
 
 ```bash
-# Run locally on a custom port
-./kanban.sh run --port 9090
-
-# Deploy with TLS
-./kanban.sh deploy --host kanban.example.com --port 9090
-
-# Deploy HTTP-only (no TLS)
-./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
+./kanban.sh deploy --host kanban.example.com
 ```
 
-## Authentication & Roles
+## Features at a Glance
 
-The application requires authentication. On first launch, create an admin account via the setup page.
+| Area | What you get |
+|------|-------------|
+| Board | Columns with drag-and-drop, inline editing, priorities, deadlines |
+| Planning | Sprints (plan → active → done), epics with color coding and progress |
+| Collaboration | Nested comments, @mentions, task subscriptions, activity feed |
+| Organization | Tags, dependencies (blocks / depends on), TODO checklists |
+| Search | Plaintext and regex across tasks, comments, tags, and epics |
+| Files | Attachments, image paste (Ctrl+V), Markdown with syntax highlighting |
+| Notifications | In-app + Telegram bot (assignments, mentions, updates) |
+| Access control | Three roles: Admin, User, Read-only |
+| Data | JSON export/import, scheduled backups via `./kanban.sh backup` |
+| Customization | 8 themes, 10 languages, adjustable font size, timezone selector |
 
-Three roles are available:
-- **Admin** — full access: manage users, columns, epics, tags, Telegram bot settings
-- **User** — create/edit/delete tasks, comment, subscribe to notifications
-- **Read-only** — view board and tasks, receive notifications
+## Comparison
 
-Sessions are cookie-based (90-day expiry) with PBKDF2-HMAC-SHA256 password hashing.
+| | **Kanban** | Trello | Jira | Notion | WeKan | Planka |
+|---|---|---|---|---|---|---|
+| Free & open source | **Yes, MIT** | Freemium | Freemium | Freemium | Yes, MIT | No (Fair Use) |
+| Self-hosted | **Yes** | No | Data Center ($) | No | Yes | Yes |
+| External dependencies | **None** (SQLite) | — | Postgres, Elasticsearch, etc. | — | MongoDB | Postgres, Redis |
+| Setup time | **~1 min** | — | Hours | — | ~15 min | ~10 min |
+| Sprints & epics | **Yes** | No | Yes | Basic | No | No |
+| Telegram notifications | **Yes** | No | No | No | No | Yes |
+| Offline / air-gapped | **Yes** | No | Yes (DC) | Partial | Partial | Yes |
+| Resource usage | **~30 MB RAM** | — | 4+ GB RAM | — | ~400 MB | ~150 MB |
+| Themes | **8** | 2 | 1 | 2 | 3 | 1 |
+| Languages | **10** | 20+ | 20+ | ~15 | 100+ | 20+ |
 
-Password recovery is available for users with linked Telegram — an 8-digit code is sent to the bot.
+Kanban is not trying to replace Jira for a 500-person company. It is built for individuals and small teams who want a fast, private, self-hosted board that works out of the box without infrastructure overhead.
 
-## Telegram Integration
+## Stack
 
-Admins can configure a Telegram bot for push notifications:
+- **Go 1.22** — stdlib `net/http`, no framework
+- **SQLite** — single `mattn/go-sqlite3` dependency
+- **Vanilla JS** — no React, no Vue, no build step
+- **Podman** — rootless container with security hardening
 
-1. Create a bot via [@BotFather](https://t.me/BotFather) and get the token
-2. In Settings → Telegram, enter the bot token and bot username
-3. Users link their accounts by sending a hash code to the bot
+## Documentation
 
-Notifications are sent for: task assignments, @mentions, comments on subscribed tasks, and task updates.
-
-Bot commands:
-- `/tasks` — list your assigned tasks
-- `/task N` — view task #N details and recent comments
-- `/comment N text` — add a comment to task #N
-- `/help` — show available commands
-
-## Container Security
-
-- **Non-root**: runs as `kanban` user (not root)
-- **Read-only filesystem**: root FS mounted read-only
-- **CAP_DROP ALL**: all capabilities dropped
-- **no-new-privileges**: privilege escalation blocked
-- **Limits**: 256MB RAM, 0.5 CPU
-- **Listens on 127.0.0.1 only**: exposed via nginx
-
-## Deploy (Systemd + Nginx)
-
-The `deploy` command generates and installs both the systemd quadlet unit files
-and the nginx reverse proxy config in one step:
-
-```bash
-# TLS (default) — generates HTTPS nginx config + systemd units
-./kanban.sh deploy --host kanban.example.com --port 9090
-
-# HTTP only
-./kanban.sh deploy --host 10.0.0.5 --port 8080 --no-tls
-
-# Then start
-loginctl enable-linger $(whoami)   # auto-start after reboot
-systemctl --user daemon-reload
-systemctl --user start kanban
-sudo nginx -t && sudo nginx -s reload
-```
-
-For self-signed TLS:
-```bash
-sudo mkdir -p /etc/nginx/ssl
-sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout /etc/nginx/ssl/kanban.key \
-  -out /etc/nginx/ssl/kanban.crt \
-  -subj "/CN=kanban.example.com"
-```
-
-## Project Structure
-
-```
-kanban/
-├── cmd/server/main.go         # entry point
-├── internal/
-│   ├── auth/auth.go           # PBKDF2 password hashing & tokens
-│   ├── db/store.go            # SQLite storage + migrations
-│   ├── handler/
-│   │   ├── handler.go         # HTTP handlers (REST API)
-│   │   └── telegram.go        # Telegram bot integration
-│   └── model/model.go         # data models
-├── web/
-│   ├── static/                # JS, CSS, fonts (downloaded at build)
-│   └── templates/
-│       ├── index.html         # SPA frontend
-│       └── login.html         # login / setup page
-├── deploy/
-│   ├── kanban.container       # Quadlet unit
-│   ├── kanban-data.volume     # Quadlet volume
-│   └── nginx-kanban.conf      # Nginx config
-├── Containerfile              # multi-stage build (assets + Go + runtime)
-├── kanban.sh                  # management script
-└── README.md
-```
-
-## API
-
-All endpoints return JSON. Authentication required (session cookie).
-
-### Auth
-
-| Method | Path              | Description              |
-|--------|-------------------|--------------------------|
-| POST   | /api/auth/setup   | Create first admin user  |
-| POST   | /api/auth/login   | Login                    |
-| POST   | /api/auth/logout  | Logout                   |
-| GET    | /api/auth/me      | Current user info        |
-| POST   | /api/auth/reset-request | Request password reset (via Telegram) |
-| POST   | /api/auth/reset-confirm | Confirm reset with code |
-
-### Users (admin only)
-
-| Method | Path              | Description              |
-|--------|-------------------|--------------------------|
-| GET    | /api/users        | List users               |
-| POST   | /api/users        | Create user              |
-| PUT    | /api/users/:id    | Update user role/password|
-| DELETE | /api/users/:id    | Delete user              |
-
-### Board
-
-| Method | Path                | Description                            |
-|--------|---------------------|----------------------------------------|
-| GET    | /api/board          | Full board (columns, tasks, epics, sprints, tags) |
-| GET    | /api/tasks          | List tasks                             |
-| POST   | /api/tasks          | Create task                            |
-| GET    | /api/tasks/:id      | Task details                           |
-| PUT    | /api/tasks/:id      | Update task                            |
-| DELETE | /api/tasks/:id      | Delete task                            |
-| POST   | /api/tasks/move     | Move task between columns              |
-
-### Notifications & Subscriptions
-
-| Method | Path                       | Description               |
-|--------|----------------------------|---------------------------|
-| GET    | /api/notifications         | User notifications        |
-| POST   | /api/notifications/read    | Mark notification read    |
-| POST   | /api/notifications/read-all| Mark all read             |
-| POST   | /api/subscribe             | Subscribe to task         |
-| POST   | /api/unsubscribe           | Unsubscribe from task     |
-
-### Telegram
-
-| Method | Path                          | Description                |
-|--------|-------------------------------|----------------------------|
-| GET    | /api/settings/telegram        | Get bot settings (admin)   |
-| POST   | /api/settings/telegram        | Set bot token/username     |
-| GET    | /api/settings/telegram/status | Check if bot configured    |
-| POST   | /api/user/telegram/link       | Generate link hash         |
-| POST   | /api/user/telegram/unlink     | Unlink Telegram            |
-
-### Settings
-
-| Method | Path                    | Description                |
-|--------|-------------------------|----------------------------|
-| GET    | /api/settings/timezone  | Get server timezone        |
-| POST   | /api/settings/timezone  | Set server timezone        |
-
-### Sprints
-
-| Method | Path                       | Description                            |
-|--------|----------------------------|----------------------------------------|
-| GET    | /api/sprints               | List sprints                           |
-| POST   | /api/sprints               | Create sprint                          |
-| GET    | /api/sprints/:id           | Sprint with tasks                      |
-| PUT    | /api/sprints/:id           | Update sprint                          |
-| DELETE | /api/sprints/:id           | Delete sprint                          |
-| POST   | /api/sprints/:id/complete  | Complete sprint (move tasks)           |
-
-### Other
-
-| Method | Path                | Description                            |
-|--------|---------------------|----------------------------------------|
-| GET    | /api/columns        | List columns                           |
-| POST   | /api/columns        | Create column                          |
-| PUT    | /api/columns/:id    | Update column                          |
-| DELETE | /api/columns/:id    | Delete column                          |
-| POST   | /api/columns/reorder| Reorder columns                        |
-| GET    | /api/epics          | List epics                             |
-| POST   | /api/epics          | Create epic                            |
-| GET    | /api/epics/:id      | Epic with tasks                        |
-| PUT    | /api/epics/:id      | Update epic                            |
-| DELETE | /api/epics/:id      | Delete epic                            |
-| GET    | /api/tags           | List tags                              |
-| POST   | /api/tags           | Create tag                             |
-| DELETE | /api/tags/:id       | Delete tag                             |
-| POST   | /api/comments       | Add comment                            |
-| PUT    | /api/comments/:id   | Edit comment                           |
-| DELETE | /api/comments/:id   | Delete comment                         |
-| GET    | /api/search?q=...   | Search tasks                           |
-| POST   | /api/images         | Upload image (base64)                  |
-| GET    | /api/images/:id     | Serve image                            |
-| POST   | /api/files          | Upload file (base64)                   |
-| GET    | /api/files/:id      | Download file                          |
-| GET    | /api/export         | Export board as JSON                   |
-| POST   | /api/import         | Import board from JSON                 |
-| GET    | /api/user/activity/:id | User activity feed                  |
-| POST   | /api/user/password  | Change own password                    |
+Full guides: **[English](docs/en/README.md)** | **[Русский](docs/ru/README.md)**
